@@ -1,0 +1,3 @@
+[submodule "external/glbind"]
+	path = external/glbind
+	url = https://github.com/dr-soft/glbind.git

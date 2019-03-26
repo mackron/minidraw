@@ -1,1 +1,1 @@
-# mini_type
+# minitype
