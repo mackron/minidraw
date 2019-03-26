@@ -197,10 +197,6 @@ typedef int mt_result;
 #define MT_INVALID_CODE_POINT       -201
 
 
-#define MT_UNICODE_MIN_CODE_POINT           0x000000
-#define MT_UNICODE_MAX_CODE_POINT           0x10FFFF
-#define MT_UNICODE_REPLACEMENT_CHARACTER    0x00FFFD
-
 /* Forward Declarations */
 typedef struct mt_api mt_api;
 typedef struct mt_api_config mt_api_config;
@@ -413,9 +409,15 @@ Unicode
 TODO: Implement optional invalid code point replacement.
 
 **************************************************************************************************************************************************************/
-#define MT_ASSUME_VALID                 (1 << 0)
-#define MT_FORBID_BOM                   (1 << 1)
-#define MT_ERROR_ON_INVALID_CODE_POINT  (1 << 2)
+#define MT_UNICODE_MIN_CODE_POINT                       0x000000
+#define MT_UNICODE_MAX_CODE_POINT                       0x10FFFF
+#define MT_UNICODE_REPLACEMENT_CHARACTER                0x00FFFD
+#define MT_UNICODE_REPLACEMENT_CHARACTER_LENGTH_UTF8    3
+#define MT_UNICODE_REPLACEMENT_CHARACTER_LENGTH_UTF16   1
+#define MT_UNICODE_REPLACEMENT_CHARACTER_LENGTH_UTF32   1
+
+#define MT_FORBID_BOM                                   (1 << 1)
+#define MT_ERROR_ON_INVALID_CODE_POINT                  (1 << 2)
 
 /*
 Checks if the given UTF-16 byte order mark indicates little endian.
@@ -502,38 +504,12 @@ MT_INLINE mt_bool32 mt_has_utf32_bom(const mt_uint8* pBytes, size_t len)
 /*
 Swaps the endianness of the given UTF-16 string.
 */
-MT_INLINE void mt_swap_endian_utf16(mt_utf16* pUTF16, size_t count)
-{
-    if (count == (size_t)-1) {
-        size_t i;
-        for (i = 0; i < count; ++i) {
-            pUTF16[i] = mt_swap_endian_uint16(pUTF16[i]);
-        }
-    } else {
-        while (pUTF16[0] != 0) {
-            pUTF16[0] = mt_swap_endian_uint16(pUTF16[0]);
-            pUTF16 += 1;
-        }
-    }
-}
+void mt_swap_endian_utf16(mt_utf16* pUTF16, size_t count);
 
 /*
 Swaps the endianness of the given UTF-32 string.
 */
-MT_INLINE void mt_swap_endian_utf32(mt_utf32* pUTF32, size_t count)
-{
-    if (count == (size_t)-1) {
-        size_t i;
-        for (i = 0; i < count; ++i) {
-            pUTF32[i] = mt_swap_endian_uint32(pUTF32[i]);
-        }
-    } else {
-        while (pUTF32[0] != 0) {
-            pUTF32[0] = mt_swap_endian_uint32(pUTF32[0]);
-            pUTF32 += 1;
-        }
-    }
-}
+void mt_swap_endian_utf32(mt_utf32* pUTF32, size_t count);
 
 
 /*
@@ -562,8 +538,8 @@ pUTF8:     The UTF-8 string to convert. It is an error for this to be null.
 utf8Len:   The length of the UTF-8 string in bytes, not including the null terminator.
 
 flags:     This can be a combination of the following:
-           MT_ASSUME_VALID: Assumes the input string is a valid UTF-8 string. This can be used an optimization.
-           MT_FORBID_BOM:   Causes an error if the string starts with a BOM.
+           MT_FORBID_BOM: Causes an error if the string starts with a BOM.
+
 
 Return Value
 ------------
@@ -577,7 +553,7 @@ MT_INVALID_ARGS will be returned if [pUTF8] is not big enough to fully convert t
 
 MT_OUT_OF_MEMORY will be returned if the [pUTF8] buffer is too small.
 
-MT_INVALID_CODE_POINT will be returned if an invalid code point is encounted and MT_ERROR_ON_INVALID_CODE_POINT is enounted.
+MT_INVALID_CODE_POINT will be returned if an invalid code point is encounted and MT_ERROR_ON_INVALID_CODE_POINT is set in [flags].
 
 
 Remarks
@@ -588,9 +564,7 @@ When the output string ([pUTF16]) is null, this is equivalent to `mt_utf8_to_utf
 
 The byte order mark will _not_ be included in the output string nor it's length.
 
-Invalid characters are replaced with the Unicode replacement character (MT_UNICODE_REPLACEMENT_CHARACTER / U+FFFD).
-
-The output string is undefined if the MT_ASSUME_VALID flag is set and the input string is invalid.
+Invalid characters are replaced with the Unicode replacement character (MT_UNICODE_REPLACEMENT_CHARACTER/U+FFFD).
 */
 mt_result mt_utf8_to_utf16ne(mt_utf16* pUTF16, size_t utf16Cap, size_t* pUTF16Len, const mt_utf8* pUTF8, size_t utf8Len, mt_uint32 flags);
 mt_result mt_utf8_to_utf16le(mt_utf16* pUTF16, size_t utf16Cap, size_t* pUTF16Len, const mt_utf8* pUTF8, size_t utf8Len, mt_uint32 flags);
@@ -1405,6 +1379,11 @@ MT_INLINE mt_bool32 mt_is_cp_in_surrogate_pair_range(mt_utf32 utf32)
     return utf32 >= 0xD800 && utf32 <= 0xDFFF;
 }
 
+MT_INLINE mt_bool32 mt_is_valid_code_point(mt_utf32 utf32)
+{
+    return utf32 <= MT_UNICODE_MAX_CODE_POINT && !mt_is_cp_in_surrogate_pair_range(utf32);
+}
+
 MT_INLINE size_t mt_utf32_cp_to_utf8_length(mt_utf32 utf32)
 {
     /* This API assumes the the UTF-32 code point is valid. */
@@ -1471,6 +1450,38 @@ MT_INLINE size_t mt_utf32_cp_to_utf8(mt_utf32 utf32, mt_utf8* pUTF8, size_t utf8
     return 0;
 }
 
+
+void mt_swap_endian_utf16(mt_utf16* pUTF16, size_t count)
+{
+    if (count == (size_t)-1) {
+        size_t i;
+        for (i = 0; i < count; ++i) {
+            pUTF16[i] = mt_swap_endian_uint16(pUTF16[i]);
+        }
+    } else {
+        while (pUTF16[0] != 0) {
+            pUTF16[0] = mt_swap_endian_uint16(pUTF16[0]);
+            pUTF16 += 1;
+        }
+    }
+}
+
+void mt_swap_endian_utf32(mt_utf32* pUTF32, size_t count)
+{
+    if (count == (size_t)-1) {
+        size_t i;
+        for (i = 0; i < count; ++i) {
+            pUTF32[i] = mt_swap_endian_uint32(pUTF32[i]);
+        }
+    } else {
+        while (pUTF32[0] != 0) {
+            pUTF32[0] = mt_swap_endian_uint32(pUTF32[0]);
+            pUTF32 += 1;
+        }
+    }
+}
+
+
 mt_result mt_utf8_to_utf16_length(size_t* pUTF16Len, const mt_utf8* pUTF8, size_t utf8Len, mt_uint32 flags)
 {
     size_t utf16Len = 0;
@@ -1499,92 +1510,26 @@ mt_result mt_utf8_to_utf16_length(size_t* pUTF16Len, const mt_utf8* pUTF8, size_
         }
     }
 
-    if ((flags & MT_ASSUME_VALID) != 0) {
-        /* Slightly faster path. Validation checks will be skipped here. */
-        if (utf8Len == (size_t)-1) {
-            /* Null terminated string. */
-            for (;;) {
-                if (pUTF8[0] == 0) {
-                    break;  /* Reached the end of the null terminated string. */
-                }
-
-                if (pUTF8[0] < 128) {   /* ASCII character. */
-                    utf16Len += 1;
-                    pUTF8    += 1;
-                } else {
-                    if ((pUTF8[0] & 0xE0) == 0xC0) {
-                        if (pUTF8[1] == 0) {
-                            return MT_INVALID_ARGS; /* Input string is too short. */
-                        }
-
-                        utf16Len += 1;  /* Can be at most 1 UTF-16.*/
-                        pUTF8    += 2;
-                    } else if ((pUTF8[0] & 0xF0) == 0xE0) {
-                        if (pUTF8[1] == 0 || pUTF8[2] == 0) {
-                            return MT_INVALID_ARGS; /* Input string is too short. */
-                        }
-
-                        utf16Len += 1;  /* Can be at most 1 UTF-16.*/
-                        pUTF8    += 3;
-                    } else /*if ((pUTF8[0] & 0xF8) == 0xF0)*/ {
-                        if (pUTF8[1] == 0 || pUTF8[2] == 0 || pUTF8[3] == 0) {
-                            return MT_INVALID_ARGS; /* Input string is too short. */
-                        }
-
-                        utf16Len += 2;  /* Must be at least 2 UTF-16s */
-                        pUTF8    += 4;
-                    }
-                }
+    if (utf8Len == (size_t)-1) {
+        /* Null terminated string. */
+        for (;;) {
+            if (pUTF8[0] == 0) {
+                break;  /* Reached the end of the null terminated string. */
             }
-        } else {
-            /* Fixed lengthed string. */
-            for (size_t iUTF8 = 0; iUTF8 < utf8Len; /* Do nothing */) {
-                if (pUTF8[iUTF8+0] < 128) {   /* ASCII character. */
-                    utf16Len += 1;
-                    iUTF8    += 1;
-                } else {
-                    if ((pUTF8[iUTF8+0] & 0xE0) == 0xC0) {
-                        if (iUTF8+1 >= utf8Len) {
-                            return MT_INVALID_ARGS;
-                        }
 
-                        utf16Len += 1;  /* Can be at most 1 UTF-16.*/
-                        iUTF8    += 2;
-                    } else if ((pUTF8[iUTF8+0] & 0xF0) == 0xE0) {
-                        if (iUTF8+2 >= utf8Len) {
-                            return MT_INVALID_ARGS;
-                        }
-
-                        utf16Len += 1;  /* Can be at most 1 UTF-16.*/
-                        iUTF8    += 3;
-                    } else /*if ((pUTF8[iUTF8+0] & 0xF8) == 0xF0)*/ {
-                        if (iUTF8+3 >= utf8Len) {
-                            return MT_INVALID_ARGS;
-                        }
-
-                        utf16Len += 2;  /* Must be at least 2 UTF-16s */
-                        iUTF8    += 4;
-                    }
-                }
-            }
-        }
-    } else {
-        /* Slightly slower path. Validation checks will be performed here. */
-        if (utf8Len == (size_t)-1) {
-            /* Null terminated string. */
-            for (;;) {
-                if (pUTF8[0] == 0) {
-                    break;  /* Reached the end of the null terminated string. */
-                }
-
-                if (pUTF8[0] < 128) {   /* ASCII character. */
-                    utf16Len += 1;
-                    pUTF8    += 1;
-                } else {
-                    if (mt_is_invalid_utf8_octet(pUTF8[0])) {
+            if (pUTF8[0] < 128) {   /* ASCII character. */
+                utf16Len += 1;
+                pUTF8    += 1;
+            } else {
+                if (mt_is_invalid_utf8_octet(pUTF8[0])) {
+                    if ((flags & MT_ERROR_ON_INVALID_CODE_POINT) != 0) {
                         return MT_INVALID_CODE_POINT;
+                    } else {
+                        /* Replacement. */
+                        utf16Len += MT_UNICODE_REPLACEMENT_CHARACTER_LENGTH_UTF16;
+                        pUTF8    += 1;
                     }
-
+                } else {
                     if ((pUTF8[0] & 0xE0) == 0xC0) {
                         if (pUTF8[1] == 0) {
                             return MT_INVALID_ARGS; /* Input string is too short. */
@@ -1605,31 +1550,46 @@ mt_result mt_utf8_to_utf16_length(size_t* pUTF16Len, const mt_utf8* pUTF8, size_
                         }
 
                         mt_uint32 cp = ((mt_utf32)(pUTF8[0] & 0x07) << 18) | ((mt_utf32)(pUTF8[1] & 0x3F) << 12) | ((mt_utf32)(pUTF8[2] & 0x3F) << 6) | (pUTF8[3] & 0x3F);
-                        if (cp > MT_UNICODE_MAX_CODE_POINT) {
-                            return MT_INVALID_CODE_POINT;
+                        if (!mt_is_valid_code_point(cp)) {
+                            if ((flags & MT_ERROR_ON_INVALID_CODE_POINT) != 0) {
+                                return MT_INVALID_CODE_POINT;
+                            } else {
+                                /* Replacement. */
+                                utf16Len += MT_UNICODE_REPLACEMENT_CHARACTER_LENGTH_UTF16;
+                                pUTF8    += 4;
+                            }
+                        } else {
+                            utf16Len += 2;  /* Must be at least 2 UTF-16s */
+                            pUTF8    += 4;
                         }
-                        if (mt_is_cp_in_surrogate_pair_range(cp)) {
-                            return MT_INVALID_CODE_POINT;   /* No characters should be in the UTF-16 surrogate pair range. */
-                        }
-
-                        utf16Len += 2;  /* Must be at least 2 UTF-16s */
-                        pUTF8    += 4;
                     } else {
-                        return MT_INVALID_CODE_POINT;
+                        if ((flags & MT_ERROR_ON_INVALID_CODE_POINT) != 0) {
+                            return MT_INVALID_CODE_POINT;
+                        } else {
+                            /* Replacement. */
+                            utf16Len += MT_UNICODE_REPLACEMENT_CHARACTER_LENGTH_UTF16;
+                            pUTF8    += 1;
+                        }
                     }
                 }
             }
-        } else {
-            /* Fixed length string. */
-            for (size_t iUTF8 = 0; iUTF8 < utf8Len; /* Do nothing */) {
-                if (pUTF8[iUTF8+0] < 128) {   /* ASCII character. */
-                    utf16Len += 1;
-                    iUTF8    += 1;
-                } else {
-                    if (mt_is_invalid_utf8_octet(pUTF8[iUTF8+0])) {
+        }
+    } else {
+        /* Fixed length string. */
+        for (size_t iUTF8 = 0; iUTF8 < utf8Len; /* Do nothing */) {
+            if (pUTF8[iUTF8+0] < 128) {   /* ASCII character. */
+                utf16Len += 1;
+                iUTF8    += 1;
+            } else {
+                if (mt_is_invalid_utf8_octet(pUTF8[iUTF8+0])) {
+                    if ((flags & MT_ERROR_ON_INVALID_CODE_POINT) != 0) {
                         return MT_INVALID_CODE_POINT;
+                    } else {
+                        /* Replacement. */
+                        utf16Len += MT_UNICODE_REPLACEMENT_CHARACTER_LENGTH_UTF16;
+                        iUTF8    += 1;
                     }
-
+                } else {
                     if ((pUTF8[iUTF8+0] & 0xE0) == 0xC0) {
                         if (iUTF8+1 >= utf8Len) {
                             return MT_INVALID_ARGS;
@@ -1650,17 +1610,26 @@ mt_result mt_utf8_to_utf16_length(size_t* pUTF16Len, const mt_utf8* pUTF8, size_
                         }
 
                         mt_uint32 cp = ((mt_utf32)(pUTF8[0] & 0x07) << 18) | ((mt_utf32)(pUTF8[1] & 0x3F) << 12) | ((mt_utf32)(pUTF8[2] & 0x3F) << 6) | (pUTF8[3] & 0x3F);
-                        if (cp > MT_UNICODE_MAX_CODE_POINT) {
-                            return MT_INVALID_CODE_POINT;
+                        if (!mt_is_valid_code_point(cp)) {
+                            if ((flags & MT_ERROR_ON_INVALID_CODE_POINT) != 0) {
+                                return MT_INVALID_CODE_POINT;
+                            } else {
+                                /* Replacement. */
+                                utf16Len += MT_UNICODE_REPLACEMENT_CHARACTER_LENGTH_UTF16;
+                                iUTF8    += 4;
+                            }
+                        } else {
+                            utf16Len += 2;  /* Must be at least 2 UTF-16s */
+                            iUTF8    += 4;
                         }
-                        if (mt_is_cp_in_surrogate_pair_range(cp)) {
-                            return MT_INVALID_CODE_POINT;   /* No characters should be in the UTF-16 surrogate pair range. */
-                        }
-
-                        utf16Len += 2;  /* Must be at least 2 UTF-16s */
-                        iUTF8    += 4;
                     } else {
-                        return MT_INVALID_CODE_POINT;
+                        if ((flags & MT_ERROR_ON_INVALID_CODE_POINT) != 0) {
+                            return MT_INVALID_CODE_POINT;
+                        } else {
+                            /* Replacement. */
+                            utf16Len += MT_UNICODE_REPLACEMENT_CHARACTER_LENGTH_UTF16;
+                            iUTF8    += 1;
+                        }
                     }
                 }
             }
@@ -1702,136 +1671,26 @@ mt_result mt_utf8_to_utf16ne(mt_utf16* pUTF16, size_t utf16Cap, size_t* pUTF16Le
         }
     }
 
-    if ((flags & MT_ASSUME_VALID) != 0) {
-        /* Slightly faster path. Validation checks will be skipped here. */
-        if (utf8Len == (size_t)-1) {
-            /* Null terminated string. */
-            while (pUTF8[0] != 0) {
-                if (utf16Cap == 0) {
-                    break;  /* Out of room. */
-                }
-
-                if (pUTF8[0] < 128) {   /* ASCII character. */
-                    pUTF16[0] = pUTF8[0];
-                    pUTF16   += 1;
-                    utf16Cap -= 1;
-                    pUTF8    += 1;
-                } else {
-                    if ((pUTF8[0] & 0xE0) == 0xC0) {
-                        if (pUTF8[1] == 0) {
-                            return MT_INVALID_ARGS; /* Input string is too short. */
-                        }
-
-                        pUTF16[0] = ((mt_utf16)(pUTF8[0] & 0x1F) <<  6) | (pUTF8[1] & 0x3F);
-                        pUTF16   += 1;
-                        utf16Cap -= 1;
-                        pUTF8    += 2;
-                    } else if ((pUTF8[0] & 0xF0) == 0xE0) {
-                        if (pUTF8[1] == 0 || pUTF8[2] == 0) {
-                            return MT_INVALID_ARGS; /* Input string is too short. */
-                        }
-
-                        pUTF16[0] = ((mt_utf16)(pUTF8[0] & 0x0F) << 12) | ((mt_utf16)(pUTF8[1] & 0x3F) << 6) | (pUTF8[2] & 0x3F);
-                        pUTF16   += 1;
-                        utf16Cap -= 1;
-                        pUTF8    += 3;
-                    } else /*if ((pUTF8[0] & 0xF8) == 0xF0)*/ {
-                        if (utf16Cap < 2) {
-                            break;  /* No enough room. */
-                        } else {
-                            if (pUTF8[1] == 0 || pUTF8[2] == 0 || pUTF8[3] == 0) {
-                                return MT_INVALID_ARGS; /* Input string is too short. */
-                            }
-
-                            mt_uint32 cp = ((mt_utf32)(pUTF8[0] & 0x07) << 18) | ((mt_utf32)(pUTF8[1] & 0x3F) << 12) | ((mt_utf32)(pUTF8[2] & 0x3F) << 6) | (pUTF8[3] & 0x3F);
-                            if (cp > MT_UNICODE_MAX_CODE_POINT) {
-                                return MT_INVALID_CODE_POINT;
-                            }
-                            if (mt_is_cp_in_surrogate_pair_range(cp)) {
-                                return MT_INVALID_CODE_POINT;   /* No characters should be in the UTF-16 surrogate pair range. */
-                            }
-
-                            mt_utf32_cp_to_utf16_pair(cp, pUTF16);
-
-                            pUTF16   += 2;
-                            utf16Cap -= 2;
-                            pUTF8    += 4;
-                        }
-                    }
-                }
-            }
-        } else {
-            /* Fixed lengthed string. */
-            for (size_t iUTF8 = 0; iUTF8 < utf8Len; /* Do nothing */) {
-                if (utf16Cap == 0) {
-                    break;  /* Out of room. */
-                }
-
-                if (pUTF8[iUTF8+0] < 128) {   /* ASCII character. */
-                    pUTF16[0] = pUTF8[iUTF8+0];
-                    pUTF16   += 1;
-                    utf16Cap -= 1;
-                    iUTF8    += 1;
-                } else {
-                    if ((pUTF8[iUTF8+0] & 0xE0) == 0xC0) {
-                        if (iUTF8+1 >= utf8Len) {
-                            return MT_INVALID_ARGS;
-                        }
-
-                        pUTF16[0] = ((mt_utf16)(pUTF8[iUTF8+0] & 0x1F) <<  6) | (pUTF8[iUTF8+1] & 0x3F);
-                        pUTF16   += 1;
-                        utf16Cap -= 1;
-                        iUTF8    += 2;
-                    } else if ((pUTF8[iUTF8+0] & 0xF0) == 0xE0) {
-                        if (iUTF8+2 >= utf8Len) {
-                            return MT_INVALID_ARGS;
-                        }
-
-                        pUTF16[0] = ((mt_utf16)(pUTF8[iUTF8+0] & 0x0F) << 12) | ((mt_utf16)(pUTF8[iUTF8+1] & 0x3F) << 6) | (pUTF8[iUTF8+2] & 0x3F);
-                        pUTF16   += 1;
-                        utf16Cap -= 1;
-                        iUTF8    += 3;
-                    } else /*if ((pUTF8[iUTF8+0] & 0xF8) == 0xF0)*/ {
-                        if (utf16Cap < 2) {
-                            break;  /* No enough room. */
-                        } else {
-                            if (iUTF8+3 >= utf8Len) {
-                                return MT_INVALID_ARGS;
-                            }
-
-                            mt_uint32 cp = ((mt_utf32)(pUTF8[iUTF8+0] & 0x07) << 18) | ((mt_utf32)(pUTF8[iUTF8+1] & 0x3F) << 12) | ((mt_utf32)(pUTF8[iUTF8+2] & 0x3F) << 6) | (pUTF8[iUTF8+3] & 0x3F);
-                            if (cp > MT_UNICODE_MAX_CODE_POINT) {
-                                return MT_INVALID_CODE_POINT;
-                            }
-                            if (mt_is_cp_in_surrogate_pair_range(cp)) {
-                                return MT_INVALID_CODE_POINT;   /* No characters should be in the UTF-16 surrogate pair range. */
-                            }
-
-                            mt_utf32_cp_to_utf16_pair(cp, pUTF16);
-
-                            pUTF16   += 2;
-                            utf16Cap -= 2;
-                            iUTF8    += 4;
-                        }
-                    }
-                }
-            }
-        }
-    } else {
-        /* Slightly slower path. Validation checks will be performed here. */
-        if (utf8Len == (size_t)-1) {
-            /* Null terminated string. */
-            while (pUTF8[0] != 0) {
-                if (pUTF8[0] < 128) {   /* ASCII character. */
-                    pUTF16[0] = pUTF8[0];
-                    pUTF16   += 1;
-                    utf16Cap -= 1;
-                    pUTF8    += 1;
-                } else {
-                    if (mt_is_invalid_utf8_octet(pUTF8[0])) {
+    if (utf8Len == (size_t)-1) {
+        /* Null terminated string. */
+        while (pUTF8[0] != 0) {
+            if (pUTF8[0] < 128) {   /* ASCII character. */
+                pUTF16[0] = pUTF8[0];
+                pUTF16   += 1;
+                utf16Cap -= 1;
+                pUTF8    += 1;
+            } else {
+                if (mt_is_invalid_utf8_octet(pUTF8[0])) {
+                    if ((flags & MT_ERROR_ON_INVALID_CODE_POINT) != 0) {
                         return MT_INVALID_CODE_POINT;
+                    } else {
+                        /* Replacement. */
+                        pUTF16[0] = MT_UNICODE_REPLACEMENT_CHARACTER;
+                        pUTF16   += MT_UNICODE_REPLACEMENT_CHARACTER_LENGTH_UTF16;
+                        utf16Cap += MT_UNICODE_REPLACEMENT_CHARACTER_LENGTH_UTF16;
+                        pUTF8    += 1;
                     }
-
+                } else {
                     if ((pUTF8[0] & 0xE0) == 0xC0) {
                         if (pUTF8[1] == 0) {
                             return MT_INVALID_ARGS; /* Input string is too short. */
@@ -1859,37 +1718,57 @@ mt_result mt_utf8_to_utf16ne(mt_utf16* pUTF16, size_t utf16Cap, size_t* pUTF16Le
                             }
 
                             mt_uint32 cp = ((mt_utf32)(pUTF8[0] & 0x07) << 18) | ((mt_utf32)(pUTF8[1] & 0x3F) << 12) | ((mt_utf32)(pUTF8[2] & 0x3F) << 6) | (pUTF8[3] & 0x3F);
-                            if (cp > MT_UNICODE_MAX_CODE_POINT) {
-                                return MT_INVALID_CODE_POINT;
+                            if (!mt_is_valid_code_point(cp)) {
+                                if ((flags & MT_ERROR_ON_INVALID_CODE_POINT) != 0) {
+                                    return MT_INVALID_CODE_POINT;
+                                } else {
+                                    /* Replacement. */
+                                    pUTF16[0] = MT_UNICODE_REPLACEMENT_CHARACTER;
+                                    pUTF16   += MT_UNICODE_REPLACEMENT_CHARACTER_LENGTH_UTF16;
+                                    utf16Cap += MT_UNICODE_REPLACEMENT_CHARACTER_LENGTH_UTF16;
+                                    pUTF8    += 4;
+                                }
+                            } else {
+                                mt_utf32_cp_to_utf16_pair(cp, pUTF16);
+                                pUTF16   += 2;
+                                utf16Cap -= 2;
+                                pUTF8    += 4;
                             }
-                            if (mt_is_cp_in_surrogate_pair_range(cp)) {
-                                return MT_INVALID_CODE_POINT;   /* No characters should be in the UTF-16 surrogate pair range. */
-                            }
-
-                            mt_utf32_cp_to_utf16_pair(cp, pUTF16);
-
-                            pUTF16   += 2;
-                            utf16Cap -= 2;
-                            pUTF8    += 4;
                         }
                     } else {
-                        return MT_INVALID_CODE_POINT;
+                        if ((flags & MT_ERROR_ON_INVALID_CODE_POINT) != 0) {
+                            return MT_INVALID_CODE_POINT;
+                        } else {
+                            /* Replacement. */
+                            pUTF16[0] = MT_UNICODE_REPLACEMENT_CHARACTER;
+                            pUTF16   += MT_UNICODE_REPLACEMENT_CHARACTER_LENGTH_UTF16;
+                            utf16Cap += MT_UNICODE_REPLACEMENT_CHARACTER_LENGTH_UTF16;
+                            pUTF8    += 1;
+                        }
                     }
                 }
             }
-        } else {
-            /* Fixed length string. */
-            for (size_t iUTF8 = 0; iUTF8 < utf8Len; /* Do nothing */) {
-                if (pUTF8[iUTF8+0] < 128) {   /* ASCII character. */
-                    pUTF16[0] = pUTF8[iUTF8+0];
-                    pUTF16   += 1;
-                    utf16Cap -= 1;
-                    iUTF8    += 1;
-                } else {
-                    if (mt_is_invalid_utf8_octet(pUTF8[iUTF8+0])) {
+        }
+    } else {
+        /* Fixed length string. */
+        for (size_t iUTF8 = 0; iUTF8 < utf8Len; /* Do nothing */) {
+            if (pUTF8[iUTF8+0] < 128) {   /* ASCII character. */
+                pUTF16[0] = pUTF8[iUTF8+0];
+                pUTF16   += 1;
+                utf16Cap -= 1;
+                iUTF8    += 1;
+            } else {
+                if (mt_is_invalid_utf8_octet(pUTF8[iUTF8+0])) {
+                    if ((flags & MT_ERROR_ON_INVALID_CODE_POINT) != 0) {
                         return MT_INVALID_CODE_POINT;
+                    } else {
+                        /* Replacement. */
+                        pUTF16[0] = MT_UNICODE_REPLACEMENT_CHARACTER;
+                        pUTF16   += MT_UNICODE_REPLACEMENT_CHARACTER_LENGTH_UTF16;
+                        utf16Cap -= MT_UNICODE_REPLACEMENT_CHARACTER_LENGTH_UTF16;
+                        iUTF8    += 1;
                     }
-
+                } else {
                     if ((pUTF8[iUTF8+0] & 0xE0) == 0xC0) {
                         if (iUTF8+1 >= utf8Len) {
                             return MT_INVALID_ARGS;
@@ -1917,21 +1796,33 @@ mt_result mt_utf8_to_utf16ne(mt_utf16* pUTF16, size_t utf16Cap, size_t* pUTF16Le
                             }
 
                             mt_uint32 cp = ((mt_utf32)(pUTF8[iUTF8+0] & 0x07) << 18) | ((mt_utf32)(pUTF8[iUTF8+1] & 0x3F) << 12) | ((mt_utf32)(pUTF8[iUTF8+2] & 0x3F) << 6) | (pUTF8[iUTF8+3] & 0x3F);
-                            if (cp > MT_UNICODE_MAX_CODE_POINT) {
-                                return MT_INVALID_CODE_POINT;
+                            if (!mt_is_valid_code_point(cp)) {
+                                if ((flags & MT_ERROR_ON_INVALID_CODE_POINT) != 0) {
+                                    return MT_INVALID_CODE_POINT;
+                                } else {
+                                    /* Replacement. */
+                                    pUTF16[0] = MT_UNICODE_REPLACEMENT_CHARACTER;
+                                    pUTF16   += MT_UNICODE_REPLACEMENT_CHARACTER_LENGTH_UTF16;
+                                    utf16Cap -= MT_UNICODE_REPLACEMENT_CHARACTER_LENGTH_UTF16;
+                                    iUTF8    += 4;
+                                }
+                            } else {
+                                mt_utf32_cp_to_utf16_pair(cp, pUTF16);
+                                pUTF16   += 2;
+                                utf16Cap -= 2;
+                                iUTF8    += 4;
                             }
-                            if (mt_is_cp_in_surrogate_pair_range(cp)) {
-                                return MT_INVALID_CODE_POINT;   /* No characters should be in the UTF-16 surrogate pair range. */
-                            }
-
-                            mt_utf32_cp_to_utf16_pair(cp, pUTF16);
-
-                            pUTF16   += 2;
-                            utf16Cap -= 2;
-                            iUTF8    += 4;
                         }
                     } else {
-                        return MT_INVALID_CODE_POINT;
+                        if ((flags & MT_ERROR_ON_INVALID_CODE_POINT) != 0) {
+                            return MT_INVALID_CODE_POINT;
+                        } else {
+                            /* Replacement. */
+                            pUTF16[0] = MT_UNICODE_REPLACEMENT_CHARACTER;
+                            pUTF16   += MT_UNICODE_REPLACEMENT_CHARACTER_LENGTH_UTF16;
+                            utf16Cap -= MT_UNICODE_REPLACEMENT_CHARACTER_LENGTH_UTF16;
+                            iUTF8    += 1;
+                        }
                     }
                 }
             }
@@ -2028,80 +1919,25 @@ mt_result mt_utf8_to_utf32_length(size_t* pUTF32Len, const mt_utf8* pUTF8, size_
         }
     }
 
-    if ((flags & MT_ASSUME_VALID) != 0) {
-        /* Slightly faster path. Validation checks will be skipped here. */
-        if (utf8Len == (size_t)-1) {
-            /* Null terminated string. */
-            for (;;) {
-                if (pUTF8[0] == 0) {
-                    break;  /* Reached the end of the null terminated string. */
-                }
-
-                utf32Len += 1;
-                if (pUTF8[0] < 128) {   /* ASCII character. */
-                    pUTF8 += 1;
-                } else {
-                    if ((pUTF8[0] & 0xE0) == 0xC0) {
-                        if (pUTF8[1] == 0) {
-                            return MT_INVALID_ARGS; /* Input string is too short. */
-                        }
-                        pUTF8 += 2;
-                    } else if ((pUTF8[0] & 0xF0) == 0xE0) {
-                        if (pUTF8[1] == 0 || pUTF8[2] == 0) {
-                            return MT_INVALID_ARGS; /* Input string is too short. */
-                        }
-                        pUTF8 += 3;
-                    } else /*if ((pUTF8[0] & 0xF8) == 0xF0)*/ {
-                        if (pUTF8[1] == 0 || pUTF8[2] == 0 || pUTF8[3] == 0) {
-                            return MT_INVALID_ARGS; /* Input string is too short. */
-                        }
-                        pUTF8 += 4;
-                    }
-                }
+    if (utf8Len == (size_t)-1) {
+        /* Null terminated string. */
+        for (;;) {
+            if (pUTF8[0] == 0) {
+                break;  /* Reached the end of the null terminated string. */
             }
-        } else {
-            /* Fixed lengthed string. */
-            for (size_t iUTF8 = 0; iUTF8 < utf8Len; /* Do nothing */) {
-                utf32Len += 1;
-                if (pUTF8[iUTF8+0] < 128) {   /* ASCII character. */
-                    iUTF8 += 1;
-                } else {
-                    if ((pUTF8[iUTF8+0] & 0xE0) == 0xC0) {
-                        if (iUTF8+1 >= utf8Len) {
-                            return MT_INVALID_ARGS;
-                        }
-                        iUTF8 += 2;
-                    } else if ((pUTF8[iUTF8+0] & 0xF0) == 0xE0) {
-                        if (iUTF8+2 >= utf8Len) {
-                            return MT_INVALID_ARGS;
-                        }
-                        iUTF8 += 3;
-                    } else /*if ((pUTF8[iUTF8+0] & 0xF8) == 0xF0)*/ {
-                        if (iUTF8+3 >= utf8Len) {
-                            return MT_INVALID_ARGS;
-                        }
-                        iUTF8 += 4;
-                    }
-                }
-            }
-        }
-    } else {
-        /* Slightly slower path. Validation checks will be performed here. */
-        if (utf8Len == (size_t)-1) {
-            /* Null terminated string. */
-            for (;;) {
-                if (pUTF8[0] == 0) {
-                    break;  /* Reached the end of the null terminated string. */
-                }
 
-                utf32Len += 1;
-                if (pUTF8[0] < 128) {   /* ASCII character. */
-                    pUTF8 += 1;
-                } else {
-                    if (mt_is_invalid_utf8_octet(pUTF8[0])) {
+            utf32Len += 1;
+            if (pUTF8[0] < 128) {   /* ASCII character. */
+                pUTF8 += 1;
+            } else {
+                if (mt_is_invalid_utf8_octet(pUTF8[0])) {
+                    if ((flags & MT_ERROR_ON_INVALID_CODE_POINT) != 0) {
                         return MT_INVALID_CODE_POINT;
+                    } else {
+                        /* Replacement. */
+                        pUTF8 += 1;
                     }
-
+                } else {
                     if ((pUTF8[0] & 0xE0) == 0xC0) {
                         if (pUTF8[1] == 0) {
                             return MT_INVALID_ARGS; /* Input string is too short. */
@@ -2117,30 +1953,40 @@ mt_result mt_utf8_to_utf32_length(size_t* pUTF32Len, const mt_utf8* pUTF8, size_
                             return MT_INVALID_ARGS; /* Input string is too short. */
                         }
                         mt_uint32 cp = ((mt_utf32)(pUTF8[0] & 0x07) << 18) | ((mt_utf32)(pUTF8[1] & 0x3F) << 12) | ((mt_utf32)(pUTF8[2] & 0x3F) << 6) | (pUTF8[3] & 0x3F);
-                        if (cp > MT_UNICODE_MAX_CODE_POINT) {
-                            return MT_INVALID_CODE_POINT;
+                        if (!mt_is_valid_code_point(cp)) {
+                            if ((flags & MT_ERROR_ON_INVALID_CODE_POINT) != 0) {
+                                return MT_INVALID_CODE_POINT;
+                            } else {
+                                /* Replacement. */
+                            }
                         }
-                        if (mt_is_cp_in_surrogate_pair_range(cp)) {
-                            return MT_INVALID_CODE_POINT;   /* No characters should be in the UTF-16 surrogate pair range. */
-                        }
-
                         pUTF8 += 4;
                     } else {
-                        return MT_INVALID_CODE_POINT;
+                        if ((flags & MT_ERROR_ON_INVALID_CODE_POINT) != 0) {
+                            return MT_INVALID_CODE_POINT;
+                        } else {
+                            /* Replacement. */
+                            pUTF8 += 1;
+                        }
                     }
                 }
             }
-        } else {
-            /* Fixed length string. */
-            for (size_t iUTF8 = 0; iUTF8 < utf8Len; /* Do nothing */) {
-                utf32Len += 1;
-                if (pUTF8[iUTF8+0] < 128) {   /* ASCII character. */
-                    iUTF8 += 1;
-                } else {
-                    if (mt_is_invalid_utf8_octet(pUTF8[iUTF8+0])) {
+        }
+    } else {
+        /* Fixed length string. */
+        for (size_t iUTF8 = 0; iUTF8 < utf8Len; /* Do nothing */) {
+            utf32Len += 1;
+            if (pUTF8[iUTF8+0] < 128) {   /* ASCII character. */
+                iUTF8 += 1;
+            } else {
+                if (mt_is_invalid_utf8_octet(pUTF8[iUTF8+0])) {
+                    if ((flags & MT_ERROR_ON_INVALID_CODE_POINT) != 0) {
                         return MT_INVALID_CODE_POINT;
+                    } else {
+                        /* Replacement. */
+                        iUTF8 += 1;
                     }
-
+                } else {
                     if ((pUTF8[iUTF8+0] & 0xE0) == 0xC0) {
                         if (iUTF8+1 >= utf8Len) {
                             return MT_INVALID_ARGS;
@@ -2156,16 +2002,22 @@ mt_result mt_utf8_to_utf32_length(size_t* pUTF32Len, const mt_utf8* pUTF8, size_
                             return MT_INVALID_ARGS;
                         }
                         mt_uint32 cp = ((mt_utf32)(pUTF8[0] & 0x07) << 18) | ((mt_utf32)(pUTF8[1] & 0x3F) << 12) | ((mt_utf32)(pUTF8[2] & 0x3F) << 6) | (pUTF8[3] & 0x3F);
-                        if (cp > MT_UNICODE_MAX_CODE_POINT) {
-                            return MT_INVALID_CODE_POINT;
-                        }
-                        if (mt_is_cp_in_surrogate_pair_range(cp)) {
-                            return MT_INVALID_CODE_POINT;   /* No characters should be in the UTF-16 surrogate pair range. */
+                        if (!mt_is_valid_code_point(cp)) {
+                            if ((flags & MT_ERROR_ON_INVALID_CODE_POINT) != 0) {
+                                return MT_INVALID_CODE_POINT;
+                            } else {
+                                /* Replacement. */
+                            }
                         }
 
                         iUTF8 += 4;
                     } else {
-                        return MT_INVALID_CODE_POINT;
+                        if ((flags & MT_ERROR_ON_INVALID_CODE_POINT) != 0) {
+                            return MT_INVALID_CODE_POINT;
+                        } else {
+                            /* Replacement. */
+                            iUTF8 += 1;
+                        }
                     }
                 }
             }
@@ -2207,98 +2059,22 @@ mt_result mt_utf8_to_utf32ne(mt_utf32* pUTF32, size_t utf32Cap, size_t* pUTF32Le
         }
     }
 
-    if ((flags & MT_ASSUME_VALID) != 0) {
-        /* Slightly faster path. Validation checks will be skipped here. */
-        if (utf8Len == (size_t)-1) {
-            /* Null terminated string. */
-            while (pUTF8[0] != 0) {
-                if (utf32Cap == 0) {
-                    break;  /* Out of room. */
-                }
-
-                if (pUTF8[0] < 128) {   /* ASCII character. */
-                    pUTF32[0] = pUTF8[0];
-                    pUTF8 += 1;
-                } else {
-                    if ((pUTF8[0] & 0xE0) == 0xC0) {
-                        if (pUTF8[1] == 0) {
-                            return MT_INVALID_ARGS; /* Input string is too short. */
-                        }
-
-                        pUTF32[0] = ((mt_utf16)(pUTF8[0] & 0x1F) <<  6) | (pUTF8[1] & 0x3F);
-                        pUTF8 += 2;
-                    } else if ((pUTF8[0] & 0xF0) == 0xE0) {
-                        if (pUTF8[1] == 0 || pUTF8[2] == 0) {
-                            return MT_INVALID_ARGS; /* Input string is too short. */
-                        }
-
-                        pUTF32[0] = ((mt_utf16)(pUTF8[0] & 0x0F) << 12) | ((mt_utf16)(pUTF8[1] & 0x3F) << 6) | (pUTF8[2] & 0x3F);
-                        pUTF8 += 3;
-                    } else /*if ((pUTF8[0] & 0xF8) == 0xF0)*/ {
-                        if (pUTF8[1] == 0 || pUTF8[2] == 0 || pUTF8[3] == 0) {
-                            return MT_INVALID_ARGS; /* Input string is too short. */
-                        }
-
-                        pUTF32[0] = ((mt_utf32)(pUTF8[0] & 0x07) << 18) | ((mt_utf32)(pUTF8[1] & 0x3F) << 12) | ((mt_utf32)(pUTF8[2] & 0x3F) << 6) | (pUTF8[3] & 0x3F);
-                        pUTF8 += 4;
-                    }
-                }
-
-                pUTF32   += 1;
-                utf32Cap -= 1;
-            }
-        } else {
-            /* Fixed lengthed string. */
-            for (size_t iUTF8 = 0; iUTF8 < utf8Len; /* Do nothing */) {
-                if (utf32Cap == 0) {
-                    break;  /* Out of room. */
-                }
-
-                if (pUTF8[iUTF8+0] < 128) {   /* ASCII character. */
-                    pUTF32[0] = pUTF8[iUTF8+0];
-                    iUTF8 += 1;
-                } else {
-                    if ((pUTF8[iUTF8+0] & 0xE0) == 0xC0) {
-                        if (iUTF8+1 >= utf8Len) {
-                            return MT_INVALID_ARGS;
-                        }
-
-                        pUTF32[0] = ((mt_utf16)(pUTF8[iUTF8+0] & 0x1F) <<  6) | (pUTF8[iUTF8+1] & 0x3F);
-                        iUTF8 += 2;
-                    } else if ((pUTF8[iUTF8+0] & 0xF0) == 0xE0) {
-                        if (iUTF8+2 >= utf8Len) {
-                            return MT_INVALID_ARGS;
-                        }
-
-                        pUTF32[0] = ((mt_utf16)(pUTF8[iUTF8+0] & 0x0F) << 12) | ((mt_utf16)(pUTF8[iUTF8+1] & 0x3F) << 6) | (pUTF8[iUTF8+2] & 0x3F);
-                        iUTF8 += 3;
-                    } else /*if ((pUTF8[iUTF8+0] & 0xF8) == 0xF0)*/ {
-                        if (iUTF8+3 >= utf8Len) {
-                            return MT_INVALID_ARGS;
-                        }
-
-                        pUTF32[0] = ((mt_utf32)(pUTF8[iUTF8+0] & 0x07) << 18) | ((mt_utf32)(pUTF8[iUTF8+1] & 0x3F) << 12) | ((mt_utf32)(pUTF8[iUTF8+2] & 0x3F) << 6) | (pUTF8[iUTF8+3] & 0x3F);
-                        iUTF8 += 4;
-                    }
-                }
-
-                pUTF32   += 1;
-                utf32Cap -= 1;
-            }
-        }
-    } else {
-        /* Slightly slower path. Validation checks will be performed here. */
-        if (utf8Len == (size_t)-1) {
-            /* Null terminated string. */
-            while (pUTF8[0] != 0) {
-                if (pUTF8[0] < 128) {   /* ASCII character. */
-                    pUTF32[0] = pUTF8[0];
-                    pUTF8 += 1;
-                } else {
-                    if (mt_is_invalid_utf8_octet(pUTF8[0])) {
+    if (utf8Len == (size_t)-1) {
+        /* Null terminated string. */
+        while (pUTF8[0] != 0) {
+            if (pUTF8[0] < 128) {   /* ASCII character. */
+                pUTF32[0] = pUTF8[0];
+                pUTF8 += 1;
+            } else {
+                if (mt_is_invalid_utf8_octet(pUTF8[0])) {
+                    if ((flags & MT_ERROR_ON_INVALID_CODE_POINT) != 0) {
                         return MT_INVALID_CODE_POINT;
+                    } else {
+                        /* Replacement. */
+                        pUTF32[0] = MT_UNICODE_REPLACEMENT_CHARACTER;
+                        pUTF8 += 1;
                     }
-
+                } else {
                     if ((pUTF8[0] & 0xE0) == 0xC0) {
                         if (pUTF8[1] == 0) {
                             return MT_INVALID_ARGS; /* Input string is too short. */
@@ -2321,31 +2097,45 @@ mt_result mt_utf8_to_utf32ne(mt_utf32* pUTF32, size_t utf32Cap, size_t* pUTF32Le
                         pUTF32[0] = ((mt_utf32)(pUTF8[0] & 0x07) << 18) | ((mt_utf32)(pUTF8[1] & 0x3F) << 12) | ((mt_utf32)(pUTF8[2] & 0x3F) << 6) | (pUTF8[3] & 0x3F);
                         pUTF8 += 4;
 
-                        if (pUTF32[0] > MT_UNICODE_MAX_CODE_POINT) {
-                            return MT_INVALID_CODE_POINT;
-                        }
-                        if (mt_is_cp_in_surrogate_pair_range(pUTF32[0])) {
-                            return MT_INVALID_CODE_POINT;   /* No characters should be in the UTF-16 surrogate pair range. */
+                        if (!mt_is_valid_code_point(pUTF32[0])) {
+                            if ((flags & MT_ERROR_ON_INVALID_CODE_POINT) != 0) {
+                                return MT_INVALID_CODE_POINT;   /* No characters should be in the UTF-16 surrogate pair range. */
+                            } else {
+                                /* Replacement. */
+                                pUTF32[0] = MT_UNICODE_REPLACEMENT_CHARACTER;
+                            }
                         }
                     } else {
-                        return MT_INVALID_CODE_POINT;
+                        if ((flags & MT_ERROR_ON_INVALID_CODE_POINT) != 0) {
+                            return MT_INVALID_CODE_POINT;
+                        } else {
+                            /* Replacement. */
+                            pUTF32[0] = MT_UNICODE_REPLACEMENT_CHARACTER;
+                            pUTF8 += 1;
+                        }
                     }
-
-                    pUTF32   += 1;
-                    utf32Cap -= 1;
                 }
-            }
-        } else {
-            /* Fixed length string. */
-            for (size_t iUTF8 = 0; iUTF8 < utf8Len; /* Do nothing */) {
-                if (pUTF8[iUTF8+0] < 128) {   /* ASCII character. */
-                    pUTF32[0] = pUTF8[iUTF8+0];
-                    iUTF8 += 1;
-                } else {
-                    if (mt_is_invalid_utf8_octet(pUTF8[iUTF8+0])) {
-                        return MT_INVALID_CODE_POINT;
-                    }
 
+                pUTF32   += 1;
+                utf32Cap -= 1;
+            }
+        }
+    } else {
+        /* Fixed length string. */
+        for (size_t iUTF8 = 0; iUTF8 < utf8Len; /* Do nothing */) {
+            if (pUTF8[iUTF8+0] < 128) {   /* ASCII character. */
+                pUTF32[0] = pUTF8[iUTF8+0];
+                iUTF8 += 1;
+            } else {
+                if (mt_is_invalid_utf8_octet(pUTF8[iUTF8+0])) {
+                    if ((flags & MT_ERROR_ON_INVALID_CODE_POINT) != 0) {
+                        return MT_INVALID_CODE_POINT;
+                    } else {
+                        /* Replacement. */
+                        pUTF32[0] = MT_UNICODE_REPLACEMENT_CHARACTER;
+                        iUTF8 += 1;
+                    }
+                } else {
                     if ((pUTF8[iUTF8+0] & 0xE0) == 0xC0) {
                         if (iUTF8+1 >= utf8Len) {
                             return MT_INVALID_ARGS;
@@ -2368,19 +2158,27 @@ mt_result mt_utf8_to_utf32ne(mt_utf32* pUTF32, size_t utf32Cap, size_t* pUTF32Le
                         pUTF32[0] = ((mt_utf32)(pUTF8[iUTF8+0] & 0x07) << 18) | ((mt_utf32)(pUTF8[iUTF8+1] & 0x3F) << 12) | ((mt_utf32)(pUTF8[iUTF8+2] & 0x3F) << 6) | (pUTF8[iUTF8+3] & 0x3F);
                         iUTF8 += 4;
 
-                        if (pUTF32[0] > MT_UNICODE_MAX_CODE_POINT) {
-                            return MT_INVALID_CODE_POINT;
-                        }
-                        if (mt_is_cp_in_surrogate_pair_range(pUTF32[0])) {
-                            return MT_INVALID_CODE_POINT;   /* No characters should be in the UTF-16 surrogate pair range. */
+                        if (!mt_is_valid_code_point(pUTF32[0])) {
+                            if ((flags & MT_ERROR_ON_INVALID_CODE_POINT) != 0) {
+                                return MT_INVALID_CODE_POINT;
+                            } else {
+                                /* Replacement. */
+                                pUTF32[0] = MT_UNICODE_REPLACEMENT_CHARACTER;
+                            }
                         }
                     } else {
-                        return MT_INVALID_CODE_POINT;
+                        if ((flags & MT_ERROR_ON_INVALID_CODE_POINT) != 0) {
+                            return MT_INVALID_CODE_POINT;
+                        } else {
+                            /* Replacement. */
+                            pUTF32[0] = MT_UNICODE_REPLACEMENT_CHARACTER;
+                            iUTF8 += 1;
+                        }
                     }
-
-                    pUTF32   += 1;
-                    utf32Cap -= 1;
                 }
+
+                pUTF32   += 1;
+                utf32Cap -= 1;
             }
         }
     }
@@ -2478,7 +2276,6 @@ mt_result mt_utf16_to_utf8_length_internal(size_t* pUTF8Len, const mt_utf16* pUT
         }
     }
 
-
     if (utf16Len == (size_t)-1) {
         /* Null terminated string. */
         while (pUTF16[0] != 0) {
@@ -2508,12 +2305,24 @@ mt_result mt_utf16_to_utf8_length_internal(size_t* pUTF8Len, const mt_utf16* pUT
                     if (w2 >= 0xDC00 && w2 <= 0xDFFF) {
                         utf32 = mt_utf16_pair_to_utf32_cp(pUTF16);
                     } else {
-                        return MT_INVALID_CODE_POINT;
+                        if ((flags & MT_ERROR_ON_INVALID_CODE_POINT) != 0) {
+                            return MT_INVALID_CODE_POINT;
+                        } else {
+                            /* Replacement. */
+                            utf32 = MT_UNICODE_REPLACEMENT_CHARACTER;
+                        }
                     }
 
                     pUTF16 += 2;
                 } else {
-                    return MT_INVALID_CODE_POINT;
+                    if ((flags & MT_ERROR_ON_INVALID_CODE_POINT) != 0) {
+                        return MT_INVALID_CODE_POINT;
+                    } else {
+                        /* Replacement. */
+                        utf32 = MT_UNICODE_REPLACEMENT_CHARACTER;
+                    }
+
+                    pUTF16 += 1;
                 }
             }
 
@@ -2549,13 +2358,24 @@ mt_result mt_utf16_to_utf8_length_internal(size_t* pUTF8Len, const mt_utf16* pUT
                     if (w2 >= 0xDC00 && w2 <= 0xDFFF) {
                         utf32 = mt_utf16_pair_to_utf32_cp(pUTF16 + iUTF16);
                     } else {
-                        return MT_INVALID_CODE_POINT;
+                        if ((flags & MT_ERROR_ON_INVALID_CODE_POINT) != 0) {
+                            return MT_INVALID_CODE_POINT;
+                        } else {
+                            /* Replacement. */
+                            utf32 = MT_UNICODE_REPLACEMENT_CHARACTER;
+                        }
                     }
-                } else {
-                    return MT_INVALID_CODE_POINT;
-                }
 
-                iUTF16 += 2;
+                    iUTF16 += 2;
+                } else {
+                    if ((flags & MT_ERROR_ON_INVALID_CODE_POINT) != 0) {
+                        return MT_INVALID_CODE_POINT;
+                    } else {
+                        utf32 = MT_UNICODE_REPLACEMENT_CHARACTER;
+                    }
+
+                    iUTF16 += 1;
+                }
             }
 
             utf8Len += mt_utf32_cp_to_utf8_length(utf32);
@@ -2643,7 +2463,6 @@ mt_result mt_utf16_to_utf8_internal(mt_utf8* pUTF8, size_t utf8Cap, size_t* pUTF
 
     /* Check for BOM. */
     if (mt_has_utf16_bom((const mt_uint8*)pUTF16, utf16Len)) {
-        mt_bool32 isLE;
         if ((flags & MT_FORBID_BOM) != 0) {
             return MT_INVALID_BOM;  /* Found a BOM, but it's forbidden. */
         }
@@ -2653,7 +2472,6 @@ mt_result mt_utf16_to_utf8_internal(mt_utf8* pUTF8, size_t utf8Cap, size_t* pUTF
             utf16Len -= 1;
         }
     }
-
 
     if (utf16Len == (size_t)-1) {
         /* Null terminated string. */
@@ -2684,12 +2502,24 @@ mt_result mt_utf16_to_utf8_internal(mt_utf8* pUTF8, size_t utf8Cap, size_t* pUTF
                     if (w2 >= 0xDC00 && w2 <= 0xDFFF) {
                         utf32 = mt_utf16_pair_to_utf32_cp(pUTF16);
                     } else {
-                        return MT_INVALID_CODE_POINT;
+                        if ((flags & MT_ERROR_ON_INVALID_CODE_POINT) != 0) {
+                            return MT_INVALID_CODE_POINT;
+                        } else {
+                            /* Replacement. */
+                            utf32 = MT_UNICODE_REPLACEMENT_CHARACTER;
+                        }
                     }
 
                     pUTF16 += 2;
                 } else {
-                    return MT_INVALID_CODE_POINT;
+                    if ((flags & MT_ERROR_ON_INVALID_CODE_POINT) != 0) {
+                        return MT_INVALID_CODE_POINT;
+                    } else {
+                        /* Replacement. */
+                        utf32 = MT_UNICODE_REPLACEMENT_CHARACTER;
+                    }
+
+                    pUTF16 += 1;
                 }
             }
 
@@ -2731,13 +2561,25 @@ mt_result mt_utf16_to_utf8_internal(mt_utf8* pUTF8, size_t utf8Cap, size_t* pUTF
                     if (w2 >= 0xDC00 && w2 <= 0xDFFF) {
                         utf32 = mt_utf16_pair_to_utf32_cp(pUTF16 + iUTF16);
                     } else {
-                        return MT_INVALID_CODE_POINT;
+                        if ((flags & MT_ERROR_ON_INVALID_CODE_POINT) != 0) {
+                            return MT_INVALID_CODE_POINT;
+                        } else {
+                            /* Replacement. */
+                            utf32 = MT_UNICODE_REPLACEMENT_CHARACTER;
+                        }
                     }
-                } else {
-                    return MT_INVALID_CODE_POINT;
-                }
 
-                iUTF16 += 2;
+                    iUTF16 += 2;
+                } else {
+                    if ((flags & MT_ERROR_ON_INVALID_CODE_POINT) != 0) {
+                        return MT_INVALID_CODE_POINT;
+                    } else {
+                        /* Replacement. */
+                        utf32 = MT_UNICODE_REPLACEMENT_CHARACTER;
+                    }
+
+                    iUTF16 += 1;
+                }
             }
 
             utf8cpLen = mt_utf32_cp_to_utf8(utf32, pUTF8, utf8Cap);
@@ -2749,7 +2591,6 @@ mt_result mt_utf16_to_utf8_internal(mt_utf8* pUTF8, size_t utf8Cap, size_t* pUTF
             utf8Cap -= utf8cpLen;
         }
     }
-
     
     /* Null terminate. */
     if (utf8Cap == 0) {
