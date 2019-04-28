@@ -108,9 +108,9 @@ typedef void (* mt_proc)(void);
 typedef mt_uint16 wchar_t;
 #endif
 
-typedef char        mt_utf8;
-typedef mt_uint16   mt_utf16;
-typedef mt_uint32   mt_utf32;
+typedef char      mt_utf8;
+typedef mt_uint16 mt_utf16;
+typedef mt_uint32 mt_utf32;
 
 /* Define NULL for some compilers. */
 #ifndef NULL
@@ -123,6 +123,14 @@ typedef mt_uint32   mt_utf32;
     #define MT_SIZE_MAX     0xFFFFFFFF  /* When SIZE_MAX is not defined by the standard library just default to the maximum 32-bit unsigned integer. */
 #endif
 
+#define MT_PI       3.14159265358979323846
+#define MT_PIF      3.14159265358979323846f
+
+#define MT_DEGREES (radians) ((double)((radians) * 57.29577951308232087685))
+#define MT_DEGREESF(radians) ( (float)((radians) * 57.29577951308232087685f))
+#define MT_RADIANS (degrees) ((double)((degrees) *  0.01745329251994329577))
+#define MT_RADIANSF(degrees) ( (float)((degrees) *  0.01745329251994329577f))
+
 
 #ifdef _MSC_VER
 #define MT_INLINE __forceinline
@@ -133,6 +141,8 @@ typedef mt_uint32   mt_utf32;
 #define MT_INLINE inline
 #endif
 #endif
+
+#define MT_PRIVATE
 
 
 /* Backend Support */
@@ -202,6 +212,8 @@ typedef struct mt_api mt_api;
 typedef struct mt_api_config mt_api_config;
 typedef struct mt_font mt_font;
 typedef struct mt_font_config mt_font_config;
+typedef struct mt_brush mt_brush;
+typedef struct mt_brush_config mt_brush_config;
 typedef struct mt_gc mt_gc;
 typedef struct mt_gc_config mt_gc_config;
 typedef struct mt_item mt_item;
@@ -211,13 +223,64 @@ typedef struct mt_script_state mt_script_state;
 typedef enum
 {
     mt_backend_gdi,            /* Typography via Uniscribe */
-    mt_backend_direct2d,       /* Typography via DirectWrite */
-    mt_backend_coregraphics,   /* Typography via Core Text */
+    /*mt_backend_direct2d,*/       /* Typography via DirectWrite */
+    /*mt_backend_coregraphics,*/   /* Typography via Core Text */
     mt_backend_cairo,          /* Typography via Pango */
-    mt_backend_xft             /* Typography via HarfBuzz and minitype */
+    /*mt_backend_xft*/             /* Typography via HarfBuzz and minitype */
 } mt_backend;
 
+typedef enum
+{
+    mt_line_cap_flat   = 0,
+    mt_line_cap_round  = 1,
+    mt_line_cap_square = 2
+} mt_line_cap;
+
+typedef enum
+{
+    mt_line_join_miter = 0,
+    mt_line_join_round = 1,
+    mt_line_join_bevel = 2
+} mt_line_join;
+
+typedef enum
+{
+    mt_brush_type_solid  = 0,       /* RGB or RGBA */
+    /*mt_brush_type_linear = 1,*/   /* Source is a linear gradient. */
+    mt_brush_type_gc     = 2        /* Source is a graphics context. */
+} mt_brush_type;
+
+typedef enum
+{
+    mt_blend_op_src      = 0,       /* Default. Draws the source over the top of the destination with no blending. */
+    mt_blend_op_src_over = 1        /* Standard alpha blending. */
+} mt_blend_op;
+
+typedef enum
+{
+    mt_antialias_mode_default = 0,  /* Let the backend decide, but prefer anti-aliasing if available. Will be the same as mt_antialias_none on GDI since GDI not support anti-aliasing. */
+    mt_antialias_mode_none    = 1   /* Anti-aliasing will be disabled. Useful for straight-edge primitives like un-rotated rectangles or where performance is a concern. */
+} mt_antialias_mode;
+
+typedef enum
+{
+    mt_format_unknown = 0,
+    mt_format_rgba,
+    mt_format_rgb,
+    mt_format_bgra, /* Optimal format for GDI. */
+    mt_format_bgr,
+    mt_format_argb  /* Optimal format for Cairo. */
+} mt_format;
+
 /* Structures */
+typedef struct
+{
+    mt_uint8 r;
+    mt_uint8 g;
+    mt_uint8 b;
+    mt_uint8 a;
+} mt_color;
+
 struct mt_api_config
 {
     mt_backend backend;
@@ -230,13 +293,47 @@ struct mt_api_config
 struct mt_api
 {
     mt_backend backend;
-    void      (* uninit)     (mt_api* pAPI);
-    mt_result (* itemizeUTF8)(mt_api* pAPI, const mt_utf8* pText, size_t textLength, mt_item** ppItems, mt_uint32* pItemCount);
-    void      (* freeItems)  (mt_api* pAPI, mt_item* pItems);
-    mt_result (* fontInit)   (mt_api* pAPI, const mt_font_config* pConfig, mt_font* pFont);
-    void      (* fontUninit) (mt_font* pFont);
-    mt_result (* gcInit)     (mt_api* pAPI, const mt_gc_config* pConfig, mt_gc* pGC);
-    void      (* gcUninit)   (mt_gc* pGC);
+    void      (* uninit)             (mt_api* pAPI);
+    mt_result (* itemizeUTF8)        (mt_api* pAPI, const mt_utf8* pText, size_t textLength, mt_item** ppItems, mt_uint32* pItemCount);
+    void      (* freeItems)          (mt_api* pAPI, mt_item* pItems);
+    mt_result (* fontInit)           (mt_api* pAPI, const mt_font_config* pConfig, mt_font* pFont);
+    void      (* fontUninit)         (mt_font* pFont);
+    mt_result (* brushInit)          (mt_api* pAPI, const mt_brush_config* pConfig, mt_brush* pBrush);
+    void      (* brushUninit)        (mt_brush* pBrush);
+    mt_result (* gcInit)             (mt_api* pAPI, const mt_gc_config* pConfig, mt_gc* pGC);
+    void      (* gcUninit)           (mt_gc* pGC);
+    mt_result (* gcSave)             (mt_gc* pGC);
+    mt_result (* gcRestore)          (mt_gc* pGC);
+    void      (* gcTranslate)        (mt_gc* pGC, mt_int32 offsetX, mt_int32 offsetY);
+    void      (* gcRotate)           (mt_gc* pGC, float rotationInRadians);
+    void      (* gcScale)            (mt_gc* pGC, float scaleX, float scaleY);
+    void      (* gcSetLineWidth)     (mt_gc* pGC, mt_int32 width);
+    void      (* gcSetLineCap)       (mt_gc* pGC, mt_line_cap cap);
+    void      (* gcSetLineJoin)      (mt_gc* pGC, mt_line_join join);
+    void      (* gcSetMiterLimit)    (mt_gc* pGC, float limit);
+    void      (* gcSetLineDash)      (mt_gc* pGC, mt_uint32 count, float* dashes);
+    void      (* gcSetLineBrush)     (mt_gc* pGC, mt_brush* pBrush);
+    void      (* gcSetLineBrushSolid)(mt_gc* pGC, mt_color color);
+    void      (* gcSetLineBrushGC)   (mt_gc* pGC, mt_gc* pSrcGC);
+    void      (* gcSetFillBrush)     (mt_gc* pGC, mt_brush* pBrush);
+    void      (* gcSetFillBrushSolid)(mt_gc* pGC, mt_color color);
+    void      (* gcSetFillBrushGC)   (mt_gc* pGC, mt_gc* pSrcGC);
+    void      (* gcSetFont)          (mt_gc* pGC, mt_font* pFont);
+    void      (* gcSetTextBGColor)   (mt_gc* pGC, mt_color bgColor);
+    void      (* gcSetBlendOp)       (mt_gc* pGC, mt_blend_op op);
+    void      (* gcSetAntialiasMode) (mt_gc* pGC, mt_antialias_mode mode);
+    void      (* gcMoveTo)           (mt_gc* pGC, mt_int32 x, mt_int32 y);
+    void      (* gcLineTo)           (mt_gc* pGC, mt_int32 x, mt_int32 y);
+    void      (* gcRectangle)        (mt_gc* pGC, mt_int32 left, mt_int32 top, mt_int32 right, mt_int32 bottom);
+    void      (* gcArc)              (mt_gc* pGC, mt_int32 x, mt_int32 y, mt_int32 radius, float angle1InRadians, float angle2InRadians);
+    void      (* gcCurveTo)          (mt_gc* pGC, mt_int32 x1, mt_int32 y1, mt_int32 x2, mt_int32 y2, mt_int32 x3, mt_int32 y3);
+    void      (* gcClosePath)        (mt_gc* pGC);
+    void      (* gcClip)             (mt_gc* pGC);
+    void      (* gcResetClip)        (mt_gc* pGC);
+    mt_bool32 (* gcIsPointInsideClip)(mt_gc* pGC, mt_int32 x, mt_int32 y);
+    void      (* gcFill)             (mt_gc* pGC);
+    void      (* gcStroke)           (mt_gc* pGC);
+    void      (* gcFillAndStroke)    (mt_gc* pGC);
 
 #if defined(MT_WIN32)
     struct
@@ -254,7 +351,8 @@ struct mt_api
 #if defined(MT_SUPPORT_GDI)
     struct
     {
-        /*HDC*/ mt_handle hDC;  /* Optional pre-created global device context. */
+        /*HDC*/ /*mt_handle hDC;*/  /* Optional pre-created global device context. */
+        /*HBRUSH*/ mt_handle hStockSolidFillBrush;  /* The GDI stock brush to use for solid brushes. */
     } gdi;
 #endif
 #if defined(MT_SUPPORT_DIRECT2D)
@@ -325,19 +423,90 @@ struct mt_font
 #endif
 };
 
-struct mt_gc_config
+struct mt_brush_config
 {
-    int _unused;
+    mt_brush_type type;
+    struct
+    {
+        mt_color color;
+    } solid;
+    /*struct
+    {
+        mt_int32 x0;
+        mt_int32 y0;
+        mt_int32 x1;
+        mt_int32 x2;
+    } linear;*/
+    struct
+    {
+        mt_gc* pGC;
+    } gc;
 };
 
-struct mt_gc
+struct mt_brush
 {
-    mt_api* pAPI;   /* The mt_api object that was used to initialize the graphics context. */
+    mt_api* pAPI;
+    mt_brush_config config;
+#if defined(MT_SUPPORT_GDI)
+    struct
+    {
+        /*HBRUSH*/  mt_handle hBrush;
+        /*HBITMAP*/ mt_handle hBitmap;  /* Only used for complex brushes. Owned by the mt_brush object and deleted in mt_brush_uninit(). */
+    } gdi;
+#endif
+};
+
+struct mt_gc_config
+{
+    mt_uint32 sizeX;            /* Set this to 0 if you are passing in a pre-existing backend context or surface (such as a HDC or cairo_surface). */
+    mt_uint32 sizeY;            /* Set this to 0 if you are passing in a pre-existing backend context or surface (such as a HDC or cairo_surface). */
+    mt_uint32 stride;           /* Stride in pixels. Only used when pInitialImageData is not null. */
+    mt_format format;           /* The format of the data contained in pInitialImageData (if any) and the preferred internal format. Cannot be mt_format_unkonwn if pInitialImageData is not null. */
+    void* pInitialImageData;    /* Can be null in which case the initial contents are undefined. */
 
 #if defined(MT_SUPPORT_GDI)
     struct
     {
-        int _unused;
+        /*HDC*/ mt_handle hDC;  /* Existing HDC to use as the rendering target. Set this for transient context's such as those used in BeginPaint()/EndPaint() pairs. */
+    } gdi;
+#endif
+    int _unused;
+};
+
+#if defined(MT_SUPPORT_GDI)
+typedef struct
+{
+    /*HPEN*/ mt_handle hPen;        /* Lazily initialized. Set to NULL to indicate the case when a new pen handle needs to be created. */
+    mt_int32 lineWidth;
+    mt_line_cap lineCap;
+    mt_line_join lineJoin;
+    mt_uint32 dashCount;
+    float dashes[16];
+    mt_blend_op blendOp;
+    mt_brush_config lineStockBrush; /* For use with solid and GC brushes. Only used when pLineUserBrush is NULL. */
+    mt_brush* pLineUserBrush;       /* For use with user-defined brushes. */
+    mt_brush transientFillBrush;    /* For use with solid and GC brushes. Only used when pUserFillBrush is NULL. */
+    mt_brush* pUserFillBrush;       /* For use with user-defined brushes. */
+    mt_bool32 hasTransientFillBrush : 1;
+    mt_bool32 hasPathBegun : 1;     /* Determines whether or not BeginPath has been called. */
+} mt_gc_state_gdi;
+#endif
+
+struct mt_gc
+{
+    mt_api* pAPI;   /* The mt_api object that was used to initialize the graphics context. */
+    mt_format format;
+    mt_bool32 isTransient : 1;
+
+#if defined(MT_SUPPORT_GDI)
+    struct
+    {
+        /*HDC*/ mt_handle hDC;
+        /*HBITMAP*/ mt_handle hBitmap;  /* The HBITMAP object that will be used as the target for graphics output. */
+        void* pBitmapData;              /* A pointer to the raw bitmap data. Owned by hBitmap. Freed by GDI when hBitmap is deleted. */
+        mt_gc_state_gdi* pState;        /* Heap allocated via realloc() for now. May change to a per-API allocation scheme. */
+        mt_uint32 stateCap;             /* The capacity of pState. */
+        mt_uint32 stateCount;           /* The number of valid items in pState. */
     } gdi;
 #endif
 #if defined(MT_SUPPORT_DIRECT2D)
@@ -395,18 +564,175 @@ void mt_font_uninit(mt_font* pFont);
 
 /**************************************************************************************************************************************************************
 
-Graphics Context
+Graphics
+
+The graphics API uses a path + fill/stroke system for drawing primitives. It is roughly based on the APIs of GDI and Cairo.
+
+The background of a path is filled using the current brush which is set with one of the following APIs:
+    - mt_gc_set_fill_brush / mt_gc_set_line_brush
+        Sets the current brush to a mt_brush object.
+    - mt_gc_set_fill_brush_solid / mt_gc_set_line_brush_solid
+        Sets the current brush to a solid color.
+    - mt_gc_set_fill_brush_gc / mt_gc_set_line_brush_gc
+        Sets the current brush to the current state of another graphics context. This is how you draw the contents of one GC to another.
+
+Filling and stroking use their own separate brushes. The reason for this is to support the mt_gc_fill_and_stroke() API. This API performs a fill, followed by
+a stroke with the important property that it does not cause flickering for single buffered environments. Since this is a single API, it's useful to have
+separate brushes for the fill and stroke.
+
+The graphics API uses a state system to determine how to draw something. For example, to set the width of a line you would call mt_gc_set_line_width() before
+stroking the current path. The current state will remain until it's changed, unless otherwise noted. In order to simplify graphics backends, there are currently
+no APIs for retrieving the current state - you will need to track this manually if required.
+
+TODO:
+    - Make sure Cairo defaults to mt_blend_op_src and not mt_blend_op_src_over which is it's native default.
 
 **************************************************************************************************************************************************************/
+
+/******************************************************************************
+
+Brushes
+
+******************************************************************************/
+mt_result mt_brush_init(mt_api* pAPI, const mt_brush_config* pConfig, mt_brush* pBrush);
+void mt_brush_uninit(mt_brush* pBrush);
+
+/******************************************************************************
+
+Graphics Context
+
+******************************************************************************/
 mt_result mt_gc_init(mt_api* pAPI, const mt_gc_config* pConfig, mt_gc* pGC);
 void mt_gc_uninit(mt_gc* pGC);
+
+/******************************************************************************
+
+State Management
+
+******************************************************************************/
+mt_result mt_gc_save(mt_gc* pGC);
+mt_result mt_gc_restore(mt_gc* pGC);
+void mt_gc_translate(mt_gc* pGC, mt_int32 offsetX, mt_int32 offsetY);
+void mt_gc_rotate(mt_gc* pGC, float rotationInRadians);
+void mt_gc_scale(mt_gc* pGC, float scaleX, float scaleY);
+void mt_gc_set_miter_limit(mt_gc* pGC, float limit);
+void mt_gc_set_line_width(mt_gc* pGC, mt_int32 width);
+void mt_gc_set_line_cap(mt_gc* pGC, mt_line_cap cap);
+void mt_gc_set_line_join(mt_gc* pGC, mt_line_join join);
+void mt_gc_set_line_dash(mt_gc* pGC, mt_uint32 count, float* dashes);  /* Max value for <count> is 16. */
+void mt_gc_set_line_brush(mt_gc* pGC, mt_brush* pBrush);
+void mt_gc_set_line_brush_solid(mt_gc* pGC, mt_color color);
+void mt_gc_set_line_brush_gc(mt_gc* pGC, mt_gc* pSrcGC);
+void mt_gc_set_fill_brush(mt_gc* pGC, mt_brush* pBrush);
+void mt_gc_set_fill_brush_solid(mt_gc* pGC, mt_color color);
+void mt_gc_set_fill_brush_gc(mt_gc* pGC, mt_gc* pSrcGC);
+void mt_gc_set_font(mt_gc* pGC, mt_font* pFont);
+void mt_gc_set_text_bg_color(mt_gc* pGC, mt_color bgColor);
+void mt_gc_set_blend_op(mt_gc* pGC, mt_blend_op op);
+void mt_gc_set_antialias_mode(mt_gc* pGC, mt_antialias_mode mode);
+
+/******************************************************************************
+
+Paths
+
+******************************************************************************/
+void mt_gc_move_to(mt_gc* pGC, mt_int32 x, mt_int32 y);
+void mt_gc_line_to(mt_gc* pGC, mt_int32 x, mt_int32 y);
+void mt_gc_rectangle(mt_gc* pGC, mt_int32 left, mt_int32 top, mt_int32 right, mt_int32 bottom);
+void mt_gc_arc(mt_gc* pGC, mt_int32 x, mt_int32 y, mt_int32 radius, float angle1InRadians, float angle2InRadians);
+void mt_gc_curve_to(mt_gc* pGC, mt_int32 x1, mt_int32 y1, mt_int32 x2, mt_int32 y2, mt_int32 x3, mt_int32 y3);  /* Cubic Bézier. Starting poing is the current position. x3y3 is the end point. x1y1 and x2y2 are the control points. */
+void mt_gc_close_path(mt_gc* pGC);
+
+/******************************************************************************
+
+Filling, Stroking and Clipping
+
+******************************************************************************/
+/*
+Sets the clipping region to the current path as if it were filled. Anything outside of this region will be clipped, including
+subsequent calls to mt_gc_clip(). You can use mt_gc_reset_clip() to clear the clipping region. You can also use mt_gc_push()
+and mt_gc_pop() to save and restore clipping regions.
+
+Use mt_gc_is_point_inside_clip() to determine if a point is within the clipping region.
+
+This will clear the path.
+*/
+void mt_gc_clip(mt_gc* pGC);
+
+/*
+Clears the clipping region.
+*/
+void mt_gc_reset_clip(mt_gc* pGC);
+
+/*
+Determines if a point is within the current clipping region.
+*/
+mt_bool32 mt_gc_is_point_inside_clip(mt_gc* pGC, mt_int32 x, mt_int32 y);
+
+/*
+Fills the current path using the current fill settings.
+
+This will clear the path.
+*/
+void mt_gc_fill(mt_gc* pGC);
+
+/*
+Strokes the current path using the current line settings and the current brush.
+
+This will clear the path.
+*/
+void mt_gc_stroke(mt_gc* pGC);
+
+/*
+Fills the current path, then strokes it. The fill will never overlap the stroke.
+
+This will clear the path.
+*/
+void mt_gc_fill_and_stroke(mt_gc* pGC);
+
+
+/******************************************************************************
+
+Graphics Helpers
+
+******************************************************************************/
+/* Helper API for creating an RGBA color. */
+MT_INLINE mt_color mt_rgba(mt_uint8 r, mt_uint32 g, mt_uint8 b, mt_uint8 a)
+{
+    mt_color color;
+    color.r = r;
+    color.g = g;
+    color.b = b;
+    color.a = a;
+    return color;
+}
+
+/* Helper API for creating an opaque RGB color. */
+MT_INLINE mt_color mt_rgb(mt_uint8 r, mt_uint32 g, mt_uint8 b)
+{
+    return mt_rgba(r, g, b, 255);
+}
+
+/*
+Copies and converts image data.
+
+You are allowed to specify the same format for the source and target in which case this performs a direct copy with no conversion.
+*/
+void mt_copy_image_data(void* pDst, const void* pSrc, mt_uint32 sizeX, mt_uint32 sizeY, mt_uint32 dstStride, mt_format dstFormat, mt_uint32 srcStride, mt_format srcFormat);
+
+
+/**************************************************************************************************************************************************************
+
+Utilities
+
+**************************************************************************************************************************************************************/
+mt_bool32 mt_is_null_or_empty(const mt_utf8* pUTF8);
+mt_bool32 mt_is_null_or_whitespace(const mt_utf8* pUTF8);
 
 
 /**************************************************************************************************************************************************************
 
 Unicode
-
-TODO: Implement optional invalid code point replacement.
 
 **************************************************************************************************************************************************************/
 #define MT_UNICODE_MIN_CODE_POINT                       0x000000
@@ -520,25 +846,42 @@ Remarks
 This is the same as mt_utf8_to_utf16ne/le/be(), except it doesn't actually do any conversion.
 */
 mt_result mt_utf8_to_utf16_length(size_t* pUTF16Len, const mt_utf8* pUTF8, size_t utf8Len, mt_uint32 flags);
+mt_result mt_utf8_to_utf16ne_length(size_t* pUTF16Len, const mt_utf8* pUTF8, size_t utf8Len, mt_uint32 flags) { return mt_utf8_to_utf16_length(pUTF16Len, pUTF8, utf8Len, flags); }
+mt_result mt_utf8_to_utf16le_length(size_t* pUTF16Len, const mt_utf8* pUTF8, size_t utf8Len, mt_uint32 flags) { return mt_utf8_to_utf16_length(pUTF16Len, pUTF8, utf8Len, flags); }
+mt_result mt_utf8_to_utf16be_length(size_t* pUTF16Len, const mt_utf8* pUTF8, size_t utf8Len, mt_uint32 flags) { return mt_utf8_to_utf16_length(pUTF16Len, pUTF8, utf8Len, flags); }
 
 /*
 Converts a UTF-8 string to a UTF-16 string.
 
 Parameters
 ----------
-pUTF16:    The buffer that receives the converted string data. This can be NULL in which case only the length is calculated.
+[pUTF16](in)
+    The buffer that receives the converted string data. This can be NULL in which case only the length is calculated.
 
-utf16Cap:  The capacity of the buffer pointed to by pTextUTF16
+[utf16Cap](in)
+    The capacity of the buffer pointed to by pUTF16.
 
-pUTF16Len: A pointer to the variable that will receive the length of the output string not including the null terminator. This will be set to 0 when
-           an error occurs, however you should not use this for validation. Instead you should look at the return value.
+[pUTF16Len](out, optional)
+    A pointer to the variable that will receive the length of the output string not including the null terminator. When
+    an error occurs this will be set to the number of UTF-16 code units that were output up to the error.
 
-pUTF8:     The UTF-8 string to convert. It is an error for this to be null.
+[pUTF8](in)
+    The UTF-8 string to convert. It is an error for this to be null.
 
-utf8Len:   The length of the UTF-8 string in bytes, not including the null terminator.
+[utf8Len](in)
+    The length of the UTF-8 string in bytes, not including the null terminator. 
 
-flags:     This can be a combination of the following:
-           MT_FORBID_BOM: Causes an error if the string starts with a BOM.
+[pUTF8LenProcessed](out, optional)
+    A pointer to a variable that will received the number of bytes that were processed in [pUTF8], not including the null
+    terminator. This is can be NULL.
+
+[flags](in, optional)
+    This can be a combination of the following:
+        MT_FORBID_BOM
+            Causes an error if the string starts with a BOM.
+        MT_ERROR_ON_INVALID_CODE_POINT
+            When an invalid character is encounted, return an error instead of replacing it with the replacement character.
+    This can 0 in which case it will use defaults.
 
 
 Return Value
@@ -551,24 +894,31 @@ MT_INVALID_ARGS will be returned if [pUTF8] is null.
 
 MT_INVALID_ARGS will be returned if [pUTF8] is not big enough to fully convert the last code point.
 
-MT_OUT_OF_MEMORY will be returned if the [pUTF8] buffer is too small.
+MT_OUT_OF_MEMORY will be returned if the [pUTF16] buffer is too small to contain the entire converted string including the null terminated.
 
 MT_INVALID_CODE_POINT will be returned if an invalid code point is encounted and MT_ERROR_ON_INVALID_CODE_POINT is set in [flags].
 
 
 Remarks
 -------
-The output string will always be null terminated.
+The output string will always be null terminated. If the output buffer is not large enough to store the null terminator MT_OUT_OF_MEMORY will be returned.
 
 When the output string ([pUTF16]) is null, this is equivalent to `mt_utf8_to_utf16_length(pUTF16Len, pUTF8, utf8Len, flags)`.
 
 The byte order mark will _not_ be included in the output string nor it's length.
 
-Invalid characters are replaced with the Unicode replacement character (MT_UNICODE_REPLACEMENT_CHARACTER/U+FFFD).
+Invalid characters are replaced with the Unicode replacement character (MT_UNICODE_REPLACEMENT_CHARACTER/U+FFFD) unless the MT_ERROR_ON_INVALID_CODE_POINT
+flag is set in which case an error will be returned.
+
+You can look at [pUTF16Len] to know how many output characters were processed and [pUTF8LenProcessed] to know how many input characters were processed even
+when an error occurs. This is useful if you want to implement a streaming type of system where you have a fixed sized buffer and want to continously process
+a large string in a loop. Note that when an error is returned, the output buffer will _not_ be null terminated. You should only do this if MT_OUT_OF_MEMORY
+or MT_SUCCESS is returned. MT_OUT_OF_MEMORY will be returned when the output buffer is not large enough to store the entire output string with the null
+terminator.
 */
-mt_result mt_utf8_to_utf16ne(mt_utf16* pUTF16, size_t utf16Cap, size_t* pUTF16Len, const mt_utf8* pUTF8, size_t utf8Len, mt_uint32 flags);
-mt_result mt_utf8_to_utf16le(mt_utf16* pUTF16, size_t utf16Cap, size_t* pUTF16Len, const mt_utf8* pUTF8, size_t utf8Len, mt_uint32 flags);
-mt_result mt_utf8_to_utf16be(mt_utf16* pUTF16, size_t utf16Cap, size_t* pUTF16Len, const mt_utf8* pUTF8, size_t utf8Len, mt_uint32 flags);
+mt_result mt_utf8_to_utf16ne(mt_utf16* pUTF16, size_t utf16Cap, size_t* pUTF16Len, const mt_utf8* pUTF8, size_t utf8Len, size_t* pUTF8LenProcessed, mt_uint32 flags);
+mt_result mt_utf8_to_utf16le(mt_utf16* pUTF16, size_t utf16Cap, size_t* pUTF16Len, const mt_utf8* pUTF8, size_t utf8Len, size_t* pUTF8LenProcessed, mt_uint32 flags);
+mt_result mt_utf8_to_utf16be(mt_utf16* pUTF16, size_t utf16Cap, size_t* pUTF16Len, const mt_utf8* pUTF8, size_t utf8Len, size_t* pUTF8LenProcessed, mt_uint32 flags);
 
 
 /*
@@ -583,9 +933,9 @@ mt_result mt_utf8_to_utf32_length(size_t* pUTF32Len, const mt_utf8* pUTF8, size_
 /*
 Converts a UTF-8 string to a UTF-32 string.
 */
-mt_result mt_utf8_to_utf32ne(mt_utf32* pUTF32, size_t utf32Cap, size_t* pUTF32Len, const mt_utf8* pUTF8, size_t utf8Len, mt_uint32 flags);
-mt_result mt_utf8_to_utf32le(mt_utf32* pUTF32, size_t utf32Cap, size_t* pUTF32Len, const mt_utf8* pUTF8, size_t utf8Len, mt_uint32 flags);
-mt_result mt_utf8_to_utf32be(mt_utf32* pUTF32, size_t utf32Cap, size_t* pUTF32Len, const mt_utf8* pUTF8, size_t utf8Len, mt_uint32 flags);
+mt_result mt_utf8_to_utf32ne(mt_utf32* pUTF32, size_t utf32Cap, size_t* pUTF32Len, const mt_utf8* pUTF8, size_t utf8Len, size_t* pUTF8LenProcessed, mt_uint32 flags);
+mt_result mt_utf8_to_utf32le(mt_utf32* pUTF32, size_t utf32Cap, size_t* pUTF32Len, const mt_utf8* pUTF8, size_t utf8Len, size_t* pUTF8LenProcessed, mt_uint32 flags);
+mt_result mt_utf8_to_utf32be(mt_utf32* pUTF32, size_t utf32Cap, size_t* pUTF32Len, const mt_utf8* pUTF8, size_t utf8Len, size_t* pUTF8LenProcessed, mt_uint32 flags);
 
 
 /*
@@ -607,17 +957,14 @@ mt_result mt_utf16_to_utf8_length(size_t* pUTF8Len, const mt_utf16* pUTF16, size
 /*
 Converts a UTF-16 string to a UTF-8 string.
 */
-mt_result mt_utf16ne_to_utf8(mt_utf8* pUTF8, size_t utf8Cap, size_t* pUTF8Len, const mt_utf16* pUTF16, size_t utf16Len, mt_uint32 flags);
-mt_result mt_utf16le_to_utf8(mt_utf8* pUTF8, size_t utf8Cap, size_t* pUTF8Len, const mt_utf16* pUTF16, size_t utf16Len, mt_uint32 flags);
-mt_result mt_utf16be_to_utf8(mt_utf8* pUTF8, size_t utf8Cap, size_t* pUTF8Len, const mt_utf16* pUTF16, size_t utf16Len, mt_uint32 flags);
+mt_result mt_utf16ne_to_utf8(mt_utf8* pUTF8, size_t utf8Cap, size_t* pUTF8Len, const mt_utf16* pUTF16, size_t utf16Len, size_t* pUTF16LenProcessed, mt_uint32 flags);
+mt_result mt_utf16le_to_utf8(mt_utf8* pUTF8, size_t utf8Cap, size_t* pUTF8Len, const mt_utf16* pUTF16, size_t utf16Len, size_t* pUTF16LenProcessed, mt_uint32 flags);
+mt_result mt_utf16be_to_utf8(mt_utf8* pUTF8, size_t utf8Cap, size_t* pUTF8Len, const mt_utf16* pUTF16, size_t utf16Len, size_t* pUTF16LenProcessed, mt_uint32 flags);
 
 /*
 Converts a UTF-16 string to a UTF-8 string, with the endianness defined by the BOM if present, and if not, assuming native/host endian.
 */
-mt_result mt_utf16_to_utf8(mt_utf8* pUTF8, size_t utf8Cap, size_t* pUTF8Len, const mt_utf16* pUTF16, size_t utf16Len, mt_uint32 flags);
-
-
-
+mt_result mt_utf16_to_utf8(mt_utf8* pUTF8, size_t utf8Cap, size_t* pUTF8Len, const mt_utf16* pUTF16, size_t utf16Len, size_t* pUTF16LenProcessed, mt_uint32 flags);
 
 
 #ifdef __cplusplus
@@ -815,6 +1162,8 @@ static MT_INLINE mt_bool32 mt_is_little_endian()
 {
 #if defined(MT_X86) || defined(MT_X64)
     return MT_TRUE;
+#elif defined(__BYTE_ORDER) && defined(__LITTLE_ENDIAN) && __BYTE_ORDER == __LITTLE_ENDIAN
+    return MT_TRUE;
 #else
     int n = 1;
     return (*(char*)&n) == 1;
@@ -863,41 +1212,29 @@ static MT_INLINE mt_uint32 mt_swap_endian_uint32(mt_uint32 n)
 
 static MT_INLINE mt_uint16 mt_be2host_16(mt_uint16 n)
 {
-#ifdef __linux__
-    return be16toh(n);
-#else
     if (mt_is_little_endian()) {
         return mt_swap_endian_uint16(n);
     }
 
     return n;
-#endif
 }
 
 static MT_INLINE mt_uint32 mt_be2host_32(mt_uint32 n)
 {
-#ifdef __linux__
-    return be32toh(n);
-#else
     if (mt_is_little_endian()) {
         return mt_swap_endian_uint32(n);
     }
 
     return n;
-#endif
 }
 
 static MT_INLINE mt_uint16 mt_le2host_16(mt_uint16 n)
 {
-#ifdef __linux__
-    return le16toh(n);
-#else
     if (!mt_is_little_endian()) {
         return mt_swap_endian_uint16(n);
     }
 
     return n;
-#endif
 }
 
 static MT_INLINE mt_uint32 mt_le2host_32(mt_uint32 n)
@@ -914,6 +1251,22 @@ static MT_INLINE mt_uint32 mt_le2host_32(mt_uint32 n)
 }
 
 
+mt_result mt_result_from_errno(errno_t e)
+{
+    switch (e) {
+        case EACCES: return MT_ACCESS_DENIED;
+        case EEXIST: return MT_ALREADY_EXISTS;
+        case EINVAL: return MT_INVALID_ARGS;
+        case EMFILE: return MT_TOO_MANY_OPEN_FILES;
+        case ENOENT: return MT_DOES_NOT_EXIST;
+        case ENOMEM: return MT_OUT_OF_MEMORY;
+        case EBADF:  return MT_INVALID_ARGS;   /* Can be returned by ftell() and family. */
+        default: break;
+    }
+
+    return MT_ERROR;
+}
+
 
 /**************************************************************************************************************************************************************
 
@@ -922,6 +1275,7 @@ static MT_INLINE mt_uint32 mt_le2host_32(mt_uint32 n)
  **************************************************************************************************************************************************************/
 #if defined(MT_HAS_GDI)
 #include <usp10.h>
+#include <math.h>   /* For cosf() and sinf(). May want to move this out of here and into the general implementation section. */
 
 /* Font */
 mt_result mt_font_init__gdi(mt_api* pAPI, const mt_font_config* pConfig, mt_font* pFont)
@@ -945,25 +1299,627 @@ void mt_font_uninit__gdi(mt_font* pFont)
 }
 
 
+/* Brush */
+mt_result mt_brush_init__gdi(mt_api* pAPI, const mt_brush_config* pConfig, mt_brush* pBrush)
+{
+    HBRUSH hBrush;
+
+    MT_ASSERT(pAPI != NULL);
+    MT_ASSERT(pConfig != NULL);
+    MT_ASSERT(pBrush != NULL);
+
+    switch (pConfig->type)
+    {
+        case mt_brush_type_solid:
+        {
+            hBrush = (HBRUSH)pAPI->gdi.hStockSolidFillBrush;
+        } break;
+
+#if 0
+        case mt_brush_type_linear:
+        {
+            /* TODO: Implement me. */
+            return MT_INVALID_OPERATION;
+        } break;
+#endif
+
+        case mt_brush_type_gc:
+        {
+            /* TODO: Implement me. If the HDC is writing to a HBITMAP we can retrieve that. Otherwise we need to create a new HBITMAP, BitBlt the source HDC over to it and use that. */
+            return MT_INVALID_OPERATION;
+        } break;
+
+        default: return MT_INVALID_ARGS;
+    }
+
+    return MT_SUCCESS;
+}
+
+void mt_brush_uninit__gdi(mt_brush* pBrush)
+{
+    MT_ASSERT(pBrush != NULL);
+
+    if (pBrush->gdi.hBrush != pBrush->pAPI->gdi.hStockSolidFillBrush) {
+        DeleteObject((HGDIOBJ)pBrush->gdi.hBrush);
+
+        /* Destroy the bitmap after the brush to ensure it's not referenced anymore. */
+        if (pBrush->gdi.hBitmap != NULL) {
+            DeleteObject((HGDIOBJ)pBrush->gdi.hBitmap);
+        }
+    }
+}
+
+
 /* Graphics */
 mt_result mt_gc_init__gdi(mt_api* pAPI, const mt_gc_config* pConfig, mt_gc* pGC)
 {
     MT_ASSERT(pAPI != NULL);
-    MT_ASSERT(pConfig != NULL);
-    MT_ASSERT(pGC != NULL);
 
     (void)pAPI;
-    (void)pConfig;
-    (void)pGC;
+
+    if (pConfig->gdi.hDC != NULL) {
+        pGC->isTransient = MT_TRUE;
+        pGC->format = mt_format_unknown;
+        pGC->gdi.hDC = pConfig->gdi.hDC;
+    } else {
+        pGC->isTransient = MT_FALSE;
+        pGC->format = pConfig->format;
+        pGC->gdi.hDC = (mt_handle)CreateCompatibleDC(NULL);
+        
+        /* Now we need to create a bitmap that acts as the destination for graphics output. */
+        {
+            BITMAPINFO bmi;
+            ZeroMemory(&bmi, sizeof(bmi));
+            bmi.bmiHeader.biSize        = sizeof(bmi.bmiHeader);
+            bmi.bmiHeader.biWidth       = (LONG)pConfig->sizeX;
+            bmi.bmiHeader.biHeight      = (LONG)pConfig->sizeY;
+            bmi.bmiHeader.biPlanes      = 1;
+            bmi.bmiHeader.biBitCount    = 32;   /* Only supporting 32-bit formats. */
+            bmi.bmiHeader.biCompression = BI_RGB;
+
+            pGC->gdi.hBitmap = (mt_handle)CreateDIBSection((HDC)pGC->gdi.hDC, &bmi, DIB_RGB_COLORS, (void**)&pGC->gdi.pBitmapData, NULL, 0);
+            if (pGC->gdi.hBitmap == NULL) {
+                DeleteDC((HDC)pGC->gdi.hDC);
+                pGC->gdi.hDC = NULL;
+                return MT_ERROR;
+            }
+
+            if (pConfig->pInitialImageData != NULL) {
+                mt_copy_image_data(pGC->gdi.pBitmapData, pConfig->pInitialImageData, pConfig->sizeX, pConfig->sizeY, pConfig->stride, pConfig->format, pConfig->sizeX, mt_format_bgra); /* GDI uses BGRA and a tightly packed stride internally. */
+                GdiFlush();
+            }
+
+            SelectObject((HDC)pGC->gdi.hDC, (HGDIOBJ)pGC->gdi.hBitmap);
+        }
+    }
+
+    /* We need at least one item in the state stack. Unfortunately malloc() here - may want to think about optimizing this. Perhaps some optimized per-API scheme? */
+    pGC->gdi.stateCount = 1;
+    pGC->gdi.pState = (mt_gc_state_gdi*)MT_MALLOC(sizeof(*pGC->gdi.pState) * pGC->gdi.stateCount);
 
     return MT_SUCCESS;
 }
 
 void mt_gc_uninit__gdi(mt_gc* pGC)
 {
+    mt_uint32 i;
+
     MT_ASSERT(pGC != NULL);
 
+    if (!pGC->isTransient) {
+        DeleteDC((HDC)pGC->gdi.hDC);
+        DeleteObject((HGDIOBJ)pGC->gdi.hBitmap);
+    }
+
+    /* The state stack may be holding HPEN objects that need to be deleted. */
+    for (i = 0; i < pGC->gdi.stateCount; ++i) {
+        if (pGC->gdi.pState[i].hPen != NULL) {
+            DeleteObject((HGDIOBJ)pGC->gdi.pState[i].hPen);
+            pGC->gdi.pState[i].hPen = NULL;
+        }
+    }
+
+    MT_FREE(pGC->gdi.pState);
+}
+
+mt_result mt_gc_save__gdi(mt_gc* pGC)
+{
+    MT_ASSERT(pGC != NULL);
+    MT_ASSERT(pGC->gdi.stateCount > 0);
+
+    if (SaveDC((HDC)pGC->gdi.hDC) == 0) {
+        return MT_ERROR;    /* Failed to save the HDC state. */
+    }
+
+    if (pGC->gdi.stateCount == pGC->gdi.stateCap) {
+        mt_uint32 newCap = MT_MIN(1, pGC->gdi.stateCap * 2);
+        mt_gc_state_gdi* pNewState = (mt_gc_state_gdi*)MT_REALLOC(pGC->gdi.pState, newCap * sizeof(*pNewState));
+        if (pNewState == NULL) {
+            return MT_OUT_OF_MEMORY;
+        }
+
+        pGC->gdi.pState   = pNewState;
+        pGC->gdi.stateCap = newCap;
+    }
+
+    MT_ASSERT(pGC->gdi.stateCount < pGC->gdi.stateCap);
+
+    pGC->gdi.pState[pGC->gdi.stateCount] = pGC->gdi.pState[pGC->gdi.stateCount-1];
+    pGC->gdi.stateCount += 1;
+
+    return MT_SUCCESS;
+}
+
+mt_result mt_gc_restore__gdi(mt_gc* pGC)
+{
+    MT_ASSERT(pGC != NULL);
+    MT_ASSERT(pGC->gdi.stateCount > 0);
+
+    if (pGC->gdi.stateCount == 1) {
+        return MT_INVALID_OPERATION;    /* Nothing to restore. */
+    }
+
+    if (RestoreDC((HDC)pGC->gdi.hDC, -1) == 0) {
+        return MT_ERROR;    /* Failed to restore the HDC state. */
+    }
+
+    pGC->gdi.stateCount -= 1;
+
+    return MT_SUCCESS;
+}
+
+void mt_gc_translate__gdi(mt_gc* pGC, mt_int32 offsetX, mt_int32 offsetY)
+{
+    XFORM transform = {0};
+
+    MT_ASSERT(pGC != NULL);
+
+    transform.eM11 = 1;
+    transform.eM22 = 1;
+    transform.eDx = (float)offsetX;
+    transform.eDy = (float)offsetY;
+    ModifyWorldTransform((HDC)pGC->gdi.hDC, &transform, MWT_LEFTMULTIPLY);
+}
+
+void mt_gc_rotate__gdi(mt_gc* pGC, float rotationInRadians)
+{
+    XFORM transform = {0};
+    float c = cosf(rotationInRadians);
+    float s = sinf(rotationInRadians);
+
+    MT_ASSERT(pGC != NULL);
+
+    transform.eM11 =  c;
+    transform.eM12 =  s;
+    transform.eM21 = -s;
+    transform.eM22 =  c;
+    ModifyWorldTransform((HDC)pGC->gdi.hDC, &transform, MWT_LEFTMULTIPLY);
+}
+
+void mt_gc_scale__gdi(mt_gc* pGC, float scaleX, float scaleY)
+{
+    XFORM transform = {0};
+
+    MT_ASSERT(pGC != NULL);
+
+    transform.eM11 = scaleX;
+    transform.eM22 = scaleY;
+    ModifyWorldTransform((HDC)pGC->gdi.hDC, &transform, MWT_LEFTMULTIPLY);
+}
+
+void mt_gc_set_miter_limit__gdi(mt_gc* pGC, float limit)
+{
+    MT_ASSERT(pGC != NULL);
+    SetMiterLimit((HDC)pGC->gdi.hDC, limit, NULL);
+}
+
+MT_PRIVATE void mt_gc_delete_current_pen__gdi(mt_gc* pGC)
+{
+    MT_ASSERT(pGC != NULL);
+
+    if (pGC->gdi.pState[pGC->gdi.stateCount-1].hPen != NULL) {
+        SelectObject((HDC)pGC->gdi.hDC, GetStockObject(NULL_PEN));
+        DeleteObject((HGDIOBJ)pGC->gdi.pState[pGC->gdi.stateCount-1].hPen);
+        pGC->gdi.pState[pGC->gdi.stateCount-1].hPen = NULL;
+    }
+}
+
+MT_PRIVATE void mt_gc_select_current_pen__gdi(mt_gc* pGC)
+{
+    mt_uint32 iState = pGC->gdi.stateCount-1;
+
+    MT_ASSERT(pGC != NULL);
+
+    if (pGC->gdi.pState[iState].hPen == NULL) {
+        HPEN hPen;
+        DWORD iPenStyle;
+        DWORD cWidth;
+        LOGBRUSH lbrush;
+        DWORD cStyle;
+        DWORD pStyle[16];
+        mt_uint32 i;
+
+        iPenStyle = PS_GEOMETRIC;
+        if (pGC->gdi.pState[iState].dashCount == 0) {
+            iPenStyle |= PS_SOLID;
+        } else {
+            iPenStyle |= PS_USERSTYLE;
+        }
+
+        switch (pGC->gdi.pState[iState].lineCap) {
+            case mt_line_cap_square: iPenStyle |= PS_ENDCAP_SQUARE;
+            case mt_line_cap_round:  iPenStyle |= PS_ENDCAP_ROUND;
+            case mt_line_cap_flat:
+            default: iPenStyle |= PS_ENDCAP_FLAT;
+        }
+
+        switch (pGC->gdi.pState[iState].lineJoin) {
+            case mt_line_join_bevel: iPenStyle |= PS_JOIN_BEVEL;
+            case mt_line_join_round: iPenStyle |= PS_JOIN_ROUND;
+            case mt_line_join_miter:
+            default: iPenStyle |= PS_JOIN_MITER;
+        }
+
+        cWidth = pGC->gdi.pState[iState].lineWidth;
+        cStyle = pGC->gdi.pState[iState].dashCount;
+
+        for (i = 0; i < pGC->gdi.pState[iState].dashCount; ++i) {
+            pStyle[i] = (DWORD)pGC->gdi.pState[iState].dashes[i];
+        }
+
+        if (pGC->gdi.pState[iState].pLineUserBrush == NULL) {
+            mt_brush_config* pBrush = &pGC->gdi.pState[iState].lineStockBrush;
+            if (pBrush->type == mt_brush_type_solid) {
+                if (pBrush->solid.color.a > 0) {
+                    lbrush.lbStyle = BS_SOLID;
+                    lbrush.lbColor = RGB(pBrush->solid.color.r, pBrush->solid.color.g, pBrush->solid.color.b);
+                } else {
+                    lbrush.lbStyle = BS_NULL;
+                }
+            } else if (pBrush->type == mt_brush_type_gc) {
+                if (pBrush->gc.pGC != NULL) {
+                    lbrush.lbStyle = BS_PATTERN;
+                    lbrush.lbHatch = (ULONG_PTR)pBrush->gc.pGC->gdi.hBitmap;
+                } else {
+                    lbrush.lbStyle = BS_NULL;
+                }
+            } else {
+                return; /* Invalid state (unknown brush type). */
+            }
+        } else {
+            mt_brush* pBrush = pGC->gdi.pState[iState].pLineUserBrush;
+            if (pBrush->config.type == mt_brush_type_solid) {
+                lbrush.lbStyle = BS_SOLID;
+                lbrush.lbColor = RGB(pBrush->config.solid.color.r, pBrush->config.solid.color.g, pBrush->config.solid.color.b);
+            } else if (/*pBrush->config.type == mt_brush_type_linear ||*/ pBrush->config.type == mt_brush_type_gc) {
+                lbrush.lbStyle = BS_PATTERN;
+                lbrush.lbHatch = (ULONG_PTR)pBrush->gdi.hBitmap;
+            } else {
+                return; /* Invalid state (unknown brush type). */
+            }
+        }
+        
+        hPen = ExtCreatePen(iPenStyle, cWidth, &lbrush, cStyle, pStyle);
+        if (hPen == NULL) {
+            return; /* Failed to create the pen. */
+        }
+
+        SelectObject((HDC)pGC->gdi.hDC, hPen);
+
+        pGC->gdi.pState[iState].hPen = (mt_handle)hPen;
+    }
+}
+
+
+void mt_gc_set_line_width__gdi(mt_gc* pGC, mt_int32 width)
+{
+    MT_ASSERT(pGC != NULL);
+
+    pGC->gdi.pState[pGC->gdi.stateCount-1].lineWidth = width;
+    mt_gc_delete_current_pen__gdi(pGC);
+}
+
+void mt_gc_set_line_cap__gdi(mt_gc* pGC, mt_line_cap cap)
+{
+    MT_ASSERT(pGC != NULL);
+    
+    pGC->gdi.pState[pGC->gdi.stateCount-1].lineCap = cap;
+    mt_gc_delete_current_pen__gdi(pGC);
+}
+
+void mt_gc_set_line_join__gdi(mt_gc* pGC, mt_line_join join)
+{
+    MT_ASSERT(pGC != NULL);
+
+    pGC->gdi.pState[pGC->gdi.stateCount-1].lineJoin = join;
+    mt_gc_delete_current_pen__gdi(pGC);
+}
+
+void mt_gc_set_line_dash__gdi(mt_gc* pGC, mt_uint32 count, float* dashes)
+{
+    MT_ASSERT(pGC != NULL);
+
+    if (count == 0 || dashes == NULL) {
+        pGC->gdi.pState[pGC->gdi.stateCount-1].dashCount = 0;
+    } else {
+        pGC->gdi.pState[pGC->gdi.stateCount-1].dashCount = count;
+        MT_COPY_MEMORY(pGC->gdi.pState[pGC->gdi.stateCount-1].dashes, dashes, count * sizeof(float));
+    }
+
+    mt_gc_delete_current_pen__gdi(pGC);
+}
+
+void mt_gc_set_line_brush__gdi(mt_gc* pGC, mt_brush* pBrush)
+{
+    MT_ASSERT(pGC != NULL);
+
+    pGC->gdi.pState[pGC->gdi.stateCount-1].pLineUserBrush = pBrush;
+    mt_gc_delete_current_pen__gdi(pGC);
+}
+
+void mt_gc_set_line_brush_solid__gdi(mt_gc* pGC, mt_color color)
+{
+    MT_ASSERT(pGC != NULL);
+
+    pGC->gdi.pState[pGC->gdi.stateCount-1].pLineUserBrush = NULL;
+    pGC->gdi.pState[pGC->gdi.stateCount-1].lineStockBrush.type = mt_brush_type_solid;
+    pGC->gdi.pState[pGC->gdi.stateCount-1].lineStockBrush.solid.color = color;
+
+    mt_gc_delete_current_pen__gdi(pGC);
+}
+
+void mt_gc_set_line_brush_gc__gdi(mt_gc* pGC, mt_gc* pSrcGC)
+{
+    MT_ASSERT(pGC != NULL);
+
+    pGC->gdi.pState[pGC->gdi.stateCount-1].pLineUserBrush = NULL;
+    pGC->gdi.pState[pGC->gdi.stateCount-1].lineStockBrush.type = mt_brush_type_gc;
+    pGC->gdi.pState[pGC->gdi.stateCount-1].lineStockBrush.gc.pGC = pSrcGC;
+
+    mt_gc_delete_current_pen__gdi(pGC);
+}
+
+void mt_gc_set_fill_brush__gdi(mt_gc* pGC, mt_brush* pBrush)
+{
+    mt_uint32 iState = pGC->gdi.stateCount-1;
+
+    MT_ASSERT(pGC != NULL);
+
+    pGC->gdi.pState[iState].pUserFillBrush = pBrush;
+
+    if (pBrush != NULL) {
+        SelectObject((HDC)pGC->gdi.hDC, pBrush->gdi.hBrush);
+    } else {
+        SelectObject((HDC)pGC->gdi.hDC, GetStockObject(NULL_BRUSH));
+    }
+
+    if (pGC->gdi.pState[iState].hasTransientFillBrush) {
+        mt_brush_uninit(&pGC->gdi.pState[iState].transientFillBrush);
+        pGC->gdi.pState[iState].hasTransientFillBrush = MT_FALSE;
+    }
+}
+
+MT_PRIVATE void mt_gc_set_fill_brush_transient__gdi(mt_gc* pGC, const mt_brush_config* pConfig)
+{
+    mt_uint32 iState = pGC->gdi.stateCount-1;
+    mt_brush prevTransientBrush;
+    mt_bool32 uninitPrevTransientBrush = MT_FALSE;
+
+    MT_ASSERT(pGC != NULL);
+
+    /* Need to make a copy of the previous transient fill brush so we can uninitialize later. */
+    if (pGC->gdi.pState[iState].hasTransientFillBrush) {
+        prevTransientBrush = pGC->gdi.pState[iState].transientFillBrush;
+        uninitPrevTransientBrush = MT_TRUE;
+    }
+
+    if (mt_brush_init(pGC->pAPI, pConfig, &pGC->gdi.pState[iState].transientFillBrush) != MT_SUCCESS) {
+        return; /* Failed to initialize transient fill brush. */
+    }
+
+    pGC->gdi.pState[iState].hasTransientFillBrush = MT_TRUE;
+
+    SelectObject((HDC)pGC->gdi.hDC, pGC->gdi.pState[iState].transientFillBrush.gdi.hBrush);
+    pGC->gdi.pState[pGC->gdi.stateCount-1].pUserFillBrush = NULL;
+
+    /* We can now uninitialize the previous brush since it's no longer selected on the GDI side. */
+    if (uninitPrevTransientBrush) {
+        mt_brush_uninit(&prevTransientBrush);
+    }
+}
+
+void mt_gc_set_fill_brush_solid__gdi(mt_gc* pGC, mt_color color)
+{
+    mt_brush_config config;
+    config.type = mt_brush_type_solid;
+    config.solid.color = color;
+    mt_gc_set_fill_brush_transient__gdi(pGC, &config);
+}
+
+void mt_gc_set_fill_brush_gc__gdi(mt_gc* pGC, mt_gc* pSrcGC)
+{
+    mt_brush_config config;
+    config.type = mt_brush_type_gc;
+    config.gc.pGC = pSrcGC;
+    mt_gc_set_fill_brush_transient__gdi(pGC, &config);
+}
+
+void mt_gc_set_font__gdi(mt_gc* pGC, mt_font* pFont)
+{
+    MT_ASSERT(pGC != NULL);
+
+    SelectObject((HDC)pGC->gdi.hDC, (HFONT)pFont->gdi.hFont);
+}
+
+void mt_gc_set_text_bg_color__gdi(mt_gc* pGC, mt_color bgColor)
+{
+    MT_ASSERT(pGC != NULL);
+
+    if (bgColor.a == 0) {
+        SetBkMode((HDC)pGC->gdi.hDC, TRANSPARENT);
+    } else {
+        SetBkMode((HDC)pGC->gdi.hDC, OPAQUE);
+        SetBkColor((HDC)pGC->gdi.hDC, RGB(bgColor.r, bgColor.g, bgColor.b));
+    }
+}
+
+void mt_gc_set_blend_op__gdi(mt_gc* pGC, mt_blend_op op)
+{
+    MT_ASSERT(pGC != NULL);
+
+    pGC->gdi.pState[pGC->gdi.stateCount-1].blendOp = op;
+}
+
+void mt_gc_set_antialias_mode__gdi(mt_gc* pGC, mt_antialias_mode mode)
+{
+    MT_ASSERT(pGC != NULL);
+
+    /* The anti-aliasing mode is always mt_antialias_mode_none with GDI since it doesn't support anti-aliasing. */
     (void)pGC;
+    (void)mode;
+}
+
+
+MT_PRIVATE void mt_gc_begin_path_if_required__gdi(mt_gc* pGC)
+{
+    MT_ASSERT(pGC != NULL);
+
+    if (pGC->gdi.pState[pGC->gdi.stateCount-1].hasPathBegun == MT_FALSE) {
+        pGC->gdi.pState[pGC->gdi.stateCount-1].hasPathBegun = MT_TRUE;
+        BeginPath((HDC)pGC->gdi.hDC);
+    }
+}
+
+MT_PRIVATE void mt_gc_end_path__gdi(mt_gc* pGC)
+{
+    MT_ASSERT(pGC != NULL);
+
+    if (pGC->gdi.pState[pGC->gdi.stateCount-1].hasPathBegun == MT_TRUE) {
+        pGC->gdi.pState[pGC->gdi.stateCount-1].hasPathBegun = MT_FALSE;
+        EndPath((HDC)pGC->gdi.hDC);
+    }
+}
+
+void mt_gc_move_to__gdi(mt_gc* pGC, mt_int32 x, mt_int32 y)
+{
+    MT_ASSERT(pGC != NULL);
+
+    mt_gc_begin_path_if_required__gdi(pGC);
+    MoveToEx((HDC)pGC->gdi.hDC, x, y, NULL);
+}
+
+void mt_gc_line_to__gdi(mt_gc* pGC, mt_int32 x, mt_int32 y)
+{
+    MT_ASSERT(pGC != NULL);
+
+    mt_gc_begin_path_if_required__gdi(pGC);
+    LineTo((HDC)pGC->gdi.hDC, x, y);
+}
+
+void mt_gc_rectangle__gdi(mt_gc* pGC, mt_int32 left, mt_int32 top, mt_int32 right, mt_int32 bottom)
+{
+    MT_ASSERT(pGC != NULL);
+
+    mt_gc_begin_path_if_required__gdi(pGC);
+    Rectangle((HDC)pGC->gdi.hDC, left, top, right, bottom);
+}
+
+void mt_gc_arc__gdi(mt_gc* pGC, mt_int32 x, mt_int32 y, mt_int32 radius, float angle1InRadians, float angle2InRadians)
+{
+    MT_ASSERT(pGC != NULL);
+
+    mt_gc_begin_path_if_required__gdi(pGC);
+    AngleArc((HDC)pGC->gdi.hDC, x, y, (DWORD)radius, angle1InRadians, angle2InRadians);
+}
+
+void mt_gc_curve_to__gdi(mt_gc* pGC, mt_int32 x1, mt_int32 y1, mt_int32 x2, mt_int32 y2, mt_int32 x3, mt_int32 y3)
+{
+    POINT pt[3];
+
+    MT_ASSERT(pGC != NULL);
+
+    pt[0].x = x1;
+    pt[0].y = y1;
+    pt[1].x = x2;
+    pt[1].y = y2;
+    pt[2].x = x3;
+    pt[2].y = y3;
+
+    mt_gc_begin_path_if_required__gdi(pGC);
+    PolyBezierTo((HDC)pGC->gdi.hDC, pt, 3);
+}
+
+void mt_gc_close_path__gdi(mt_gc* pGC)
+{
+    MT_ASSERT(pGC != NULL);
+
+    CloseFigure((HDC)pGC->gdi.hDC);
+}
+
+void mt_gc_clip__gdi(mt_gc* pGC)
+{
+    MT_ASSERT(pGC != NULL);
+
+    mt_gc_end_path__gdi(pGC);
+    SelectClipPath((HDC)pGC->gdi.hDC, RGN_AND);
+}
+
+void mt_gc_reset_clip__gdi(mt_gc* pGC)
+{
+    MT_ASSERT(pGC != NULL);
+
+    SelectClipRgn((HDC)pGC->gdi.hDC, NULL);
+}
+
+mt_bool32 mt_gc_is_point_inside_clip__gdi(mt_gc* pGC, mt_int32 x, mt_int32 y)
+{
+    MT_ASSERT(pGC != NULL);
+
+    return PtVisible((HDC)pGC->gdi.hDC, x, y);
+}
+
+void mt_gc_fill__gdi(mt_gc* pGC)
+{
+    MT_ASSERT(pGC != NULL);
+
+    mt_gc_end_path__gdi(pGC);
+
+    if (pGC->gdi.pState[pGC->gdi.stateCount-1].blendOp == mt_blend_op_src) {
+        FillPath((HDC)pGC->gdi.hDC);
+    } else {
+        /* TODO: Implement blending here. Might need to use and intermediary bitmap... */
+        FillPath((HDC)pGC->gdi.hDC);
+    }
+}
+
+void mt_gc_stroke__gdi(mt_gc* pGC)
+{
+    MT_ASSERT(pGC != NULL);
+    
+    mt_gc_end_path__gdi(pGC);
+    mt_gc_select_current_pen__gdi(pGC);
+
+    if (pGC->gdi.pState[pGC->gdi.stateCount-1].blendOp == mt_blend_op_src) {
+        StrokePath((HDC)pGC->gdi.hDC);
+    } else {
+        /* TODO: Implement blending here. Might need to use and intermediary bitmap... */
+        StrokePath((HDC)pGC->gdi.hDC);
+    }
+}
+
+void mt_gc_fill_and_stroke__gdi(mt_gc* pGC)
+{
+    MT_ASSERT(pGC != NULL);
+
+    mt_gc_end_path__gdi(pGC);
+    mt_gc_select_current_pen__gdi(pGC);
+
+    if (pGC->gdi.pState[pGC->gdi.stateCount-1].blendOp == mt_blend_op_src) {
+        StrokeAndFillPath((HDC)pGC->gdi.hDC);
+    } else {
+        /* TODO: Implement blending here. Might need to use and intermediary bitmap... */
+        StrokeAndFillPath((HDC)pGC->gdi.hDC);
+    }
 }
 
 
@@ -1060,7 +2016,7 @@ mt_result mt_itemize_utf8__gdi(mt_api* pAPI, const mt_utf8* pTextUTF8, size_t te
     MT_ASSERT(pItemCount != NULL);
 
     /* Unfortunately Uniscribe only supports wchar_t. This is 2 bytes on Windows so I'm treating this as UTF-16. We need to convert. */
-    result = mt_utf8_to_utf16ne(NULL, 0, &utf8Size, pTextUTF8, textLength, 0);
+    result = mt_utf8_to_utf16ne(NULL, 0, &utf8Size, pTextUTF8, textLength, NULL, 0);
     if (result != MT_SUCCESS) {
         return result;  /* Some error has occurred with UTF-8 to UTF-16 conversion. */
     }
@@ -1075,6 +2031,8 @@ mt_result mt_itemize_utf8__gdi(mt_api* pAPI, const mt_utf8* pTextUTF8, size_t te
 
 void mt_free_items__gdi(mt_api* pAPI, mt_item* pItems)
 {
+    MT_ASSERT(pAPI != NULL);
+
     /* TODO: Use some caching or something to make item memory management more efficient. */
 
     MT_FREE(pItems);
@@ -1094,13 +2052,52 @@ mt_result mt_init__gdi(const mt_api_config* pConfig, mt_api* pAPI)
     MT_ASSERT(pConfig != NULL);
     MT_ASSERT(pAPI != NULL);
 
-    pAPI->uninit      = mt_uninit__gdi;
-    pAPI->itemizeUTF8 = mt_itemize_utf8__gdi;
-    pAPI->freeItems   = mt_free_items__gdi;
-    pAPI->fontInit    = mt_font_init__gdi;
-    pAPI->fontUninit  = mt_font_uninit__gdi;
-    pAPI->gcInit      = mt_gc_init__gdi;
-    pAPI->gcUninit    = mt_gc_uninit__gdi;
+    /* TODO: dlopen() usp10.dll and gdi32.dll (in that order). */
+
+    /* Stock objects. */
+    pAPI->gdi.hStockSolidFillBrush = GetStockObject(DC_BRUSH);    /* The brush to use for solid brushes. */
+
+    pAPI->uninit              = mt_uninit__gdi;
+    pAPI->itemizeUTF8         = mt_itemize_utf8__gdi;
+    pAPI->freeItems           = mt_free_items__gdi;
+    pAPI->fontInit            = mt_font_init__gdi;
+    pAPI->fontUninit          = mt_font_uninit__gdi;
+    pAPI->brushInit           = mt_brush_init__gdi;
+    pAPI->brushUninit         = mt_brush_uninit__gdi;
+    pAPI->gcInit              = mt_gc_init__gdi;
+    pAPI->gcUninit            = mt_gc_uninit__gdi;
+    pAPI->gcSave              = mt_gc_save__gdi;
+    pAPI->gcRestore           = mt_gc_restore__gdi;
+    pAPI->gcTranslate         = mt_gc_translate__gdi;
+    pAPI->gcRotate            = mt_gc_rotate__gdi;
+    pAPI->gcScale             = mt_gc_scale__gdi;
+    pAPI->gcSetLineWidth      = mt_gc_set_line_width__gdi;
+    pAPI->gcSetLineCap        = mt_gc_set_line_cap__gdi;
+    pAPI->gcSetLineJoin       = mt_gc_set_line_join__gdi;
+    pAPI->gcSetMiterLimit     = mt_gc_set_miter_limit__gdi;
+    pAPI->gcSetLineDash       = mt_gc_set_line_dash__gdi;
+    pAPI->gcSetLineBrush      = mt_gc_set_line_brush__gdi;
+    pAPI->gcSetLineBrushSolid = mt_gc_set_line_brush_solid__gdi;
+    pAPI->gcSetLineBrushGC    = mt_gc_set_line_brush_gc__gdi;
+    pAPI->gcSetFillBrush      = mt_gc_set_fill_brush__gdi;
+    pAPI->gcSetFillBrushSolid = mt_gc_set_fill_brush_solid__gdi;
+    pAPI->gcSetFillBrushGC    = mt_gc_set_fill_brush_gc__gdi;
+    pAPI->gcSetFont           = mt_gc_set_font__gdi;
+    pAPI->gcSetTextBGColor    = mt_gc_set_text_bg_color__gdi;
+    pAPI->gcSetBlendOp        = mt_gc_set_blend_op__gdi;
+    pAPI->gcSetAntialiasMode  = mt_gc_set_antialias_mode__gdi;
+    pAPI->gcMoveTo            = mt_gc_move_to__gdi;
+    pAPI->gcLineTo            = mt_gc_line_to__gdi;
+    pAPI->gcRectangle         = mt_gc_rectangle__gdi;
+    pAPI->gcArc               = mt_gc_arc__gdi;
+    pAPI->gcCurveTo           = mt_gc_curve_to__gdi;
+    pAPI->gcClosePath         = mt_gc_close_path__gdi;
+    pAPI->gcClip              = mt_gc_clip__gdi;
+    pAPI->gcResetClip         = mt_gc_reset_clip__gdi;
+    pAPI->gcIsPointInsideClip = mt_gc_is_point_inside_clip__gdi;
+    pAPI->gcFill              = mt_gc_fill__gdi;
+    pAPI->gcStroke            = mt_gc_stroke__gdi;
+    pAPI->gcFillAndStroke     = mt_gc_fill_and_stroke__gdi;
 
     (void)pConfig;
     return MT_SUCCESS;
@@ -1305,14 +2302,54 @@ void mt_font_uninit(mt_font* pFont)
 
 /**************************************************************************************************************************************************************
 
-Graphics Context
+Graphics
 
 **************************************************************************************************************************************************************/
+mt_result mt_brush_init(mt_api* pAPI, const mt_brush_config* pConfig, mt_brush* pBrush)
+{
+    mt_result result;
+
+    if (pBrush == NULL) {
+        return MT_INVALID_ARGS;
+    }
+
+    MT_ZERO_OBJECT(pBrush);
+
+    if (pAPI == NULL || pConfig == NULL) {
+        return MT_INVALID_ARGS;
+    }
+
+    pBrush->pAPI = pAPI;
+    pBrush->config = *pConfig;
+
+    if (pAPI->brushInit) {
+        result = pAPI->brushInit(pAPI, pConfig, pBrush);
+        if (result != MT_SUCCESS) {
+            return result;
+        }
+    }
+
+    return MT_SUCCESS;
+}
+
+void mt_brush_uninit(mt_brush* pBrush)
+{
+    if (pBrush == NULL) {
+        return;
+    }
+
+    MT_ASSERT(pBrush->pAPI != NULL);
+
+    if (pBrush->pAPI->brushUninit) {
+        pBrush->pAPI->brushUninit(pBrush);
+    }
+}
+
 mt_result mt_gc_init(mt_api* pAPI, const mt_gc_config* pConfig, mt_gc* pGC)
 {
     mt_result result;
 
-    if (pGC != NULL) {
+    if (pGC == NULL) {
         return MT_INVALID_ARGS;
     }
 
@@ -1324,9 +2361,11 @@ mt_result mt_gc_init(mt_api* pAPI, const mt_gc_config* pConfig, mt_gc* pGC)
 
     pGC->pAPI = pAPI;
 
-    result = pAPI->gcInit(pAPI, pConfig, pGC);
-    if (result != MT_SUCCESS) {
-        return result;
+    if (pAPI->gcInit) {
+        result = pAPI->gcInit(pAPI, pConfig, pGC);
+        if (result != MT_SUCCESS) {
+            return result;
+        }
     }
 
     return MT_SUCCESS;
@@ -1338,14 +2377,1058 @@ void mt_gc_uninit(mt_gc* pGC)
         return;
     }
 
-    pGC->pAPI->gcUninit(pGC);
+    MT_ASSERT(pGC->pAPI != NULL);
+
+    if (pGC->pAPI->gcUninit) {
+        pGC->pAPI->gcUninit(pGC);
+    }
+}
+
+mt_result mt_gc_save(mt_gc* pGC)
+{
+    if (pGC == NULL) {
+        return MT_INVALID_ARGS;
+    }
+
+    MT_ASSERT(pGC->pAPI != NULL);
+
+    /* TODO: Save a copy to our own stack, then let the backend do it's own saving. */
+
+    if (pGC->pAPI->gcSave) {
+        return pGC->pAPI->gcSave(pGC);
+    }
+    
+    return MT_SUCCESS;
+}
+
+mt_result mt_gc_restore(mt_gc* pGC)
+{
+    if (pGC == NULL) {
+        return MT_INVALID_ARGS;
+    }
+
+    MT_ASSERT(pGC->pAPI != NULL);
+
+    /* TODO: Restore our own stack, then let the backend do it's own restore. */
+
+    if (pGC->pAPI->gcRestore) {
+        return pGC->pAPI->gcRestore(pGC);
+    }
+    
+    return MT_SUCCESS;
+}
+
+void mt_gc_translate(mt_gc* pGC, mt_int32 offsetX, mt_int32 offsetY)
+{
+    if (pGC == NULL) {
+        return;
+    }
+
+    MT_ASSERT(pGC->pAPI != NULL);
+
+    if (pGC->pAPI->gcTranslate) {
+        pGC->pAPI->gcTranslate(pGC, offsetX, offsetY);
+    }
+}
+
+void mt_gc_rotate(mt_gc* pGC, float rotationInRadians)
+{
+    if (pGC == NULL) {
+        return;
+    }
+
+    MT_ASSERT(pGC->pAPI != NULL);
+
+    if (pGC->pAPI->gcRotate) {
+        pGC->pAPI->gcRotate(pGC, rotationInRadians);
+    }
+}
+
+void mt_gc_scale(mt_gc* pGC, float scaleX, float scaleY)
+{
+    if (pGC == NULL) {
+        return;
+    }
+
+    MT_ASSERT(pGC->pAPI != NULL);
+
+    if (pGC->pAPI->gcScale) {
+        pGC->pAPI->gcScale(pGC, scaleX, scaleY);
+    }
+}
+
+void mt_gc_set_miter_limit(mt_gc* pGC, float limit)
+{
+    if (pGC == NULL) {
+        return;
+    }
+
+    MT_ASSERT(pGC->pAPI != NULL);
+
+    if (pGC->pAPI->gcSetMiterLimit) {
+        pGC->pAPI->gcSetMiterLimit(pGC, limit);
+    }
+}
+
+void mt_gc_set_line_width(mt_gc* pGC, mt_int32 width)
+{
+    if (pGC == NULL) {
+        return;
+    }
+
+    MT_ASSERT(pGC->pAPI != NULL);
+
+    if (pGC->pAPI->gcSetLineWidth) {
+        pGC->pAPI->gcSetLineWidth(pGC, width);
+    }
+}
+
+void mt_gc_set_line_cap(mt_gc* pGC, mt_line_cap cap)
+{
+    if (pGC == NULL) {
+        return;
+    }
+
+    MT_ASSERT(pGC->pAPI != NULL);
+
+    if (pGC->pAPI->gcSetLineCap) {
+        pGC->pAPI->gcSetLineCap(pGC, cap);
+    }
+}
+
+void mt_gc_set_line_join(mt_gc* pGC, mt_line_join join)
+{
+    if (pGC == NULL) {
+        return;
+    }
+
+    MT_ASSERT(pGC->pAPI != NULL);
+
+    if (pGC->pAPI->gcSetLineJoin) {
+        pGC->pAPI->gcSetLineJoin(pGC, join);
+    }
+}
+
+void mt_gc_set_line_dash(mt_gc* pGC, mt_uint32 count, float* dashes)
+{
+    if (pGC == NULL) {
+        return;
+    }
+
+    MT_ASSERT(pGC->pAPI != NULL);
+
+    if (count > 16) {
+        return; /* Count cannot be more than 16. */
+    }
+
+    if (pGC->pAPI->gcSetLineDash) {
+        pGC->pAPI->gcSetLineDash(pGC, count, dashes);
+    }
+}
+
+void mt_gc_set_line_brush(mt_gc* pGC, mt_brush* pBrush)
+{
+    if (pGC == NULL) {
+        return;
+    }
+
+    MT_ASSERT(pGC->pAPI != NULL);
+
+    if (pGC->pAPI->gcSetLineBrush) {
+        pGC->pAPI->gcSetLineBrush(pGC, pBrush);
+    }
+}
+
+void mt_gc_set_line_brush_solid(mt_gc* pGC, mt_color color)
+{
+    if (pGC == NULL) {
+        return;
+    }
+
+    MT_ASSERT(pGC->pAPI != NULL);
+
+    if (pGC->pAPI->gcSetLineBrushSolid) {
+        pGC->pAPI->gcSetLineBrushSolid(pGC, color);
+    }
+}
+
+void mt_gc_set_line_brush_gc(mt_gc* pGC, mt_gc* pSrcGC)
+{
+    if (pGC == NULL) {
+        return;
+    }
+
+    MT_ASSERT(pGC->pAPI != NULL);
+
+    if (pGC->pAPI->gcSetLineBrushGC) {
+        pGC->pAPI->gcSetLineBrushGC(pGC, pSrcGC);
+    }
+}
+
+void mt_gc_set_fill_brush(mt_gc* pGC, mt_brush* pBrush)
+{
+    if (pGC == NULL) {
+        return;
+    }
+
+    MT_ASSERT(pGC->pAPI != NULL);
+
+    if (pGC->pAPI->gcSetFillBrush) {
+        pGC->pAPI->gcSetFillBrush(pGC, pBrush);
+    }
+}
+
+void mt_gc_set_fill_brush_solid(mt_gc* pGC, mt_color color)
+{
+    if (pGC == NULL) {
+        return;
+    }
+
+    MT_ASSERT(pGC->pAPI != NULL);
+
+    if (pGC->pAPI->gcSetFillBrushSolid) {
+        pGC->pAPI->gcSetFillBrushSolid(pGC, color);
+    }
+}
+
+void mt_gc_set_fill_brush_gc(mt_gc* pGC, mt_gc* pSrcGC)
+{
+    if (pGC == NULL) {
+        return;
+    }
+
+    MT_ASSERT(pGC->pAPI != NULL);
+
+    if (pGC->pAPI->gcSetFillBrushGC) {
+        pGC->pAPI->gcSetFillBrushGC(pGC, pSrcGC);
+    }
+}
+
+void mt_gc_set_font(mt_gc* pGC, mt_font* pFont)
+{
+    if (pGC == NULL) {
+        return;
+    }
+
+    MT_ASSERT(pGC->pAPI != NULL);
+
+    if (pGC->pAPI->gcSetFont) {
+        pGC->pAPI->gcSetFont(pGC, pFont);
+    }
+}
+
+void mt_gc_set_text_bg_color(mt_gc* pGC, mt_color bgColor)
+{
+    if (pGC == NULL) {
+        return;
+    }
+
+    MT_ASSERT(pGC->pAPI != NULL);
+
+    if (pGC->pAPI->gcSetTextBGColor) {
+        pGC->pAPI->gcSetTextBGColor(pGC, bgColor);
+    }
+}
+
+void mt_gc_set_blend_op(mt_gc* pGC, mt_blend_op op)
+{
+    if (pGC == NULL) {
+        return;
+    }
+
+    MT_ASSERT(pGC->pAPI != NULL);
+
+    if (pGC->pAPI->gcSetBlendOp) {
+        pGC->pAPI->gcSetBlendOp(pGC, op);
+    }
+}
+
+void mt_gc_set_antialias_mode(mt_gc* pGC, mt_antialias_mode mode)
+{
+    if (pGC == NULL) {
+        return;
+    }
+
+    MT_ASSERT(pGC->pAPI != NULL);
+
+    if (pGC->pAPI->gcSetAntialiasMode) {
+        pGC->pAPI->gcSetAntialiasMode(pGC, mode);
+    }
+}
+
+void mt_gc_move_to(mt_gc* pGC, mt_int32 x, mt_int32 y)
+{
+    if (pGC == NULL) {
+        return;
+    }
+
+    MT_ASSERT(pGC->pAPI != NULL);
+
+    if (pGC->pAPI->gcMoveTo) {
+        pGC->pAPI->gcMoveTo(pGC, x, y);
+    }
+}
+
+void mt_gc_line_to(mt_gc* pGC, mt_int32 x, mt_int32 y)
+{
+    if (pGC == NULL) {
+        return;
+    }
+
+    MT_ASSERT(pGC->pAPI != NULL);
+
+    if (pGC->pAPI->gcLineTo) {
+        pGC->pAPI->gcLineTo(pGC, x, y);
+    }
+}
+
+void mt_gc_rectangle(mt_gc* pGC, mt_int32 left, mt_int32 top, mt_int32 right, mt_int32 bottom)
+{
+    if (pGC == NULL) {
+        return;
+    }
+
+    MT_ASSERT(pGC->pAPI != NULL);
+
+    if (pGC->pAPI->gcRectangle) {
+        pGC->pAPI->gcRectangle(pGC, left, top, right, bottom);
+    }
+}
+
+void mt_gc_arc(mt_gc* pGC, mt_int32 x, mt_int32 y, mt_int32 radius, float angle1InRadians, float angle2InRadians)
+{
+    if (pGC == NULL) {
+        return;
+    }
+
+    MT_ASSERT(pGC->pAPI != NULL);
+
+    if (pGC->pAPI->gcArc) {
+        pGC->pAPI->gcArc(pGC, x, y, radius, angle1InRadians, angle2InRadians);
+    }
+}
+
+void mt_gc_curve_to(mt_gc* pGC, mt_int32 x1, mt_int32 y1, mt_int32 x2, mt_int32 y2, mt_int32 x3, mt_int32 y3)
+{
+    if (pGC == NULL) {
+        return;
+    }
+
+    MT_ASSERT(pGC->pAPI != NULL);
+
+    if (pGC->pAPI->gcCurveTo) {
+        pGC->pAPI->gcCurveTo(pGC, x1, y1, x2, y2, x3, y3);
+    }
+}
+
+void mt_gc_close_path(mt_gc* pGC)
+{
+    if (pGC == NULL) {
+        return;
+    }
+
+    MT_ASSERT(pGC->pAPI != NULL);
+
+    if (pGC->pAPI->gcClosePath) {
+        pGC->pAPI->gcClosePath(pGC);
+    }
+}
+
+void mt_gc_clip(mt_gc* pGC)
+{
+    if (pGC == NULL) {
+        return;
+    }
+
+    MT_ASSERT(pGC->pAPI != NULL);
+
+    if (pGC->pAPI->gcClip) {
+        pGC->pAPI->gcClip(pGC);
+    }
+}
+
+void mt_gc_reset_clip(mt_gc* pGC)
+{
+    if (pGC == NULL) {
+        return;
+    }
+
+    MT_ASSERT(pGC->pAPI != NULL);
+
+    if (pGC->pAPI->gcResetClip) {
+        pGC->pAPI->gcResetClip(pGC);
+    }
+}
+
+mt_bool32 mt_gc_is_point_inside_clip(mt_gc* pGC, mt_int32 x, mt_int32 y)
+{
+    if (pGC == NULL) {
+        return MT_FALSE;
+    }
+
+    MT_ASSERT(pGC->pAPI != NULL);
+
+    if (pGC->pAPI->gcIsPointInsideClip) {
+        return pGC->pAPI->gcIsPointInsideClip(pGC, x, y);
+    }
+
+    return MT_FALSE;
+}
+
+void mt_gc_fill(mt_gc* pGC)
+{
+    if (pGC == NULL) {
+        return;
+    }
+
+    MT_ASSERT(pGC->pAPI != NULL);
+
+    if (pGC->pAPI->gcFill) {
+        pGC->pAPI->gcFill(pGC);
+    }
+}
+
+void mt_gc_stroke(mt_gc* pGC)
+{
+    if (pGC == NULL) {
+        return;
+    }
+
+    MT_ASSERT(pGC->pAPI != NULL);
+
+    if (pGC->pAPI->gcStroke) {
+        pGC->pAPI->gcStroke(pGC);
+    }
+}
+
+void mt_gc_fill_and_stroke(mt_gc* pGC)
+{
+    if (pGC == NULL) {
+        return;
+    }
+
+    MT_ASSERT(pGC->pAPI != NULL);
+
+    if (pGC->pAPI->gcFillAndStroke) {
+        pGC->pAPI->gcFillAndStroke(pGC);
+    }
+}
+
+
+
+mt_uint32 mt_get_bytes_per_pixel(mt_format format)
+{
+    switch (format)
+    {
+        case mt_format_rgba: return 4;
+        case mt_format_rgb:  return 3;
+        case mt_format_bgra: return 4;
+        case mt_format_bgr:  return 3;
+        case mt_format_argb: return 4;
+        default: return 0;
+    }
+}
+
+void mt_copy_image_data__no_conversion(void* pDst, const void* pSrc, mt_uint32 sizeX, mt_uint32 sizeY, mt_uint32 dstStride, mt_uint32 srcStride, mt_format format)
+{
+    mt_uint32 bpp = mt_get_bytes_per_pixel(format);
+
+    MT_ASSERT(pDst != NULL);
+    MT_ASSERT(pSrc != NULL);
+
+    if (dstStride == srcStride && dstStride == sizeX) {
+        MT_COPY_MEMORY(pDst, pSrc, sizeX*sizeY*bpp);
+    } else {
+        mt_uint32 x;
+        mt_uint32 y;
+
+        /* Optimized path for 4 bytes per pixel. Can move everything per-pixel rather than per-byte. */
+        if (bpp == 4) {
+                  mt_uint32* pDstRow =       (mt_uint32*)pDst;
+            const mt_uint32* pSrcRow = (const mt_uint32*)pSrc;
+
+            for (y = 0; y < sizeY; ++y) {
+                for (x = 0; x < sizeX; ++x) {
+                    pDstRow[x] = pSrcRow[x];
+                }
+
+                pDstRow += dstStride;
+                pSrcRow += srcStride;
+            }
+        } else {
+                  mt_uint8* pDstRow =       (mt_uint8*)pDst;
+            const mt_uint8* pSrcRow = (const mt_uint8*)pSrc;
+
+            for (y = 0; y < sizeY; ++y) {
+                for (x = 0; x < sizeX; ++x) {
+                    mt_uint32 b;
+                    for (b = 0; b < bpp; ++b) {
+                        pDstRow[x*bpp + b] = pSrcRow[x*bpp + b];
+                    }
+                }
+
+                pDstRow += dstStride*bpp;
+                pSrcRow += srcStride*bpp;
+            }
+        }
+    }
+}
+
+void mt_copy_image_data__rgba_to_rgb(void* pDst, const void* pSrc, mt_uint32 sizeX, mt_uint32 sizeY, mt_uint32 dstStride, mt_uint32 srcStride)
+{
+    mt_uint32 x;
+    mt_uint32 y;
+    mt_uint8* pDstRow = (mt_uint8*)pDst;
+    const mt_uint8* pSrcRow = (const mt_uint8*)pSrc;
+
+    MT_ASSERT(pDst != NULL);
+    MT_ASSERT(pSrc != NULL);
+
+    for (y = 0; y < sizeY; ++y) {
+        for (x = 0; x < sizeX; ++x) {
+            pDstRow[x*3 + 0] = pSrcRow[x*4 + 0];
+            pDstRow[x*3 + 1] = pSrcRow[x*4 + 1];
+            pDstRow[x*3 + 2] = pSrcRow[x*4 + 2];
+        }
+
+        pDstRow += dstStride*3;
+        pSrcRow += srcStride*4;
+    }
+}
+
+void mt_copy_image_data__rgba_to_bgra(void* pDst, const void* pSrc, mt_uint32 sizeX, mt_uint32 sizeY, mt_uint32 dstStride, mt_uint32 srcStride)
+{
+    mt_uint32 x;
+    mt_uint32 y;
+    mt_uint8* pDstRow = (mt_uint8*)pDst;
+    const mt_uint8* pSrcRow = (const mt_uint8*)pSrc;
+
+    MT_ASSERT(pDst != NULL);
+    MT_ASSERT(pSrc != NULL);
+
+    for (y = 0; y < sizeY; ++y) {
+        for (x = 0; x < sizeX; ++x) {
+            pDstRow[x*4 + 0] = pSrcRow[x*4 + 2];
+            pDstRow[x*4 + 1] = pSrcRow[x*4 + 1];
+            pDstRow[x*4 + 2] = pSrcRow[x*4 + 0];
+            pDstRow[x*4 + 3] = pSrcRow[x*4 + 3];
+        }
+
+        pDstRow += dstStride*4;
+        pSrcRow += srcStride*4;
+    }
+}
+
+void mt_copy_image_data__rgba_to_bgr(void* pDst, const void* pSrc, mt_uint32 sizeX, mt_uint32 sizeY, mt_uint32 dstStride, mt_uint32 srcStride)
+{
+    mt_uint32 x;
+    mt_uint32 y;
+    mt_uint8* pDstRow = (mt_uint8*)pDst;
+    const mt_uint8* pSrcRow = (const mt_uint8*)pSrc;
+
+    MT_ASSERT(pDst != NULL);
+    MT_ASSERT(pSrc != NULL);
+
+    for (y = 0; y < sizeY; ++y) {
+        for (x = 0; x < sizeX; ++x) {
+            pDstRow[x*3 + 0] = pSrcRow[x*4 + 2];
+            pDstRow[x*3 + 1] = pSrcRow[x*4 + 1];
+            pDstRow[x*3 + 2] = pSrcRow[x*4 + 0];
+        }
+
+        pDstRow += dstStride*3;
+        pSrcRow += srcStride*4;
+    }
+}
+
+void mt_copy_image_data__rgba_to_argb(void* pDst, const void* pSrc, mt_uint32 sizeX, mt_uint32 sizeY, mt_uint32 dstStride, mt_uint32 srcStride)
+{
+    mt_uint32 x;
+    mt_uint32 y;
+    mt_uint8* pDstRow = (mt_uint8*)pDst;
+    const mt_uint8* pSrcRow = (const mt_uint8*)pSrc;
+
+    MT_ASSERT(pDst != NULL);
+    MT_ASSERT(pSrc != NULL);
+
+    for (y = 0; y < sizeY; ++y) {
+        for (x = 0; x < sizeX; ++x) {
+            pDstRow[x*4 + 0] = pSrcRow[x*4 + 3];
+            pDstRow[x*4 + 1] = pSrcRow[x*4 + 0];
+            pDstRow[x*4 + 2] = pSrcRow[x*4 + 1];
+            pDstRow[x*4 + 3] = pSrcRow[x*4 + 2];
+        }
+
+        pDstRow += dstStride*4;
+        pSrcRow += srcStride*4;
+    }
+}
+
+
+void mt_copy_image_data__rgb_to_rgba(void* pDst, const void* pSrc, mt_uint32 sizeX, mt_uint32 sizeY, mt_uint32 dstStride, mt_uint32 srcStride)
+{
+    mt_uint32 x;
+    mt_uint32 y;
+    mt_uint8* pDstRow = (mt_uint8*)pDst;
+    const mt_uint8* pSrcRow = (const mt_uint8*)pSrc;
+
+    MT_ASSERT(pDst != NULL);
+    MT_ASSERT(pSrc != NULL);
+
+    for (y = 0; y < sizeY; ++y) {
+        for (x = 0; x < sizeX; ++x) {
+            pDstRow[x*4 + 0] = pSrcRow[x*3 + 0];
+            pDstRow[x*4 + 1] = pSrcRow[x*3 + 1];
+            pDstRow[x*4 + 2] = pSrcRow[x*3 + 2];
+            pDstRow[x*4 + 3] = 0xFF;
+        }
+
+        pDstRow += dstStride*4;
+        pSrcRow += srcStride*3;
+    }
+}
+
+void mt_copy_image_data__rgb_to_bgra(void* pDst, const void* pSrc, mt_uint32 sizeX, mt_uint32 sizeY, mt_uint32 dstStride, mt_uint32 srcStride)
+{
+    mt_uint32 x;
+    mt_uint32 y;
+    mt_uint8* pDstRow = (mt_uint8*)pDst;
+    const mt_uint8* pSrcRow = (const mt_uint8*)pSrc;
+
+    MT_ASSERT(pDst != NULL);
+    MT_ASSERT(pSrc != NULL);
+
+    for (y = 0; y < sizeY; ++y) {
+        for (x = 0; x < sizeX; ++x) {
+            pDstRow[x*4 + 0] = pSrcRow[x*3 + 2];
+            pDstRow[x*4 + 1] = pSrcRow[x*3 + 1];
+            pDstRow[x*4 + 2] = pSrcRow[x*3 + 0];
+            pDstRow[x*4 + 3] = 0xFF;
+        }
+
+        pDstRow += dstStride*4;
+        pSrcRow += srcStride*3;
+    }
+}
+
+void mt_copy_image_data__rgb_to_bgr(void* pDst, const void* pSrc, mt_uint32 sizeX, mt_uint32 sizeY, mt_uint32 dstStride, mt_uint32 srcStride)
+{
+    mt_uint32 x;
+    mt_uint32 y;
+    mt_uint8* pDstRow = (mt_uint8*)pDst;
+    const mt_uint8* pSrcRow = (const mt_uint8*)pSrc;
+
+    MT_ASSERT(pDst != NULL);
+    MT_ASSERT(pSrc != NULL);
+
+    for (y = 0; y < sizeY; ++y) {
+        for (x = 0; x < sizeX; ++x) {
+            pDstRow[x*3 + 0] = pSrcRow[x*3 + 2];
+            pDstRow[x*3 + 1] = pSrcRow[x*3 + 1];
+            pDstRow[x*3 + 2] = pSrcRow[x*3 + 0];
+        }
+
+        pDstRow += dstStride*3;
+        pSrcRow += srcStride*3;
+    }
+}
+
+void mt_copy_image_data__rgb_to_argb(void* pDst, const void* pSrc, mt_uint32 sizeX, mt_uint32 sizeY, mt_uint32 dstStride, mt_uint32 srcStride)
+{
+    mt_uint32 x;
+    mt_uint32 y;
+    mt_uint8* pDstRow = (mt_uint8*)pDst;
+    const mt_uint8* pSrcRow = (const mt_uint8*)pSrc;
+
+    MT_ASSERT(pDst != NULL);
+    MT_ASSERT(pSrc != NULL);
+
+    for (y = 0; y < sizeY; ++y) {
+        for (x = 0; x < sizeX; ++x) {
+            pDstRow[x*4 + 0] = 0xFF;
+            pDstRow[x*4 + 1] = pSrcRow[x*3 + 0];
+            pDstRow[x*4 + 2] = pSrcRow[x*3 + 1];
+            pDstRow[x*4 + 3] = pSrcRow[x*3 + 2];
+        }
+
+        pDstRow += dstStride*4;
+        pSrcRow += srcStride*3;
+    }
+}
+
+
+void mt_copy_image_data__bgra_to_rgba(void* pDst, const void* pSrc, mt_uint32 sizeX, mt_uint32 sizeY, mt_uint32 dstStride, mt_uint32 srcStride)
+{
+    mt_uint32 x;
+    mt_uint32 y;
+    mt_uint8* pDstRow = (mt_uint8*)pDst;
+    const mt_uint8* pSrcRow = (const mt_uint8*)pSrc;
+
+    MT_ASSERT(pDst != NULL);
+    MT_ASSERT(pSrc != NULL);
+
+    for (y = 0; y < sizeY; ++y) {
+        for (x = 0; x < sizeX; ++x) {
+            pDstRow[x*4 + 0] = pSrcRow[x*4 + 2];
+            pDstRow[x*4 + 1] = pSrcRow[x*4 + 1];
+            pDstRow[x*4 + 2] = pSrcRow[x*4 + 0];
+            pDstRow[x*4 + 3] = pSrcRow[x*4 + 3];
+        }
+
+        pDstRow += dstStride*4;
+        pSrcRow += srcStride*4;
+    }
+}
+
+void mt_copy_image_data__bgra_to_rgb(void* pDst, const void* pSrc, mt_uint32 sizeX, mt_uint32 sizeY, mt_uint32 dstStride, mt_uint32 srcStride)
+{
+    mt_uint32 x;
+    mt_uint32 y;
+    mt_uint8* pDstRow = (mt_uint8*)pDst;
+    const mt_uint8* pSrcRow = (const mt_uint8*)pSrc;
+
+    MT_ASSERT(pDst != NULL);
+    MT_ASSERT(pSrc != NULL);
+
+    for (y = 0; y < sizeY; ++y) {
+        for (x = 0; x < sizeX; ++x) {
+            pDstRow[x*3 + 0] = pSrcRow[x*4 + 2];
+            pDstRow[x*3 + 1] = pSrcRow[x*4 + 1];
+            pDstRow[x*3 + 2] = pSrcRow[x*4 + 0];
+        }
+
+        pDstRow += dstStride*3;
+        pSrcRow += srcStride*4;
+    }
+}
+
+void mt_copy_image_data__bgra_to_bgr(void* pDst, const void* pSrc, mt_uint32 sizeX, mt_uint32 sizeY, mt_uint32 dstStride, mt_uint32 srcStride)
+{
+    mt_uint32 x;
+    mt_uint32 y;
+    mt_uint8* pDstRow = (mt_uint8*)pDst;
+    const mt_uint8* pSrcRow = (const mt_uint8*)pSrc;
+
+    MT_ASSERT(pDst != NULL);
+    MT_ASSERT(pSrc != NULL);
+
+    for (y = 0; y < sizeY; ++y) {
+        for (x = 0; x < sizeX; ++x) {
+            pDstRow[x*3 + 0] = pSrcRow[x*4 + 0];
+            pDstRow[x*3 + 1] = pSrcRow[x*4 + 1];
+            pDstRow[x*3 + 2] = pSrcRow[x*4 + 2];
+        }
+
+        pDstRow += dstStride*3;
+        pSrcRow += srcStride*4;
+    }
+}
+
+void mt_copy_image_data__bgra_to_argb(void* pDst, const void* pSrc, mt_uint32 sizeX, mt_uint32 sizeY, mt_uint32 dstStride, mt_uint32 srcStride)
+{
+    mt_uint32 x;
+    mt_uint32 y;
+    mt_uint8* pDstRow = (mt_uint8*)pDst;
+    const mt_uint8* pSrcRow = (const mt_uint8*)pSrc;
+
+    MT_ASSERT(pDst != NULL);
+    MT_ASSERT(pSrc != NULL);
+
+    for (y = 0; y < sizeY; ++y) {
+        for (x = 0; x < sizeX; ++x) {
+            pDstRow[x*4 + 0] = pSrcRow[x*4 + 3];
+            pDstRow[x*4 + 1] = pSrcRow[x*4 + 2];
+            pDstRow[x*4 + 2] = pSrcRow[x*4 + 1];
+            pDstRow[x*4 + 3] = pSrcRow[x*4 + 0];
+        }
+
+        pDstRow += dstStride*4;
+        pSrcRow += srcStride*4;
+    }
+}
+
+
+void mt_copy_image_data__bgr_to_rgba(void* pDst, const void* pSrc, mt_uint32 sizeX, mt_uint32 sizeY, mt_uint32 dstStride, mt_uint32 srcStride)
+{
+    mt_uint32 x;
+    mt_uint32 y;
+    mt_uint8* pDstRow = (mt_uint8*)pDst;
+    const mt_uint8* pSrcRow = (const mt_uint8*)pSrc;
+
+    MT_ASSERT(pDst != NULL);
+    MT_ASSERT(pSrc != NULL);
+
+    for (y = 0; y < sizeY; ++y) {
+        for (x = 0; x < sizeX; ++x) {
+            pDstRow[x*4 + 0] = pSrcRow[x*3 + 2];
+            pDstRow[x*4 + 1] = pSrcRow[x*3 + 1];
+            pDstRow[x*4 + 2] = pSrcRow[x*3 + 0];
+            pDstRow[x*4 + 3] = 0xFF;
+        }
+
+        pDstRow += dstStride*4;
+        pSrcRow += srcStride*3;
+    }
+}
+
+void mt_copy_image_data__bgr_to_rgb(void* pDst, const void* pSrc, mt_uint32 sizeX, mt_uint32 sizeY, mt_uint32 dstStride, mt_uint32 srcStride)
+{
+    mt_uint32 x;
+    mt_uint32 y;
+    mt_uint8* pDstRow = (mt_uint8*)pDst;
+    const mt_uint8* pSrcRow = (const mt_uint8*)pSrc;
+
+    MT_ASSERT(pDst != NULL);
+    MT_ASSERT(pSrc != NULL);
+
+    for (y = 0; y < sizeY; ++y) {
+        for (x = 0; x < sizeX; ++x) {
+            pDstRow[x*3 + 0] = pSrcRow[x*3 + 2];
+            pDstRow[x*3 + 1] = pSrcRow[x*3 + 1];
+            pDstRow[x*3 + 2] = pSrcRow[x*3 + 0];
+        }
+
+        pDstRow += dstStride*3;
+        pSrcRow += srcStride*3;
+    }
+}
+
+void mt_copy_image_data__bgr_to_bgra(void* pDst, const void* pSrc, mt_uint32 sizeX, mt_uint32 sizeY, mt_uint32 dstStride, mt_uint32 srcStride)
+{
+    mt_uint32 x;
+    mt_uint32 y;
+    mt_uint8* pDstRow = (mt_uint8*)pDst;
+    const mt_uint8* pSrcRow = (const mt_uint8*)pSrc;
+
+    MT_ASSERT(pDst != NULL);
+    MT_ASSERT(pSrc != NULL);
+
+    for (y = 0; y < sizeY; ++y) {
+        for (x = 0; x < sizeX; ++x) {
+            pDstRow[x*4 + 0] = pSrcRow[x*3 + 0];
+            pDstRow[x*4 + 1] = pSrcRow[x*3 + 1];
+            pDstRow[x*4 + 2] = pSrcRow[x*3 + 2];
+            pDstRow[x*4 + 3] = 0xFF;
+        }
+
+        pDstRow += dstStride*4;
+        pSrcRow += srcStride*3;
+    }
+}
+
+void mt_copy_image_data__bgr_to_argb(void* pDst, const void* pSrc, mt_uint32 sizeX, mt_uint32 sizeY, mt_uint32 dstStride, mt_uint32 srcStride)
+{
+    mt_uint32 x;
+    mt_uint32 y;
+    mt_uint8* pDstRow = (mt_uint8*)pDst;
+    const mt_uint8* pSrcRow = (const mt_uint8*)pSrc;
+
+    MT_ASSERT(pDst != NULL);
+    MT_ASSERT(pSrc != NULL);
+
+    for (y = 0; y < sizeY; ++y) {
+        for (x = 0; x < sizeX; ++x) {
+            pDstRow[x*4 + 0] = 0xFF;
+            pDstRow[x*4 + 1] = pSrcRow[x*3 + 2];
+            pDstRow[x*4 + 2] = pSrcRow[x*3 + 1];
+            pDstRow[x*4 + 3] = pSrcRow[x*3 + 0];
+        }
+
+        pDstRow += dstStride*4;
+        pSrcRow += srcStride*3;
+    }
+}
+
+
+void mt_copy_image_data__argb_to_rgba(void* pDst, const void* pSrc, mt_uint32 sizeX, mt_uint32 sizeY, mt_uint32 dstStride, mt_uint32 srcStride)
+{
+    mt_uint32 x;
+    mt_uint32 y;
+    mt_uint8* pDstRow = (mt_uint8*)pDst;
+    const mt_uint8* pSrcRow = (const mt_uint8*)pSrc;
+
+    MT_ASSERT(pDst != NULL);
+    MT_ASSERT(pSrc != NULL);
+
+    for (y = 0; y < sizeY; ++y) {
+        for (x = 0; x < sizeX; ++x) {
+            pDstRow[x*4 + 0] = pSrcRow[x*4 + 1];
+            pDstRow[x*4 + 1] = pSrcRow[x*4 + 2];
+            pDstRow[x*4 + 2] = pSrcRow[x*4 + 3];
+            pDstRow[x*4 + 3] = pSrcRow[x*4 + 0];
+        }
+
+        pDstRow += dstStride*4;
+        pSrcRow += srcStride*4;
+    }
+}
+
+void mt_copy_image_data__argb_to_rgb(void* pDst, const void* pSrc, mt_uint32 sizeX, mt_uint32 sizeY, mt_uint32 dstStride, mt_uint32 srcStride)
+{
+    mt_uint32 x;
+    mt_uint32 y;
+    mt_uint8* pDstRow = (mt_uint8*)pDst;
+    const mt_uint8* pSrcRow = (const mt_uint8*)pSrc;
+
+    MT_ASSERT(pDst != NULL);
+    MT_ASSERT(pSrc != NULL);
+
+    for (y = 0; y < sizeY; ++y) {
+        for (x = 0; x < sizeX; ++x) {
+            pDstRow[x*3 + 0] = pSrcRow[x*4 + 1];
+            pDstRow[x*3 + 1] = pSrcRow[x*4 + 2];
+            pDstRow[x*3 + 2] = pSrcRow[x*4 + 3];
+        }
+
+        pDstRow += dstStride*3;
+        pSrcRow += srcStride*4;
+    }
+}
+
+void mt_copy_image_data__argb_to_bgra(void* pDst, const void* pSrc, mt_uint32 sizeX, mt_uint32 sizeY, mt_uint32 dstStride, mt_uint32 srcStride)
+{
+    mt_uint32 x;
+    mt_uint32 y;
+    mt_uint8* pDstRow = (mt_uint8*)pDst;
+    const mt_uint8* pSrcRow = (const mt_uint8*)pSrc;
+
+    MT_ASSERT(pDst != NULL);
+    MT_ASSERT(pSrc != NULL);
+
+    for (y = 0; y < sizeY; ++y) {
+        for (x = 0; x < sizeX; ++x) {
+            pDstRow[x*4 + 0] = pSrcRow[x*4 + 3];
+            pDstRow[x*4 + 1] = pSrcRow[x*4 + 2];
+            pDstRow[x*4 + 2] = pSrcRow[x*4 + 1];
+            pDstRow[x*4 + 3] = pSrcRow[x*4 + 0];
+        }
+
+        pDstRow += dstStride*4;
+        pSrcRow += srcStride*4;
+    }
+}
+
+void mt_copy_image_data__argb_to_bgr(void* pDst, const void* pSrc, mt_uint32 sizeX, mt_uint32 sizeY, mt_uint32 dstStride, mt_uint32 srcStride)
+{
+    mt_uint32 x;
+    mt_uint32 y;
+    mt_uint8* pDstRow = (mt_uint8*)pDst;
+    const mt_uint8* pSrcRow = (const mt_uint8*)pSrc;
+
+    MT_ASSERT(pDst != NULL);
+    MT_ASSERT(pSrc != NULL);
+
+    for (y = 0; y < sizeY; ++y) {
+        for (x = 0; x < sizeX; ++x) {
+            pDstRow[x*3 + 0] = pSrcRow[x*4 + 3];
+            pDstRow[x*3 + 1] = pSrcRow[x*4 + 2];
+            pDstRow[x*3 + 2] = pSrcRow[x*4 + 1];
+        }
+
+        pDstRow += dstStride*3;
+        pSrcRow += srcStride*4;
+    }
+}
+
+
+
+void mt_copy_image_data(void* pDst, const void* pSrc, mt_uint32 sizeX, mt_uint32 sizeY, mt_uint32 dstStride, mt_format dstFormat, mt_uint32 srcStride, mt_format srcFormat)
+{
+    if (pDst == NULL || pSrc == NULL) {
+        return;
+    }
+
+    /* Normalize the strides to simplify things further down. */
+    if (dstStride == 0) {
+        dstStride = sizeX;
+    }
+    if (srcStride == 0) {
+        srcStride = sizeX;
+    }
+
+    if (dstFormat == srcFormat) {
+        mt_copy_image_data__no_conversion(pDst, pSrc, sizeX, sizeY, dstStride, srcStride, dstFormat);   /* Simple case. No conversion, just a copy. */
+    } else {
+        switch (dstFormat)
+        {
+            case mt_format_rgba:
+            {
+                if (srcFormat == mt_format_rgb) {
+                    mt_copy_image_data__rgba_to_rgb(pDst, pSrc, sizeX, sizeY, dstStride, srcStride);
+                } else if (srcFormat == mt_format_bgra) {
+                    mt_copy_image_data__rgba_to_bgra(pDst, pSrc, sizeX, sizeY, dstStride, srcStride);
+                } else if (srcFormat == mt_format_bgr) {
+                    mt_copy_image_data__rgba_to_bgr(pDst, pSrc, sizeX, sizeY, dstStride, srcStride);
+                } else if (srcFormat == mt_format_argb) {
+                    mt_copy_image_data__rgba_to_argb(pDst, pSrc, sizeX, sizeY, dstStride, srcStride);
+                }
+            } break;
+
+            case mt_format_rgb:
+            {
+                if (srcFormat == mt_format_rgba) {
+                    mt_copy_image_data__rgb_to_rgba(pDst, pSrc, sizeX, sizeY, dstStride, srcStride);
+                } else if (srcFormat == mt_format_bgra) {
+                    mt_copy_image_data__rgb_to_bgra(pDst, pSrc, sizeX, sizeY, dstStride, srcStride);
+                } else if (srcFormat == mt_format_bgr) {
+                    mt_copy_image_data__rgb_to_bgr(pDst, pSrc, sizeX, sizeY, dstStride, srcStride);
+                } else if (srcFormat == mt_format_argb) {
+                    mt_copy_image_data__rgb_to_argb(pDst, pSrc, sizeX, sizeY, dstStride, srcStride);
+                }
+            } break;
+
+            case mt_format_bgra:
+            {
+                if (srcFormat == mt_format_rgba) {
+                    mt_copy_image_data__bgra_to_rgba(pDst, pSrc, sizeX, sizeY, dstStride, srcStride);
+                } else if (srcFormat == mt_format_rgb) {
+                    mt_copy_image_data__bgra_to_rgb(pDst, pSrc, sizeX, sizeY, dstStride, srcStride);
+                } else if (srcFormat == mt_format_bgr) {
+                    mt_copy_image_data__bgra_to_bgr(pDst, pSrc, sizeX, sizeY, dstStride, srcStride);
+                } else if (srcFormat == mt_format_argb) {
+                    mt_copy_image_data__bgra_to_argb(pDst, pSrc, sizeX, sizeY, dstStride, srcStride);
+                }
+            } break;
+
+            case mt_format_bgr:
+            {
+                if (srcFormat == mt_format_rgba) {
+                    mt_copy_image_data__bgr_to_rgba(pDst, pSrc, sizeX, sizeY, dstStride, srcStride);
+                } else if (srcFormat == mt_format_rgb) {
+                    mt_copy_image_data__bgr_to_rgb(pDst, pSrc, sizeX, sizeY, dstStride, srcStride);
+                } else if (srcFormat == mt_format_bgra) {
+                    mt_copy_image_data__bgr_to_bgra(pDst, pSrc, sizeX, sizeY, dstStride, srcStride);
+                } else if (srcFormat == mt_format_argb) {
+                    mt_copy_image_data__bgr_to_argb(pDst, pSrc, sizeX, sizeY, dstStride, srcStride);
+                }
+            } break;
+
+            case mt_format_argb:
+            {
+                if (srcFormat == mt_format_rgba) {
+                    mt_copy_image_data__argb_to_rgba(pDst, pSrc, sizeX, sizeY, dstStride, srcStride);
+                } else if (srcFormat == mt_format_rgb) {
+                    mt_copy_image_data__argb_to_rgb(pDst, pSrc, sizeX, sizeY, dstStride, srcStride);
+                } else if (srcFormat == mt_format_bgra) {
+                    mt_copy_image_data__argb_to_bgra(pDst, pSrc, sizeX, sizeY, dstStride, srcStride);
+                } else if (srcFormat == mt_format_bgr) {
+                    mt_copy_image_data__argb_to_bgr(pDst, pSrc, sizeX, sizeY, dstStride, srcStride);
+                }
+            } break;
+
+            case mt_format_unknown:
+            default:
+            {
+            } break;
+        }
+    }
 }
 
 
 
 /**************************************************************************************************************************************************************
 
-Utility APIs
+Unicode
 
 **************************************************************************************************************************************************************/
 MT_INLINE mt_bool32 mt_is_invalid_utf8_octet(mt_utf8 utf8)
@@ -1423,25 +3506,25 @@ MT_INLINE size_t mt_utf32_cp_to_utf8(mt_utf32 utf32, mt_utf8* pUTF8, size_t utf8
     }
     if (utf32 <= 0x7FF) {
         if (utf8Cap >= 2) {
-            pUTF8[0] = ((utf32 & 0x07C0) >> 6);
-            pUTF8[1] =  (utf32 & 0x003F);
+            pUTF8[0] = 0xC0 | ((utf32 & 0x07C0) >> 6);
+            pUTF8[1] = 0x80 |  (utf32 & 0x003F);
             return 2;
         }
     }
     if (utf32 <= 0xFFFF) {
         if (utf8Cap >= 3) {
-            pUTF8[0] = ((utf32 & 0xF000) >> 12);
-            pUTF8[1] = ((utf32 & 0x0FC0) >>  6);
-            pUTF8[2] =  (utf32 & 0x003F);
+            pUTF8[0] = 0xE0 | ((utf32 & 0xF000) >> 12);
+            pUTF8[1] = 0x80 | ((utf32 & 0x0FC0) >>  6);
+            pUTF8[2] = 0x80 |  (utf32 & 0x003F);
             return 3;
         }
     }
     if (utf32 <= 0x10FFFF) {
         if (utf8Cap >= 4) {
-            pUTF8[0] = ((utf32 & 0x1C0000) >> 18);
-            pUTF8[1] = ((utf32 & 0x03F000) >> 12);
-            pUTF8[2] = ((utf32 & 0x000FC0) >>  6);
-            pUTF8[3] =  (utf32 & 0x00003F);
+            pUTF8[0] = 0xF0 | ((utf32 & 0x1C0000) >> 18);
+            pUTF8[1] = 0x80 | ((utf32 & 0x03F000) >> 12);
+            pUTF8[2] = 0x80 | ((utf32 & 0x000FC0) >>  6);
+            pUTF8[3] = 0x80 |  (utf32 & 0x00003F);
             return 4;
         }
     }
@@ -1484,6 +3567,7 @@ void mt_swap_endian_utf32(mt_utf32* pUTF32, size_t count)
 
 mt_result mt_utf8_to_utf16_length(size_t* pUTF16Len, const mt_utf8* pUTF8, size_t utf8Len, mt_uint32 flags)
 {
+    mt_result result = MT_SUCCESS;
     size_t utf16Len = 0;
 
     if (pUTF16Len != NULL) {
@@ -1517,13 +3601,14 @@ mt_result mt_utf8_to_utf16_length(size_t* pUTF16Len, const mt_utf8* pUTF8, size_
                 break;  /* Reached the end of the null terminated string. */
             }
 
-            if (pUTF8[0] < 128) {   /* ASCII character. */
+            if ((mt_uint8)pUTF8[0] < 128) {   /* ASCII character. */
                 utf16Len += 1;
                 pUTF8    += 1;
             } else {
                 if (mt_is_invalid_utf8_octet(pUTF8[0])) {
                     if ((flags & MT_ERROR_ON_INVALID_CODE_POINT) != 0) {
-                        return MT_INVALID_CODE_POINT;
+                        result = MT_INVALID_CODE_POINT;
+                        break;
                     } else {
                         /* Replacement. */
                         utf16Len += MT_UNICODE_REPLACEMENT_CHARACTER_LENGTH_UTF16;
@@ -1532,27 +3617,31 @@ mt_result mt_utf8_to_utf16_length(size_t* pUTF16Len, const mt_utf8* pUTF8, size_
                 } else {
                     if ((pUTF8[0] & 0xE0) == 0xC0) {
                         if (pUTF8[1] == 0) {
-                            return MT_INVALID_ARGS; /* Input string is too short. */
+                            result = MT_INVALID_ARGS; /* Input string is too short. */
+                            break;
                         }
 
                         utf16Len += 1;  /* Can be at most 1 UTF-16. */
                         pUTF8    += 2;
                     } else if ((pUTF8[0] & 0xF0) == 0xE0) {
                         if (pUTF8[1] == 0 || pUTF8[2] == 0) {
-                            return MT_INVALID_ARGS; /* Input string is too short. */
+                            result = MT_INVALID_ARGS; /* Input string is too short. */
+                            break;
                         }
 
                         utf16Len += 1;  /* Can be at most 1 UTF-16.*/
                         pUTF8    += 3;
                     } else if ((pUTF8[0] & 0xF8) == 0xF0) {
                         if (pUTF8[1] == 0 || pUTF8[2] == 0 || pUTF8[3] == 0) {
-                            return MT_INVALID_ARGS; /* Input string is too short. */
+                            result = MT_INVALID_ARGS; /* Input string is too short. */
+                            break;
                         }
 
                         mt_uint32 cp = ((mt_utf32)(pUTF8[0] & 0x07) << 18) | ((mt_utf32)(pUTF8[1] & 0x3F) << 12) | ((mt_utf32)(pUTF8[2] & 0x3F) << 6) | (pUTF8[3] & 0x3F);
                         if (!mt_is_valid_code_point(cp)) {
                             if ((flags & MT_ERROR_ON_INVALID_CODE_POINT) != 0) {
-                                return MT_INVALID_CODE_POINT;
+                                result = MT_INVALID_CODE_POINT;
+                                break;
                             } else {
                                 /* Replacement. */
                                 utf16Len += MT_UNICODE_REPLACEMENT_CHARACTER_LENGTH_UTF16;
@@ -1564,7 +3653,8 @@ mt_result mt_utf8_to_utf16_length(size_t* pUTF16Len, const mt_utf8* pUTF8, size_
                         }
                     } else {
                         if ((flags & MT_ERROR_ON_INVALID_CODE_POINT) != 0) {
-                            return MT_INVALID_CODE_POINT;
+                            result = MT_INVALID_CODE_POINT;
+                            break;
                         } else {
                             /* Replacement. */
                             utf16Len += MT_UNICODE_REPLACEMENT_CHARACTER_LENGTH_UTF16;
@@ -1576,14 +3666,16 @@ mt_result mt_utf8_to_utf16_length(size_t* pUTF16Len, const mt_utf8* pUTF8, size_
         }
     } else {
         /* Fixed length string. */
-        for (size_t iUTF8 = 0; iUTF8 < utf8Len; /* Do nothing */) {
-            if (pUTF8[iUTF8+0] < 128) {   /* ASCII character. */
+        size_t iUTF8;
+        for (iUTF8 = 0; iUTF8 < utf8Len; /* Do nothing */) {
+            if ((mt_uint8)pUTF8[iUTF8+0] < 128) {   /* ASCII character. */
                 utf16Len += 1;
                 iUTF8    += 1;
             } else {
                 if (mt_is_invalid_utf8_octet(pUTF8[iUTF8+0])) {
                     if ((flags & MT_ERROR_ON_INVALID_CODE_POINT) != 0) {
-                        return MT_INVALID_CODE_POINT;
+                        result = MT_INVALID_CODE_POINT;
+                        break;
                     } else {
                         /* Replacement. */
                         utf16Len += MT_UNICODE_REPLACEMENT_CHARACTER_LENGTH_UTF16;
@@ -1591,28 +3683,31 @@ mt_result mt_utf8_to_utf16_length(size_t* pUTF16Len, const mt_utf8* pUTF8, size_
                     }
                 } else {
                     if ((pUTF8[iUTF8+0] & 0xE0) == 0xC0) {
-                        if (iUTF8+1 >= utf8Len) {
-                            return MT_INVALID_ARGS;
+                        if (iUTF8+1 > utf8Len) {
+                            result = MT_INVALID_ARGS;
+                            break;
                         }
 
                         utf16Len += 1;  /* Can be at most 1 UTF-16.*/
                         iUTF8    += 2;
                     } else if ((pUTF8[iUTF8+0] & 0xF0) == 0xE0) {
-                        if (iUTF8+2 >= utf8Len) {
-                            return MT_INVALID_ARGS;
+                        if (iUTF8+2 > utf8Len) {
+                            result = MT_INVALID_ARGS;
+                            break;
                         }
 
                         utf16Len += 1;  /* Can be at most 1 UTF-16.*/
                         iUTF8    += 3;
                     } else if ((pUTF8[iUTF8+0] & 0xF8) == 0xF0) {
-                        if (iUTF8+3 >= utf8Len) {
+                        if (iUTF8+3 > utf8Len) {
                             return MT_INVALID_ARGS;
                         }
 
                         mt_uint32 cp = ((mt_utf32)(pUTF8[0] & 0x07) << 18) | ((mt_utf32)(pUTF8[1] & 0x3F) << 12) | ((mt_utf32)(pUTF8[2] & 0x3F) << 6) | (pUTF8[3] & 0x3F);
                         if (!mt_is_valid_code_point(cp)) {
                             if ((flags & MT_ERROR_ON_INVALID_CODE_POINT) != 0) {
-                                return MT_INVALID_CODE_POINT;
+                                result = MT_INVALID_CODE_POINT;
+                                break;
                             } else {
                                 /* Replacement. */
                                 utf16Len += MT_UNICODE_REPLACEMENT_CHARACTER_LENGTH_UTF16;
@@ -1624,7 +3719,8 @@ mt_result mt_utf8_to_utf16_length(size_t* pUTF16Len, const mt_utf8* pUTF8, size_
                         }
                     } else {
                         if ((flags & MT_ERROR_ON_INVALID_CODE_POINT) != 0) {
-                            return MT_INVALID_CODE_POINT;
+                            result = MT_INVALID_CODE_POINT;
+                            break;
                         } else {
                             /* Replacement. */
                             utf16Len += MT_UNICODE_REPLACEMENT_CHARACTER_LENGTH_UTF16;
@@ -1640,11 +3736,12 @@ mt_result mt_utf8_to_utf16_length(size_t* pUTF16Len, const mt_utf8* pUTF8, size_
         *pUTF16Len = utf16Len;
     }
 
-    return MT_SUCCESS;
+    return result;
 }
 
-mt_result mt_utf8_to_utf16ne(mt_utf16* pUTF16, size_t utf16Cap, size_t* pUTF16Len, const mt_utf8* pUTF8, size_t utf8Len, mt_uint32 flags)
+mt_result mt_utf8_to_utf16ne(mt_utf16* pUTF16, size_t utf16Cap, size_t* pUTF16Len, const mt_utf8* pUTF8, size_t utf8Len, size_t* pUTF8LenProcessed, mt_uint32 flags)
 {
+    mt_result result = MT_SUCCESS;
     size_t utf16CapOriginal = utf16Cap;
 
     if (pUTF16 == NULL) {
@@ -1673,8 +3770,14 @@ mt_result mt_utf8_to_utf16ne(mt_utf16* pUTF16, size_t utf16Cap, size_t* pUTF16Le
 
     if (utf8Len == (size_t)-1) {
         /* Null terminated string. */
+        const mt_utf8* pUTF8Original = pUTF8;
         while (pUTF8[0] != 0) {
-            if (pUTF8[0] < 128) {   /* ASCII character. */
+            if (utf16Cap == 1) {
+                result = MT_OUT_OF_MEMORY;
+                break;
+            }
+
+            if ((mt_uint8)pUTF8[0] < 128) {   /* ASCII character. */
                 pUTF16[0] = pUTF8[0];
                 pUTF16   += 1;
                 utf16Cap -= 1;
@@ -1682,7 +3785,8 @@ mt_result mt_utf8_to_utf16ne(mt_utf16* pUTF16, size_t utf16Cap, size_t* pUTF16Le
             } else {
                 if (mt_is_invalid_utf8_octet(pUTF8[0])) {
                     if ((flags & MT_ERROR_ON_INVALID_CODE_POINT) != 0) {
-                        return MT_INVALID_CODE_POINT;
+                        result = MT_INVALID_CODE_POINT;
+                        break;
                     } else {
                         /* Replacement. */
                         pUTF16[0] = MT_UNICODE_REPLACEMENT_CHARACTER;
@@ -1693,7 +3797,8 @@ mt_result mt_utf8_to_utf16ne(mt_utf16* pUTF16, size_t utf16Cap, size_t* pUTF16Le
                 } else {
                     if ((pUTF8[0] & 0xE0) == 0xC0) {
                         if (pUTF8[1] == 0) {
-                            return MT_INVALID_ARGS; /* Input string is too short. */
+                            result = MT_INVALID_ARGS; /* Input string is too short. */
+                            break;
                         }
 
                         pUTF16[0] = ((mt_utf16)(pUTF8[0] & 0x1F) <<  6) | (pUTF8[1] & 0x3F);
@@ -1702,7 +3807,8 @@ mt_result mt_utf8_to_utf16ne(mt_utf16* pUTF16, size_t utf16Cap, size_t* pUTF16Le
                         pUTF8    += 2;
                     } else if ((pUTF8[0] & 0xF0) == 0xE0) {
                         if (pUTF8[1] == 0 || pUTF8[2] == 0) {
-                            return MT_INVALID_ARGS; /* Input string is too short. */
+                            result = MT_INVALID_ARGS; /* Input string is too short. */
+                            break;
                         }
 
                         pUTF16[0] = ((mt_utf16)(pUTF8[0] & 0x0F) << 12) | ((mt_utf16)(pUTF8[1] & 0x3F) << 6) | (pUTF8[2] & 0x3F);
@@ -1714,13 +3820,15 @@ mt_result mt_utf8_to_utf16ne(mt_utf16* pUTF16, size_t utf16Cap, size_t* pUTF16Le
                             break;  /* No enough room. */
                         } else {
                             if (pUTF8[1] == 0 || pUTF8[2] == 0 || pUTF8[3] == 0) {
-                                return MT_INVALID_ARGS; /* Input string is too short. */
+                                result = MT_INVALID_ARGS; /* Input string is too short. */
+                                break;
                             }
 
                             mt_uint32 cp = ((mt_utf32)(pUTF8[0] & 0x07) << 18) | ((mt_utf32)(pUTF8[1] & 0x3F) << 12) | ((mt_utf32)(pUTF8[2] & 0x3F) << 6) | (pUTF8[3] & 0x3F);
                             if (!mt_is_valid_code_point(cp)) {
                                 if ((flags & MT_ERROR_ON_INVALID_CODE_POINT) != 0) {
-                                    return MT_INVALID_CODE_POINT;
+                                    result = MT_INVALID_CODE_POINT;
+                                    break;
                                 } else {
                                     /* Replacement. */
                                     pUTF16[0] = MT_UNICODE_REPLACEMENT_CHARACTER;
@@ -1737,7 +3845,8 @@ mt_result mt_utf8_to_utf16ne(mt_utf16* pUTF16, size_t utf16Cap, size_t* pUTF16Le
                         }
                     } else {
                         if ((flags & MT_ERROR_ON_INVALID_CODE_POINT) != 0) {
-                            return MT_INVALID_CODE_POINT;
+                            result = MT_INVALID_CODE_POINT;
+                            break;
                         } else {
                             /* Replacement. */
                             pUTF16[0] = MT_UNICODE_REPLACEMENT_CHARACTER;
@@ -1749,10 +3858,20 @@ mt_result mt_utf8_to_utf16ne(mt_utf16* pUTF16, size_t utf16Cap, size_t* pUTF16Le
                 }
             }
         }
+
+        if (pUTF8LenProcessed != NULL) {
+            *pUTF8LenProcessed = (pUTF8 - pUTF8Original);
+        }
     } else {
         /* Fixed length string. */
-        for (size_t iUTF8 = 0; iUTF8 < utf8Len; /* Do nothing */) {
-            if (pUTF8[iUTF8+0] < 128) {   /* ASCII character. */
+        size_t iUTF8;
+        for (iUTF8 = 0; iUTF8 < utf8Len; /* Do nothing */) {
+            if (utf16Cap == 1) {
+                result = MT_OUT_OF_MEMORY;
+                break;
+            }
+
+            if ((mt_uint8)pUTF8[iUTF8+0] < 128) {   /* ASCII character. */
                 pUTF16[0] = pUTF8[iUTF8+0];
                 pUTF16   += 1;
                 utf16Cap -= 1;
@@ -1760,7 +3879,8 @@ mt_result mt_utf8_to_utf16ne(mt_utf16* pUTF16, size_t utf16Cap, size_t* pUTF16Le
             } else {
                 if (mt_is_invalid_utf8_octet(pUTF8[iUTF8+0])) {
                     if ((flags & MT_ERROR_ON_INVALID_CODE_POINT) != 0) {
-                        return MT_INVALID_CODE_POINT;
+                        result = MT_INVALID_CODE_POINT;
+                        break;
                     } else {
                         /* Replacement. */
                         pUTF16[0] = MT_UNICODE_REPLACEMENT_CHARACTER;
@@ -1770,8 +3890,9 @@ mt_result mt_utf8_to_utf16ne(mt_utf16* pUTF16, size_t utf16Cap, size_t* pUTF16Le
                     }
                 } else {
                     if ((pUTF8[iUTF8+0] & 0xE0) == 0xC0) {
-                        if (iUTF8+1 >= utf8Len) {
-                            return MT_INVALID_ARGS;
+                        if (iUTF8+1 > utf8Len) {
+                            result = MT_INVALID_ARGS;
+                            break;
                         }
 
                         pUTF16[0] = ((mt_utf16)(pUTF8[iUTF8+0] & 0x1F) <<  6) | (pUTF8[iUTF8+1] & 0x3F);
@@ -1779,8 +3900,9 @@ mt_result mt_utf8_to_utf16ne(mt_utf16* pUTF16, size_t utf16Cap, size_t* pUTF16Le
                         utf16Cap -= 1;
                         iUTF8    += 2;
                     } else if ((pUTF8[iUTF8+0] & 0xF0) == 0xE0) {
-                        if (iUTF8+2 >= utf8Len) {
-                            return MT_INVALID_ARGS;
+                        if (iUTF8+2 > utf8Len) {
+                            result = MT_INVALID_ARGS;
+                            break;
                         }
 
                         pUTF16[0] = ((mt_utf16)(pUTF8[iUTF8+0] & 0x0F) << 12) | ((mt_utf16)(pUTF8[iUTF8+1] & 0x3F) << 6) | (pUTF8[iUTF8+2] & 0x3F);
@@ -1791,14 +3913,16 @@ mt_result mt_utf8_to_utf16ne(mt_utf16* pUTF16, size_t utf16Cap, size_t* pUTF16Le
                         if (utf16Cap < 2) {
                             break;  /* No enough room. */
                         } else {
-                            if (iUTF8+3 >= utf8Len) {
-                                return MT_INVALID_ARGS;
+                            if (iUTF8+3 > utf8Len) {
+                                result = MT_INVALID_ARGS;
+                                break;
                             }
 
                             mt_uint32 cp = ((mt_utf32)(pUTF8[iUTF8+0] & 0x07) << 18) | ((mt_utf32)(pUTF8[iUTF8+1] & 0x3F) << 12) | ((mt_utf32)(pUTF8[iUTF8+2] & 0x3F) << 6) | (pUTF8[iUTF8+3] & 0x3F);
                             if (!mt_is_valid_code_point(cp)) {
                                 if ((flags & MT_ERROR_ON_INVALID_CODE_POINT) != 0) {
-                                    return MT_INVALID_CODE_POINT;
+                                    result = MT_INVALID_CODE_POINT;
+                                    break;
                                 } else {
                                     /* Replacement. */
                                     pUTF16[0] = MT_UNICODE_REPLACEMENT_CHARACTER;
@@ -1815,7 +3939,8 @@ mt_result mt_utf8_to_utf16ne(mt_utf16* pUTF16, size_t utf16Cap, size_t* pUTF16Le
                         }
                     } else {
                         if ((flags & MT_ERROR_ON_INVALID_CODE_POINT) != 0) {
-                            return MT_INVALID_CODE_POINT;
+                            result = MT_INVALID_CODE_POINT;
+                            break;
                         } else {
                             /* Replacement. */
                             pUTF16[0] = MT_UNICODE_REPLACEMENT_CHARACTER;
@@ -1827,29 +3952,33 @@ mt_result mt_utf8_to_utf16ne(mt_utf16* pUTF16, size_t utf16Cap, size_t* pUTF16Le
                 }
             }
         }
+
+        if (pUTF8LenProcessed != NULL) {
+            *pUTF8LenProcessed = iUTF8;
+        }
     }
 
     /* Null terminate. */
     if (utf16Cap == 0) {
-        return MT_OUT_OF_MEMORY;    /* Not enough room in the output buffer. */
+        result = MT_OUT_OF_MEMORY;    /* Not enough room in the output buffer. */
+    } else {
+        pUTF16[0] = 0;
     }
-
-    pUTF16[0] = 0;
 
     if (pUTF16Len != NULL) {
         *pUTF16Len = (utf16CapOriginal - utf16Cap);
     }
 
-    return MT_SUCCESS;
+    return result;
 }
 
-mt_result mt_utf8_to_utf16le(mt_utf16* pUTF16, size_t utf16Cap, size_t* pUTF16Len, const mt_utf8* pUTF8, size_t utf8Len, mt_uint32 flags)
+mt_result mt_utf8_to_utf16le(mt_utf16* pUTF16, size_t utf16Cap, size_t* pUTF16Len, const mt_utf8* pUTF8, size_t utf8Len, size_t* pUTF8LenProcessed, mt_uint32 flags)
 {
     mt_result result;
     size_t utf16Len;
 
     /* Always do a native endian conversion first, then byte swap if necessary. */
-    result = mt_utf8_to_utf16ne(pUTF16, utf16Cap, &utf16Len, pUTF8, utf8Len, flags);
+    result = mt_utf8_to_utf16ne(pUTF16, utf16Cap, &utf16Len, pUTF8, utf8Len, pUTF8LenProcessed, flags);
 
     if (pUTF16Len != NULL) {
         *pUTF16Len = utf16Len;
@@ -1866,13 +3995,13 @@ mt_result mt_utf8_to_utf16le(mt_utf16* pUTF16, size_t utf16Cap, size_t* pUTF16Le
     return MT_SUCCESS;
 }
 
-mt_result mt_utf8_to_utf16be(mt_utf16* pUTF16, size_t utf16Cap, size_t* pUTF16Len, const mt_utf8* pUTF8, size_t utf8Len, mt_uint32 flags)
+mt_result mt_utf8_to_utf16be(mt_utf16* pUTF16, size_t utf16Cap, size_t* pUTF16Len, const mt_utf8* pUTF8, size_t utf8Len, size_t* pUTF8LenProcessed, mt_uint32 flags)
 {
     mt_result result;
     size_t utf16Len;
 
     /* Always do a native endian conversion first, then byte swap if necessary. */
-    result = mt_utf8_to_utf16ne(pUTF16, utf16Cap, &utf16Len, pUTF8, utf8Len, flags);
+    result = mt_utf8_to_utf16ne(pUTF16, utf16Cap, &utf16Len, pUTF8, utf8Len, pUTF8LenProcessed, flags);
 
     if (pUTF16Len != NULL) {
         *pUTF16Len = utf16Len;
@@ -1893,6 +4022,7 @@ mt_result mt_utf8_to_utf16be(mt_utf16* pUTF16, size_t utf16Cap, size_t* pUTF16Le
 
 mt_result mt_utf8_to_utf32_length(size_t* pUTF32Len, const mt_utf8* pUTF8, size_t utf8Len, mt_uint32 flags)
 {
+    mt_result result;
     size_t utf32Len = 0;
 
     if (pUTF32Len != NULL) {
@@ -1921,18 +4051,15 @@ mt_result mt_utf8_to_utf32_length(size_t* pUTF32Len, const mt_utf8* pUTF8, size_
 
     if (utf8Len == (size_t)-1) {
         /* Null terminated string. */
-        for (;;) {
-            if (pUTF8[0] == 0) {
-                break;  /* Reached the end of the null terminated string. */
-            }
-
+        while (pUTF8[0] != 0) {
             utf32Len += 1;
-            if (pUTF8[0] < 128) {   /* ASCII character. */
+            if ((mt_uint8)pUTF8[0] < 128) {   /* ASCII character. */
                 pUTF8 += 1;
             } else {
                 if (mt_is_invalid_utf8_octet(pUTF8[0])) {
                     if ((flags & MT_ERROR_ON_INVALID_CODE_POINT) != 0) {
-                        return MT_INVALID_CODE_POINT;
+                        result = MT_INVALID_CODE_POINT;
+                        break;
                     } else {
                         /* Replacement. */
                         pUTF8 += 1;
@@ -1940,22 +4067,26 @@ mt_result mt_utf8_to_utf32_length(size_t* pUTF32Len, const mt_utf8* pUTF8, size_
                 } else {
                     if ((pUTF8[0] & 0xE0) == 0xC0) {
                         if (pUTF8[1] == 0) {
-                            return MT_INVALID_ARGS; /* Input string is too short. */
+                            result = MT_INVALID_ARGS; /* Input string is too short. */
+                            break;
                         }
                         pUTF8 += 2;
                     } else if ((pUTF8[0] & 0xF0) == 0xE0) {
                         if (pUTF8[1] == 0 || pUTF8[2] == 0) {
-                            return MT_INVALID_ARGS; /* Input string is too short. */
+                            result = MT_INVALID_ARGS; /* Input string is too short. */
+                            break;
                         }
                         pUTF8 += 3;
                     } else if ((pUTF8[0] & 0xF8) == 0xF0) {
                         if (pUTF8[1] == 0 || pUTF8[2] == 0 || pUTF8[3] == 0) {
-                            return MT_INVALID_ARGS; /* Input string is too short. */
+                            result = MT_INVALID_ARGS; /* Input string is too short. */
+                            break;
                         }
                         mt_uint32 cp = ((mt_utf32)(pUTF8[0] & 0x07) << 18) | ((mt_utf32)(pUTF8[1] & 0x3F) << 12) | ((mt_utf32)(pUTF8[2] & 0x3F) << 6) | (pUTF8[3] & 0x3F);
                         if (!mt_is_valid_code_point(cp)) {
                             if ((flags & MT_ERROR_ON_INVALID_CODE_POINT) != 0) {
-                                return MT_INVALID_CODE_POINT;
+                                result = MT_INVALID_CODE_POINT;
+                                break;
                             } else {
                                 /* Replacement. */
                             }
@@ -1963,7 +4094,8 @@ mt_result mt_utf8_to_utf32_length(size_t* pUTF32Len, const mt_utf8* pUTF8, size_
                         pUTF8 += 4;
                     } else {
                         if ((flags & MT_ERROR_ON_INVALID_CODE_POINT) != 0) {
-                            return MT_INVALID_CODE_POINT;
+                            result = MT_INVALID_CODE_POINT;
+                            break;
                         } else {
                             /* Replacement. */
                             pUTF8 += 1;
@@ -1974,14 +4106,16 @@ mt_result mt_utf8_to_utf32_length(size_t* pUTF32Len, const mt_utf8* pUTF8, size_
         }
     } else {
         /* Fixed length string. */
-        for (size_t iUTF8 = 0; iUTF8 < utf8Len; /* Do nothing */) {
+        size_t iUTF8;
+        for (iUTF8 = 0; iUTF8 < utf8Len; /* Do nothing */) {
             utf32Len += 1;
-            if (pUTF8[iUTF8+0] < 128) {   /* ASCII character. */
+            if ((mt_uint8)pUTF8[iUTF8+0] < 128) {   /* ASCII character. */
                 iUTF8 += 1;
             } else {
                 if (mt_is_invalid_utf8_octet(pUTF8[iUTF8+0])) {
                     if ((flags & MT_ERROR_ON_INVALID_CODE_POINT) != 0) {
-                        return MT_INVALID_CODE_POINT;
+                        result = MT_INVALID_CODE_POINT;
+                        break;
                     } else {
                         /* Replacement. */
                         iUTF8 += 1;
@@ -1989,22 +4123,26 @@ mt_result mt_utf8_to_utf32_length(size_t* pUTF32Len, const mt_utf8* pUTF8, size_
                 } else {
                     if ((pUTF8[iUTF8+0] & 0xE0) == 0xC0) {
                         if (iUTF8+1 >= utf8Len) {
-                            return MT_INVALID_ARGS;
+                            result = MT_INVALID_ARGS;
+                            break;
                         }
                         iUTF8 += 2;
                     } else if ((pUTF8[iUTF8+0] & 0xF0) == 0xE0) {
                         if (iUTF8+2 >= utf8Len) {
-                            return MT_INVALID_ARGS;
+                            result = MT_INVALID_ARGS;
+                            break;
                         }
                         iUTF8 += 3;
                     } else if ((pUTF8[iUTF8+0] & 0xF8) == 0xF0) {
                         if (iUTF8+3 >= utf8Len) {
-                            return MT_INVALID_ARGS;
+                            result = MT_INVALID_ARGS;
+                            break;
                         }
                         mt_uint32 cp = ((mt_utf32)(pUTF8[0] & 0x07) << 18) | ((mt_utf32)(pUTF8[1] & 0x3F) << 12) | ((mt_utf32)(pUTF8[2] & 0x3F) << 6) | (pUTF8[3] & 0x3F);
                         if (!mt_is_valid_code_point(cp)) {
                             if ((flags & MT_ERROR_ON_INVALID_CODE_POINT) != 0) {
-                                return MT_INVALID_CODE_POINT;
+                                result = MT_INVALID_CODE_POINT;
+                                break;
                             } else {
                                 /* Replacement. */
                             }
@@ -2013,7 +4151,8 @@ mt_result mt_utf8_to_utf32_length(size_t* pUTF32Len, const mt_utf8* pUTF8, size_
                         iUTF8 += 4;
                     } else {
                         if ((flags & MT_ERROR_ON_INVALID_CODE_POINT) != 0) {
-                            return MT_INVALID_CODE_POINT;
+                            result = MT_INVALID_CODE_POINT;
+                            break;
                         } else {
                             /* Replacement. */
                             iUTF8 += 1;
@@ -2028,11 +4167,12 @@ mt_result mt_utf8_to_utf32_length(size_t* pUTF32Len, const mt_utf8* pUTF8, size_
         *pUTF32Len = utf32Len;
     }
 
-    return MT_SUCCESS;
+    return result;
 }
 
-mt_result mt_utf8_to_utf32ne(mt_utf32* pUTF32, size_t utf32Cap, size_t* pUTF32Len, const mt_utf8* pUTF8, size_t utf8Len, mt_uint32 flags)
+mt_result mt_utf8_to_utf32ne(mt_utf32* pUTF32, size_t utf32Cap, size_t* pUTF32Len, const mt_utf8* pUTF8, size_t utf8Len, size_t* pUTF8LenProcessed, mt_uint32 flags)
 {
+    mt_result result = MT_SUCCESS;
     size_t utf32CapOriginal = utf32Cap;
 
     if (pUTF32 == NULL) {
@@ -2061,14 +4201,21 @@ mt_result mt_utf8_to_utf32ne(mt_utf32* pUTF32, size_t utf32Cap, size_t* pUTF32Le
 
     if (utf8Len == (size_t)-1) {
         /* Null terminated string. */
+        const mt_utf8* pUTF8Original = pUTF8;
         while (pUTF8[0] != 0) {
-            if (pUTF8[0] < 128) {   /* ASCII character. */
+            if (utf32Cap == 0) {
+                result = MT_OUT_OF_MEMORY;
+                break;
+            }
+
+            if ((mt_uint8)pUTF8[0] < 128) {   /* ASCII character. */
                 pUTF32[0] = pUTF8[0];
                 pUTF8 += 1;
             } else {
                 if (mt_is_invalid_utf8_octet(pUTF8[0])) {
                     if ((flags & MT_ERROR_ON_INVALID_CODE_POINT) != 0) {
-                        return MT_INVALID_CODE_POINT;
+                        result = MT_INVALID_CODE_POINT;
+                        break;
                     } else {
                         /* Replacement. */
                         pUTF32[0] = MT_UNICODE_REPLACEMENT_CHARACTER;
@@ -2077,21 +4224,24 @@ mt_result mt_utf8_to_utf32ne(mt_utf32* pUTF32, size_t utf32Cap, size_t* pUTF32Le
                 } else {
                     if ((pUTF8[0] & 0xE0) == 0xC0) {
                         if (pUTF8[1] == 0) {
-                            return MT_INVALID_ARGS; /* Input string is too short. */
+                            result = MT_INVALID_ARGS; /* Input string is too short. */
+                            break;
                         }
 
                         pUTF32[0] = ((mt_utf16)(pUTF8[0] & 0x1F) <<  6) | (pUTF8[1] & 0x3F);
                         pUTF8 += 2;
                     } else if ((pUTF8[0] & 0xF0) == 0xE0) {
                         if (pUTF8[1] == 0 || pUTF8[2] == 0) {
-                            return MT_INVALID_ARGS; /* Input string is too short. */
+                            result = MT_INVALID_ARGS; /* Input string is too short. */
+                            break;
                         }
 
                         pUTF32[0] = ((mt_utf16)(pUTF8[0] & 0x0F) << 12) | ((mt_utf16)(pUTF8[1] & 0x3F) << 6) | (pUTF8[2] & 0x3F);
                         pUTF8 += 3;
                     } else if ((pUTF8[0] & 0xF8) == 0xF0) {
                         if (pUTF8[1] == 0 || pUTF8[2] == 0 || pUTF8[3] == 0) {
-                            return MT_INVALID_ARGS; /* Input string is too short. */
+                            result = MT_INVALID_ARGS; /* Input string is too short. */
+                            break;
                         }
 
                         pUTF32[0] = ((mt_utf32)(pUTF8[0] & 0x07) << 18) | ((mt_utf32)(pUTF8[1] & 0x3F) << 12) | ((mt_utf32)(pUTF8[2] & 0x3F) << 6) | (pUTF8[3] & 0x3F);
@@ -2099,7 +4249,8 @@ mt_result mt_utf8_to_utf32ne(mt_utf32* pUTF32, size_t utf32Cap, size_t* pUTF32Le
 
                         if (!mt_is_valid_code_point(pUTF32[0])) {
                             if ((flags & MT_ERROR_ON_INVALID_CODE_POINT) != 0) {
-                                return MT_INVALID_CODE_POINT;   /* No characters should be in the UTF-16 surrogate pair range. */
+                                result = MT_INVALID_CODE_POINT;   /* No characters should be in the UTF-16 surrogate pair range. */
+                                break;
                             } else {
                                 /* Replacement. */
                                 pUTF32[0] = MT_UNICODE_REPLACEMENT_CHARACTER;
@@ -2107,7 +4258,8 @@ mt_result mt_utf8_to_utf32ne(mt_utf32* pUTF32, size_t utf32Cap, size_t* pUTF32Le
                         }
                     } else {
                         if ((flags & MT_ERROR_ON_INVALID_CODE_POINT) != 0) {
-                            return MT_INVALID_CODE_POINT;
+                            result = MT_INVALID_CODE_POINT;
+                            break;
                         } else {
                             /* Replacement. */
                             pUTF32[0] = MT_UNICODE_REPLACEMENT_CHARACTER;
@@ -2120,16 +4272,27 @@ mt_result mt_utf8_to_utf32ne(mt_utf32* pUTF32, size_t utf32Cap, size_t* pUTF32Le
                 utf32Cap -= 1;
             }
         }
+
+        if (pUTF8LenProcessed != NULL) {
+            *pUTF8LenProcessed = (pUTF8 - pUTF8Original);
+        }
     } else {
         /* Fixed length string. */
-        for (size_t iUTF8 = 0; iUTF8 < utf8Len; /* Do nothing */) {
-            if (pUTF8[iUTF8+0] < 128) {   /* ASCII character. */
+        size_t iUTF8;
+        for (iUTF8 = 0; iUTF8 < utf8Len; /* Do nothing */) {
+            if (utf32Cap == 0) {
+                result = MT_OUT_OF_MEMORY;
+                break;
+            }
+
+            if ((mt_uint8)pUTF8[iUTF8+0] < 128) {   /* ASCII character. */
                 pUTF32[0] = pUTF8[iUTF8+0];
                 iUTF8 += 1;
             } else {
                 if (mt_is_invalid_utf8_octet(pUTF8[iUTF8+0])) {
                     if ((flags & MT_ERROR_ON_INVALID_CODE_POINT) != 0) {
-                        return MT_INVALID_CODE_POINT;
+                        result = MT_INVALID_CODE_POINT;
+                        break;
                     } else {
                         /* Replacement. */
                         pUTF32[0] = MT_UNICODE_REPLACEMENT_CHARACTER;
@@ -2138,21 +4301,24 @@ mt_result mt_utf8_to_utf32ne(mt_utf32* pUTF32, size_t utf32Cap, size_t* pUTF32Le
                 } else {
                     if ((pUTF8[iUTF8+0] & 0xE0) == 0xC0) {
                         if (iUTF8+1 >= utf8Len) {
-                            return MT_INVALID_ARGS;
+                            result = MT_INVALID_ARGS;
+                            break;
                         }
 
                         pUTF32[0] = ((mt_utf16)(pUTF8[iUTF8+0] & 0x1F) <<  6) | (pUTF8[iUTF8+1] & 0x3F);
                         iUTF8 += 2;
                     } else if ((pUTF8[iUTF8+0] & 0xF0) == 0xE0) {
                         if (iUTF8+2 >= utf8Len) {
-                            return MT_INVALID_ARGS;
+                            result = MT_INVALID_ARGS;
+                            break;
                         }
 
                         pUTF32[0] = ((mt_utf16)(pUTF8[iUTF8+0] & 0x0F) << 12) | ((mt_utf16)(pUTF8[iUTF8+1] & 0x3F) << 6) | (pUTF8[iUTF8+2] & 0x3F);
                         iUTF8 += 3;
                     } else if ((pUTF8[iUTF8+0] & 0xF8) == 0xF0) {
                         if (iUTF8+3 >= utf8Len) {
-                            return MT_INVALID_ARGS;
+                            result = MT_INVALID_ARGS;
+                            break;
                         }
 
                         pUTF32[0] = ((mt_utf32)(pUTF8[iUTF8+0] & 0x07) << 18) | ((mt_utf32)(pUTF8[iUTF8+1] & 0x3F) << 12) | ((mt_utf32)(pUTF8[iUTF8+2] & 0x3F) << 6) | (pUTF8[iUTF8+3] & 0x3F);
@@ -2160,7 +4326,8 @@ mt_result mt_utf8_to_utf32ne(mt_utf32* pUTF32, size_t utf32Cap, size_t* pUTF32Le
 
                         if (!mt_is_valid_code_point(pUTF32[0])) {
                             if ((flags & MT_ERROR_ON_INVALID_CODE_POINT) != 0) {
-                                return MT_INVALID_CODE_POINT;
+                                result = MT_INVALID_CODE_POINT;
+                                break;
                             } else {
                                 /* Replacement. */
                                 pUTF32[0] = MT_UNICODE_REPLACEMENT_CHARACTER;
@@ -2168,7 +4335,8 @@ mt_result mt_utf8_to_utf32ne(mt_utf32* pUTF32, size_t utf32Cap, size_t* pUTF32Le
                         }
                     } else {
                         if ((flags & MT_ERROR_ON_INVALID_CODE_POINT) != 0) {
-                            return MT_INVALID_CODE_POINT;
+                            result = MT_INVALID_CODE_POINT;
+                            break;
                         } else {
                             /* Replacement. */
                             pUTF32[0] = MT_UNICODE_REPLACEMENT_CHARACTER;
@@ -2181,29 +4349,33 @@ mt_result mt_utf8_to_utf32ne(mt_utf32* pUTF32, size_t utf32Cap, size_t* pUTF32Le
                 utf32Cap -= 1;
             }
         }
+
+        if (pUTF8LenProcessed != NULL) {
+            *pUTF8LenProcessed = iUTF8;
+        }
     }
 
     /* Null terminate. */
     if (utf32Cap == 0) {
-        return MT_OUT_OF_MEMORY;    /* Not enough room in the output buffer. */
+        result = MT_OUT_OF_MEMORY;    /* Not enough room in the output buffer. */
+    } else {
+        pUTF32[0] = 0;
     }
-
-    pUTF32[0] = 0;
 
     if (pUTF32Len != NULL) {
         *pUTF32Len = (utf32CapOriginal - utf32Cap);
     }
 
-    return MT_SUCCESS;
+    return result;
 }
 
-mt_result mt_utf8_to_utf32le(mt_utf32* pUTF32, size_t utf32Cap, size_t* pUTF32Len, const mt_utf8* pUTF8, size_t utf8Len, mt_uint32 flags)
+mt_result mt_utf8_to_utf32le(mt_utf32* pUTF32, size_t utf32Cap, size_t* pUTF32Len, const mt_utf8* pUTF8, size_t utf8Len, size_t* pUTF8LenProcessed, mt_uint32 flags)
 {
     mt_result result;
     size_t utf32Len;
 
     /* Always do a native endian conversion first, then byte swap if necessary. */
-    result = mt_utf8_to_utf32ne(pUTF32, utf32Cap, &utf32Len, pUTF8, utf8Len, flags);
+    result = mt_utf8_to_utf32ne(pUTF32, utf32Cap, &utf32Len, pUTF8, utf8Len, pUTF8LenProcessed, flags);
 
     if (pUTF32Len != NULL) {
         *pUTF32Len = utf32Len;
@@ -2220,13 +4392,13 @@ mt_result mt_utf8_to_utf32le(mt_utf32* pUTF32, size_t utf32Cap, size_t* pUTF32Le
     return MT_SUCCESS;
 }
 
-mt_result mt_utf8_to_utf32be(mt_utf32* pUTF32, size_t utf32Cap, size_t* pUTF32Len, const mt_utf8* pUTF8, size_t utf8Len, mt_uint32 flags)
+mt_result mt_utf8_to_utf32be(mt_utf32* pUTF32, size_t utf32Cap, size_t* pUTF32Len, const mt_utf8* pUTF8, size_t utf8Len, size_t* pUTF8LenProcessed, mt_uint32 flags)
 {
     mt_result result;
     size_t utf32Len;
 
     /* Always do a native endian conversion first, then byte swap if necessary. */
-    result = mt_utf8_to_utf32ne(pUTF32, utf32Cap, &utf32Len, pUTF8, utf8Len, flags);
+    result = mt_utf8_to_utf32ne(pUTF32, utf32Cap, &utf32Len, pUTF8, utf8Len, pUTF8LenProcessed, flags);
 
     if (pUTF32Len != NULL) {
         *pUTF32Len = utf32Len;
@@ -2247,6 +4419,7 @@ mt_result mt_utf8_to_utf32be(mt_utf32* pUTF32, size_t utf32Cap, size_t* pUTF32Le
 
 mt_result mt_utf16_to_utf8_length_internal(size_t* pUTF8Len, const mt_utf16* pUTF16, size_t utf16Len, mt_uint32 flags, mt_bool32 isLE)
 {
+    mt_result result = MT_SUCCESS;
     size_t utf8Len = 0;
     mt_utf16 w1;
     mt_utf16 w2;
@@ -2293,30 +4466,33 @@ mt_result mt_utf16_to_utf8_length_internal(size_t* pUTF8Len, const mt_utf16* pUT
                 /* 2 UTF-16 code units, or an error. */
                 if (w1 >= 0xD800 && w1 <= 0xDBFF) {
                     if (pUTF16[1] == 0) {
-                        return MT_INVALID_ARGS; /* Ran out of input data. */
-                    }
-
-                    if (isLE) {
-                        w2 = mt_le2host_16(pUTF16[1]);
+                        result = MT_INVALID_ARGS; /* Ran out of input data. */
+                        break;
                     } else {
-                        w2 = mt_be2host_16(pUTF16[1]);
-                    }
-                    
-                    if (w2 >= 0xDC00 && w2 <= 0xDFFF) {
-                        utf32 = mt_utf16_pair_to_utf32_cp(pUTF16);
-                    } else {
-                        if ((flags & MT_ERROR_ON_INVALID_CODE_POINT) != 0) {
-                            return MT_INVALID_CODE_POINT;
+                        if (isLE) {
+                            w2 = mt_le2host_16(pUTF16[1]);
                         } else {
-                            /* Replacement. */
-                            utf32 = MT_UNICODE_REPLACEMENT_CHARACTER;
+                            w2 = mt_be2host_16(pUTF16[1]);
                         }
-                    }
+                    
+                        if (w2 >= 0xDC00 && w2 <= 0xDFFF) {
+                            utf32 = mt_utf16_pair_to_utf32_cp(pUTF16);
+                        } else {
+                            if ((flags & MT_ERROR_ON_INVALID_CODE_POINT) != 0) {
+                                result = MT_INVALID_CODE_POINT;
+                                break;
+                            } else {
+                                /* Replacement. */
+                                utf32 = MT_UNICODE_REPLACEMENT_CHARACTER;
+                            }
+                        }
 
-                    pUTF16 += 2;
+                        pUTF16 += 2;
+                    }
                 } else {
                     if ((flags & MT_ERROR_ON_INVALID_CODE_POINT) != 0) {
-                        return MT_INVALID_CODE_POINT;
+                        result = MT_INVALID_CODE_POINT;
+                        break;
                     } else {
                         /* Replacement. */
                         utf32 = MT_UNICODE_REPLACEMENT_CHARACTER;
@@ -2345,31 +4521,34 @@ mt_result mt_utf16_to_utf8_length_internal(size_t* pUTF8Len, const mt_utf16* pUT
             } else {
                 /* 2 UTF-16 code units, or an error. */
                 if (w1 >= 0xD800 && w1 <= 0xDBFF) {
-                    if (iUTF16+1 >= utf16Len) {
-                        return MT_INVALID_ARGS; /* Ran out of input data. */
-                    }
-
-                    if (isLE) {
-                        w2 = mt_le2host_16(pUTF16[iUTF16+1]);
+                    if (iUTF16+1 > utf16Len) {
+                        result = MT_INVALID_ARGS; /* Ran out of input data. */
+                        break;
                     } else {
-                        w2 = mt_be2host_16(pUTF16[iUTF16+1]);
-                    }
-                    
-                    if (w2 >= 0xDC00 && w2 <= 0xDFFF) {
-                        utf32 = mt_utf16_pair_to_utf32_cp(pUTF16 + iUTF16);
-                    } else {
-                        if ((flags & MT_ERROR_ON_INVALID_CODE_POINT) != 0) {
-                            return MT_INVALID_CODE_POINT;
+                        if (isLE) {
+                            w2 = mt_le2host_16(pUTF16[iUTF16+1]);
                         } else {
-                            /* Replacement. */
-                            utf32 = MT_UNICODE_REPLACEMENT_CHARACTER;
+                            w2 = mt_be2host_16(pUTF16[iUTF16+1]);
                         }
-                    }
+                    
+                        if (w2 >= 0xDC00 && w2 <= 0xDFFF) {
+                            utf32 = mt_utf16_pair_to_utf32_cp(pUTF16 + iUTF16);
+                        } else {
+                            if ((flags & MT_ERROR_ON_INVALID_CODE_POINT) != 0) {
+                                result = MT_INVALID_CODE_POINT;
+                                break;
+                            } else {
+                                /* Replacement. */
+                                utf32 = MT_UNICODE_REPLACEMENT_CHARACTER;
+                            }
+                        }
 
-                    iUTF16 += 2;
+                        iUTF16 += 2;
+                    }
                 } else {
                     if ((flags & MT_ERROR_ON_INVALID_CODE_POINT) != 0) {
-                        return MT_INVALID_CODE_POINT;
+                        result = MT_INVALID_CODE_POINT;
+                        break;
                     } else {
                         utf32 = MT_UNICODE_REPLACEMENT_CHARACTER;
                     }
@@ -2386,7 +4565,7 @@ mt_result mt_utf16_to_utf8_length_internal(size_t* pUTF8Len, const mt_utf16* pUT
         *pUTF8Len = utf8Len;
     }
 
-    return MT_SUCCESS;
+    return result;
 }
 
 mt_result mt_utf16ne_to_utf8_length(size_t* pUTF8Len, const mt_utf16* pUTF16, size_t utf16Len, mt_uint32 flags)
@@ -2441,8 +4620,9 @@ mt_result mt_utf16_to_utf8_length(size_t* pUTF8Len, const mt_utf16* pUTF16, size
 }
 
 
-mt_result mt_utf16_to_utf8_internal(mt_utf8* pUTF8, size_t utf8Cap, size_t* pUTF8Len, const mt_utf16* pUTF16, size_t utf16Len, mt_uint32 flags, mt_bool32 isLE)
+mt_result mt_utf16_to_utf8_internal(mt_utf8* pUTF8, size_t utf8Cap, size_t* pUTF8Len, const mt_utf16* pUTF16, size_t utf16Len, size_t* pUTF16LenProcessed, mt_uint32 flags, mt_bool32 isLE)
 {
+    mt_result result = MT_SUCCESS;
     size_t utf8CapOriginal = utf8Cap;
     mt_utf16 w1;
     mt_utf16 w2;
@@ -2475,7 +4655,13 @@ mt_result mt_utf16_to_utf8_internal(mt_utf8* pUTF8, size_t utf8Cap, size_t* pUTF
 
     if (utf16Len == (size_t)-1) {
         /* Null terminated string. */
+        const mt_utf16* pUTF16Original = pUTF16;
         while (pUTF16[0] != 0) {
+            if (utf8Cap == 0) {
+                result = MT_OUT_OF_MEMORY;
+                break;
+            }
+
             if (isLE) {
                 w1 = mt_le2host_16(pUTF16[0]);
             } else {
@@ -2490,30 +4676,33 @@ mt_result mt_utf16_to_utf8_internal(mt_utf8* pUTF8, size_t utf8Cap, size_t* pUTF
                 /* 2 UTF-16 code units, or an error. */
                 if (w1 >= 0xD800 && w1 <= 0xDBFF) {
                     if (pUTF16[1] == 0) {
-                        return MT_INVALID_ARGS; /* Ran out of input data. */
-                    }
-
-                    if (isLE) {
-                        w2 = mt_le2host_16(pUTF16[1]);
+                        result = MT_INVALID_ARGS; /* Ran out of input data. */
+                        break;
                     } else {
-                        w2 = mt_be2host_16(pUTF16[1]);
-                    }
-                    
-                    if (w2 >= 0xDC00 && w2 <= 0xDFFF) {
-                        utf32 = mt_utf16_pair_to_utf32_cp(pUTF16);
-                    } else {
-                        if ((flags & MT_ERROR_ON_INVALID_CODE_POINT) != 0) {
-                            return MT_INVALID_CODE_POINT;
+                        if (isLE) {
+                            w2 = mt_le2host_16(pUTF16[1]);
                         } else {
-                            /* Replacement. */
-                            utf32 = MT_UNICODE_REPLACEMENT_CHARACTER;
+                            w2 = mt_be2host_16(pUTF16[1]);
                         }
-                    }
+                    
+                        if (w2 >= 0xDC00 && w2 <= 0xDFFF) {
+                            utf32 = mt_utf16_pair_to_utf32_cp(pUTF16);
+                        } else {
+                            if ((flags & MT_ERROR_ON_INVALID_CODE_POINT) != 0) {
+                                result = MT_INVALID_CODE_POINT;
+                                break;
+                            } else {
+                                /* Replacement. */
+                                utf32 = MT_UNICODE_REPLACEMENT_CHARACTER;
+                            }
+                        }
 
-                    pUTF16 += 2;
+                        pUTF16 += 2;
+                    }
                 } else {
                     if ((flags & MT_ERROR_ON_INVALID_CODE_POINT) != 0) {
-                        return MT_INVALID_CODE_POINT;
+                        result = MT_INVALID_CODE_POINT;
+                        break;
                     } else {
                         /* Replacement. */
                         utf32 = MT_UNICODE_REPLACEMENT_CHARACTER;
@@ -2525,16 +4714,26 @@ mt_result mt_utf16_to_utf8_internal(mt_utf8* pUTF8, size_t utf8Cap, size_t* pUTF
 
             utf8cpLen = mt_utf32_cp_to_utf8(utf32, pUTF8, utf8Cap);
             if (utf8cpLen == 0) {
-                return MT_OUT_OF_MEMORY;    /* A return value of 0 at this point means there was not enough room in the output buffer. */
+                result = MT_OUT_OF_MEMORY;    /* A return value of 0 at this point means there was not enough room in the output buffer. */
+                break;
             }
 
             pUTF8   += utf8cpLen;
             utf8Cap -= utf8cpLen;
         }
+
+        if (pUTF16LenProcessed != NULL) {
+            *pUTF16LenProcessed = (pUTF16 - pUTF16Original);
+        }
     } else {
         /* Fixed length string. */
         size_t iUTF16;
         for (iUTF16 = 0; iUTF16 < utf16Len; /* Do nothing */) {
+            if (utf8Cap == 0) {
+                result = MT_OUT_OF_MEMORY;
+                break;
+            }
+
             if (isLE) {
                 w1 = mt_le2host_16(pUTF16[iUTF16+0]);
             } else {
@@ -2548,31 +4747,34 @@ mt_result mt_utf16_to_utf8_internal(mt_utf8* pUTF8, size_t utf8Cap, size_t* pUTF
             } else {
                 /* 2 UTF-16 code units, or an error. */
                 if (w1 >= 0xD800 && w1 <= 0xDBFF) {
-                    if (iUTF16+1 >= utf16Len) {
-                        return MT_INVALID_ARGS; /* Ran out of input data. */
-                    }
-
-                    if (isLE) {
-                        w2 = mt_le2host_16(pUTF16[iUTF16+1]);
+                    if (iUTF16+1 > utf16Len) {
+                        result = MT_INVALID_ARGS; /* Ran out of input data. */
+                        break;
                     } else {
-                        w2 = mt_be2host_16(pUTF16[iUTF16+1]);
-                    }
-                    
-                    if (w2 >= 0xDC00 && w2 <= 0xDFFF) {
-                        utf32 = mt_utf16_pair_to_utf32_cp(pUTF16 + iUTF16);
-                    } else {
-                        if ((flags & MT_ERROR_ON_INVALID_CODE_POINT) != 0) {
-                            return MT_INVALID_CODE_POINT;
+                        if (isLE) {
+                            w2 = mt_le2host_16(pUTF16[iUTF16+1]);
                         } else {
-                            /* Replacement. */
-                            utf32 = MT_UNICODE_REPLACEMENT_CHARACTER;
+                            w2 = mt_be2host_16(pUTF16[iUTF16+1]);
                         }
-                    }
+                    
+                        if (w2 >= 0xDC00 && w2 <= 0xDFFF) {
+                            utf32 = mt_utf16_pair_to_utf32_cp(pUTF16 + iUTF16);
+                        } else {
+                            if ((flags & MT_ERROR_ON_INVALID_CODE_POINT) != 0) {
+                                result = MT_INVALID_CODE_POINT;
+                                break;
+                            } else {
+                                /* Replacement. */
+                                utf32 = MT_UNICODE_REPLACEMENT_CHARACTER;
+                            }
+                        }
 
-                    iUTF16 += 2;
+                        iUTF16 += 2;
+                    }
                 } else {
                     if ((flags & MT_ERROR_ON_INVALID_CODE_POINT) != 0) {
-                        return MT_INVALID_CODE_POINT;
+                        result = MT_INVALID_CODE_POINT;
+                        break;
                     } else {
                         /* Replacement. */
                         utf32 = MT_UNICODE_REPLACEMENT_CHARACTER;
@@ -2584,48 +4786,53 @@ mt_result mt_utf16_to_utf8_internal(mt_utf8* pUTF8, size_t utf8Cap, size_t* pUTF
 
             utf8cpLen = mt_utf32_cp_to_utf8(utf32, pUTF8, utf8Cap);
             if (utf8cpLen == 0) {
-                return MT_OUT_OF_MEMORY;    /* A return value of 0 at this point means there was not enough room in the output buffer. */
+                result = MT_OUT_OF_MEMORY;    /* A return value of 0 at this point means there was not enough room in the output buffer. */
+                break;
             }
 
             pUTF8   += utf8cpLen;
             utf8Cap -= utf8cpLen;
         }
+
+        if (pUTF16LenProcessed != NULL) {
+            *pUTF16LenProcessed = iUTF16;
+        }
     }
     
     /* Null terminate. */
     if (utf8Cap == 0) {
-        return MT_OUT_OF_MEMORY;    /* Not enough room in the output buffer. */
+        result = MT_OUT_OF_MEMORY;    /* Not enough room in the output buffer. */
+    } else {
+        pUTF8[0] = 0;
     }
-
-    pUTF8[0] = 0;
 
     if (pUTF8Len != NULL) {
         *pUTF8Len = (utf8CapOriginal - utf8Cap);
     }
 
-    return MT_SUCCESS;
+    return result;
 }
 
-mt_result mt_utf16ne_to_utf8(mt_utf8* pUTF8, size_t utf8Cap, size_t* pUTF8Len, const mt_utf16* pUTF16, size_t utf16Len, mt_uint32 flags)
+mt_result mt_utf16ne_to_utf8(mt_utf8* pUTF8, size_t utf8Cap, size_t* pUTF8Len, const mt_utf16* pUTF16, size_t utf16Len, size_t* pUTF16LenProcessed, mt_uint32 flags)
 {
     if (mt_is_little_endian()) {
-        return mt_utf16le_to_utf8(pUTF8, utf8Cap, pUTF8Len, pUTF16, utf16Len, flags);
+        return mt_utf16le_to_utf8(pUTF8, utf8Cap, pUTF8Len, pUTF16, utf16Len, pUTF16LenProcessed, flags);
     } else {
-        return mt_utf16be_to_utf8(pUTF8, utf8Cap, pUTF8Len, pUTF16, utf16Len, flags);
+        return mt_utf16be_to_utf8(pUTF8, utf8Cap, pUTF8Len, pUTF16, utf16Len, pUTF16LenProcessed, flags);
     }
 }
 
-mt_result mt_utf16le_to_utf8(mt_utf8* pUTF8, size_t utf8Cap, size_t* pUTF8Len, const mt_utf16* pUTF16, size_t utf16Len, mt_uint32 flags)
+mt_result mt_utf16le_to_utf8(mt_utf8* pUTF8, size_t utf8Cap, size_t* pUTF8Len, const mt_utf16* pUTF16, size_t utf16Len, size_t* pUTF16LenProcessed, mt_uint32 flags)
 {
-    return mt_utf16_to_utf8_internal(pUTF8, utf8Cap, pUTF8Len, pUTF16, utf16Len, flags, MT_TRUE);
+    return mt_utf16_to_utf8_internal(pUTF8, utf8Cap, pUTF8Len, pUTF16, utf16Len, pUTF16LenProcessed, flags, MT_TRUE);
 }
 
-mt_result mt_utf16be_to_utf8(mt_utf8* pUTF8, size_t utf8Cap, size_t* pUTF8Len, const mt_utf16* pUTF16, size_t utf16Len, mt_uint32 flags)
+mt_result mt_utf16be_to_utf8(mt_utf8* pUTF8, size_t utf8Cap, size_t* pUTF8Len, const mt_utf16* pUTF16, size_t utf16Len, size_t* pUTF16LenProcessed, mt_uint32 flags)
 {
-    return mt_utf16_to_utf8_internal(pUTF8, utf8Cap, pUTF8Len, pUTF16, utf16Len, flags, MT_FALSE);
+    return mt_utf16_to_utf8_internal(pUTF8, utf8Cap, pUTF8Len, pUTF16, utf16Len, pUTF16LenProcessed, flags, MT_FALSE);
 }
 
-mt_result mt_utf16_to_utf8(mt_utf8* pUTF8, size_t utf8Cap, size_t* pUTF8Len, const mt_utf16* pUTF16, size_t utf16Len, mt_uint32 flags)
+mt_result mt_utf16_to_utf8(mt_utf8* pUTF8, size_t utf8Cap, size_t* pUTF8Len, const mt_utf16* pUTF16, size_t utf16Len, size_t* pUTF16LenProcessed, mt_uint32 flags)
 {
     if (pUTF8 == NULL) {
         return mt_utf16_to_utf8_length(pUTF8Len, pUTF16, utf16Len, flags);
@@ -2655,14 +4862,125 @@ mt_result mt_utf16_to_utf8(mt_utf8* pUTF8, size_t utf8Cap, size_t* pUTF8Len, con
         }
 
         if (isLE) {
-            return mt_utf16le_to_utf8(pUTF8, utf8Cap, pUTF8Len, pUTF16+1, utf16Len-1, flags | MT_FORBID_BOM); /* <-- We already found a BOM, so we don't want to allow another occurance. */
+            return mt_utf16le_to_utf8(pUTF8, utf8Cap, pUTF8Len, pUTF16+1, utf16Len-1, pUTF16LenProcessed, flags | MT_FORBID_BOM); /* <-- We already found a BOM, so we don't want to allow another occurance. */
         } else {
-            return mt_utf16be_to_utf8(pUTF8, utf8Cap, pUTF8Len, pUTF16+1, utf16Len-1, flags | MT_FORBID_BOM); /* <-- We already found a BOM, so we don't want to allow another occurance. */
+            return mt_utf16be_to_utf8(pUTF8, utf8Cap, pUTF8Len, pUTF16+1, utf16Len-1, pUTF16LenProcessed, flags | MT_FORBID_BOM); /* <-- We already found a BOM, so we don't want to allow another occurance. */
         }
     }
 
     /* Getting here means there was no BOM, so assume native endian. */
-    return mt_utf16ne_to_utf8(pUTF8, utf8Cap, pUTF8Len, pUTF16, utf16Len, flags);
+    return mt_utf16ne_to_utf8(pUTF8, utf8Cap, pUTF8Len, pUTF16, utf16Len, pUTF16LenProcessed, flags);
+}
+
+
+/**************************************************************************************************************************************************************
+
+Utilities
+
+**************************************************************************************************************************************************************/
+mt_bool32 mt_is_null_or_empty(const mt_utf8* pUTF8)
+{
+    return pUTF8 == NULL || pUTF8[0] == '\0';
+}
+
+mt_bool32 mt_is_null_or_whitespace(const mt_utf8* pUTF8)
+{
+    if (pUTF8 == NULL) {
+        return MT_TRUE;
+    }
+
+    while (pUTF8[0] != '\0') {
+        /* BEG AUTOGEN: is_null_or_whitespace_utf8 */
+        if ((mt_uint8)pUTF8[0] >= 0x9 && (mt_uint8)pUTF8[0] <= 0xD) {
+            pUTF8 += 1;
+            continue;
+        }
+        if ((mt_uint8)pUTF8[0] == 0x20) {
+            pUTF8 += 1;
+            continue;
+        }
+        if ((mt_uint8)pUTF8[0] == 0xC2 && (mt_uint8)pUTF8[1] == 0x85) {
+            pUTF8 += 2;
+            continue;
+        }
+        if ((mt_uint8)pUTF8[0] == 0xC2 && (mt_uint8)pUTF8[1] == 0xA0) {
+            pUTF8 += 2;
+            continue;
+        }
+        if ((mt_uint8)pUTF8[0] == 0xE1 && (mt_uint8)pUTF8[1] == 0x9A && (mt_uint8)pUTF8[2] == 0x80) {
+            pUTF8 += 3;
+            continue;
+        }
+        if ((mt_uint8)pUTF8[0] == 0xE2 && (mt_uint8)pUTF8[1] == 0x80 && (mt_uint8)pUTF8[2] == 0x80) {
+            pUTF8 += 3;
+            continue;
+        }
+        if ((mt_uint8)pUTF8[0] == 0xE2 && (mt_uint8)pUTF8[1] == 0x80 && (mt_uint8)pUTF8[2] == 0x81) {
+            pUTF8 += 3;
+            continue;
+        }
+        if ((mt_uint8)pUTF8[0] == 0xE2 && (mt_uint8)pUTF8[1] == 0x80 && (mt_uint8)pUTF8[2] == 0x82) {
+            pUTF8 += 3;
+            continue;
+        }
+        if ((mt_uint8)pUTF8[0] == 0xE2 && (mt_uint8)pUTF8[1] == 0x80 && (mt_uint8)pUTF8[2] == 0x83) {
+            pUTF8 += 3;
+            continue;
+        }
+        if ((mt_uint8)pUTF8[0] == 0xE2 && (mt_uint8)pUTF8[1] == 0x80 && (mt_uint8)pUTF8[2] == 0x84) {
+            pUTF8 += 3;
+            continue;
+        }
+        if ((mt_uint8)pUTF8[0] == 0xE2 && (mt_uint8)pUTF8[1] == 0x80 && (mt_uint8)pUTF8[2] == 0x85) {
+            pUTF8 += 3;
+            continue;
+        }
+        if ((mt_uint8)pUTF8[0] == 0xE2 && (mt_uint8)pUTF8[1] == 0x80 && (mt_uint8)pUTF8[2] == 0x86) {
+            pUTF8 += 3;
+            continue;
+        }
+        if ((mt_uint8)pUTF8[0] == 0xE2 && (mt_uint8)pUTF8[1] == 0x80 && (mt_uint8)pUTF8[2] == 0x87) {
+            pUTF8 += 3;
+            continue;
+        }
+        if ((mt_uint8)pUTF8[0] == 0xE2 && (mt_uint8)pUTF8[1] == 0x80 && (mt_uint8)pUTF8[2] == 0x88) {
+            pUTF8 += 3;
+            continue;
+        }
+        if ((mt_uint8)pUTF8[0] == 0xE2 && (mt_uint8)pUTF8[1] == 0x80 && (mt_uint8)pUTF8[2] == 0x89) {
+            pUTF8 += 3;
+            continue;
+        }
+        if ((mt_uint8)pUTF8[0] == 0xE2 && (mt_uint8)pUTF8[1] == 0x80 && (mt_uint8)pUTF8[2] == 0x8A) {
+            pUTF8 += 3;
+            continue;
+        }
+        if ((mt_uint8)pUTF8[0] == 0xE2 && (mt_uint8)pUTF8[1] == 0x80 && (mt_uint8)pUTF8[2] == 0xA8) {
+            pUTF8 += 3;
+            continue;
+        }
+        if ((mt_uint8)pUTF8[0] == 0xE2 && (mt_uint8)pUTF8[1] == 0x80 && (mt_uint8)pUTF8[2] == 0xA9) {
+            pUTF8 += 3;
+            continue;
+        }
+        if ((mt_uint8)pUTF8[0] == 0xE2 && (mt_uint8)pUTF8[1] == 0x80 && (mt_uint8)pUTF8[2] == 0xAF) {
+            pUTF8 += 3;
+            continue;
+        }
+        if ((mt_uint8)pUTF8[0] == 0xE2 && (mt_uint8)pUTF8[1] == 0x81 && (mt_uint8)pUTF8[2] == 0x9F) {
+            pUTF8 += 3;
+            continue;
+        }
+        if ((mt_uint8)pUTF8[0] == 0xE3 && (mt_uint8)pUTF8[1] == 0x80 && (mt_uint8)pUTF8[2] == 0x80) {
+            pUTF8 += 3;
+            continue;
+        }
+        /* END AUTOGEN: is_null_or_whitespace_utf8 */
+
+        return MT_FALSE;    /* Not whitespace. */
+    }
+
+    return MT_TRUE;
 }
 #endif  /* MINITYPE_IMPLEMENTATION */
 
