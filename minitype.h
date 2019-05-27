@@ -226,7 +226,7 @@ typedef enum
     /*mt_backend_direct2d,*/       /* Typography via DirectWrite */
     /*mt_backend_coregraphics,*/   /* Typography via Core Text */
     mt_backend_cairo,          /* Typography via Pango */
-    /*mt_backend_xft*/             /* Typography via HarfBuzz and minitype */
+    /*mt_backend_xft*/             /* Typography via minitype */
 } mt_backend;
 
 typedef enum
@@ -1025,6 +1025,14 @@ mt_result mt_utf16_to_utf8(mt_utf8* pUTF8, size_t utf8Cap, size_t* pUTF8Len, con
 #endif
 #endif
 
+#ifndef MT_CALLOC
+#ifdef MT_WIN32
+#define MT_CALLOC(c, sz) HeapAlloc(GetProcessHeap(), 0x00000008, (c)*(sz))
+#else
+#define MT_CALLOC(c, sz) calloc((c), (sz))
+#endif
+#endif
+
 #ifndef MT_REALLOC
 #ifdef MT_WIN32
 #define MT_REALLOC(p, sz) (((sz) > 0) ? ((p) ? HeapReAlloc(GetProcessHeap(), 0, (p), (sz)) : HeapAlloc(GetProcessHeap(), 0, (sz))) : ((VOID*)(size_t)(HeapFree(GetProcessHeap(), 0, (p)) & 0)))
@@ -1332,6 +1340,8 @@ mt_result mt_brush_init__gdi(mt_api* pAPI, const mt_brush_config* pConfig, mt_br
         default: return MT_INVALID_ARGS;
     }
 
+    pBrush->gdi.hBrush = hBrush;
+
     return MT_SUCCESS;
 }
 
@@ -1395,7 +1405,15 @@ mt_result mt_gc_init__gdi(mt_api* pAPI, const mt_gc_config* pConfig, mt_gc* pGC)
 
     /* We need at least one item in the state stack. Unfortunately malloc() here - may want to think about optimizing this. Perhaps some optimized per-API scheme? */
     pGC->gdi.stateCount = 1;
-    pGC->gdi.pState = (mt_gc_state_gdi*)MT_MALLOC(sizeof(*pGC->gdi.pState) * pGC->gdi.stateCount);
+    pGC->gdi.stateCap   = 1;
+    pGC->gdi.pState = (mt_gc_state_gdi*)MT_CALLOC(pGC->gdi.stateCap, sizeof(*pGC->gdi.pState));
+    if (pGC->gdi.pState == NULL) {
+        if (!pGC->isTransient) {
+            DeleteDC((HDC)pGC->gdi.hDC);
+            DeleteObject((HGDIOBJ)pGC->gdi.hBitmap);
+        }
+        return MT_OUT_OF_MEMORY;
+    }
 
     return MT_SUCCESS;
 }
@@ -1432,7 +1450,7 @@ mt_result mt_gc_save__gdi(mt_gc* pGC)
     }
 
     if (pGC->gdi.stateCount == pGC->gdi.stateCap) {
-        mt_uint32 newCap = MT_MIN(1, pGC->gdi.stateCap * 2);
+        mt_uint32 newCap = MT_MAX(1, pGC->gdi.stateCap * 2);
         mt_gc_state_gdi* pNewState = (mt_gc_state_gdi*)MT_REALLOC(pGC->gdi.pState, newCap * sizeof(*pNewState));
         if (pNewState == NULL) {
             return MT_OUT_OF_MEMORY;
@@ -1445,6 +1463,7 @@ mt_result mt_gc_save__gdi(mt_gc* pGC)
     MT_ASSERT(pGC->gdi.stateCount < pGC->gdi.stateCap);
 
     pGC->gdi.pState[pGC->gdi.stateCount] = pGC->gdi.pState[pGC->gdi.stateCount-1];
+    pGC->gdi.pState[pGC->gdi.stateCount].hPen = NULL;   /* The pen needs to be cleared to NULL and a new copy of the pen created when necessary. The pen will be deleted when the state is restored. */
     pGC->gdi.stateCount += 1;
 
     return MT_SUCCESS;
@@ -1459,11 +1478,20 @@ mt_result mt_gc_restore__gdi(mt_gc* pGC)
         return MT_INVALID_OPERATION;    /* Nothing to restore. */
     }
 
+    pGC->gdi.stateCount -= 1;
+
+    /* If we have a pen that's not the stock pen we need to delete it. */
+    if (pGC->gdi.pState[pGC->gdi.stateCount].hPen != NULL) {
+        SelectObject((HDC)pGC->gdi.hDC, GetStockObject(NULL_PEN));
+        if (!DeleteObject((HGDIOBJ)pGC->gdi.pState[pGC->gdi.stateCount].hPen)) {
+            MT_ASSERT(MT_FALSE);    /* For debugging. */
+        }
+        pGC->gdi.pState[pGC->gdi.stateCount].hPen = NULL;
+    }
+
     if (RestoreDC((HDC)pGC->gdi.hDC, -1) == 0) {
         return MT_ERROR;    /* Failed to restore the HDC state. */
     }
-
-    pGC->gdi.stateCount -= 1;
 
     return MT_SUCCESS;
 }
@@ -1567,6 +1595,8 @@ MT_PRIVATE void mt_gc_select_current_pen__gdi(mt_gc* pGC)
             pStyle[i] = (DWORD)pGC->gdi.pState[iState].dashes[i];
         }
 
+        MT_ZERO_OBJECT(&lbrush);
+
         if (pGC->gdi.pState[iState].pLineUserBrush == NULL) {
             mt_brush_config* pBrush = &pGC->gdi.pState[iState].lineStockBrush;
             if (pBrush->type == mt_brush_type_solid) {
@@ -1599,7 +1629,7 @@ MT_PRIVATE void mt_gc_select_current_pen__gdi(mt_gc* pGC)
             }
         }
         
-        hPen = ExtCreatePen(iPenStyle, cWidth, &lbrush, cStyle, pStyle);
+        hPen = ExtCreatePen(iPenStyle, cWidth, &lbrush, cStyle, (cStyle == 0) ? NULL : pStyle);
         if (hPen == NULL) {
             return; /* Failed to create the pen. */
         }
@@ -1720,7 +1750,14 @@ MT_PRIVATE void mt_gc_set_fill_brush_transient__gdi(mt_gc* pGC, const mt_brush_c
     pGC->gdi.pState[iState].hasTransientFillBrush = MT_TRUE;
 
     SelectObject((HDC)pGC->gdi.hDC, pGC->gdi.pState[iState].transientFillBrush.gdi.hBrush);
-    pGC->gdi.pState[pGC->gdi.stateCount-1].pUserFillBrush = NULL;
+
+    if (pGC->gdi.pState[iState].transientFillBrush.config.type == mt_brush_type_solid) {
+        SetDCBrushColor((HDC)pGC->gdi.hDC, RGB(pConfig->solid.color.r, pConfig->solid.color.g, pConfig->solid.color.b));
+    } else if (pGC->gdi.pState[iState].transientFillBrush.config.type == mt_brush_type_gc) {
+        /* TODO: Do something. */
+    }
+
+    pGC->gdi.pState[iState].pUserFillBrush = NULL;
 
     /* We can now uninitialize the previous brush since it's no longer selected on the GDI side. */
     if (uninitPrevTransientBrush) {
@@ -1821,7 +1858,7 @@ void mt_gc_rectangle__gdi(mt_gc* pGC, mt_int32 left, mt_int32 top, mt_int32 righ
     MT_ASSERT(pGC != NULL);
 
     mt_gc_begin_path_if_required__gdi(pGC);
-    Rectangle((HDC)pGC->gdi.hDC, left, top, right, bottom);
+    Rectangle((HDC)pGC->gdi.hDC, left, top, right+1, bottom+1); /* From the documentation for Rectangle(): https://docs.microsoft.com/en-us/windows/desktop/api/wingdi/nf-wingdi-rectangle */
 }
 
 void mt_gc_arc__gdi(mt_gc* pGC, mt_int32 x, mt_int32 y, mt_int32 radius, float angle1InRadians, float angle2InRadians)
