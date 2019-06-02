@@ -126,9 +126,9 @@ typedef mt_uint32 mt_utf32;
 #define MT_PI       3.14159265358979323846
 #define MT_PIF      3.14159265358979323846f
 
-#define MT_DEGREES (radians) ((double)((radians) * 57.29577951308232087685))
+#define MT_DEGREES(radians)  ((double)((radians) * 57.29577951308232087685))
 #define MT_DEGREESF(radians) ( (float)((radians) * 57.29577951308232087685f))
-#define MT_RADIANS (degrees) ((double)((degrees) *  0.01745329251994329577))
+#define MT_RADIANS(degrees)  ((double)((degrees) *  0.01745329251994329577))
 #define MT_RADIANSF(degrees) ( (float)((degrees) *  0.01745329251994329577f))
 
 
@@ -300,6 +300,7 @@ struct mt_api
     void      (* fontUninit)         (mt_font* pFont);
     mt_result (* brushInit)          (mt_api* pAPI, const mt_brush_config* pConfig, mt_brush* pBrush);
     void      (* brushUninit)        (mt_brush* pBrush);
+    void      (* brushSetOrigin)     (mt_brush* pBrush, mt_int32 x, mt_int32 y);
     mt_result (* gcInit)             (mt_api* pAPI, const mt_gc_config* pConfig, mt_gc* pGC);
     void      (* gcUninit)           (mt_gc* pGC);
     mt_result (* gcSave)             (mt_gc* pGC);
@@ -452,49 +453,51 @@ struct mt_brush
     {
         /*HBRUSH*/  mt_handle hBrush;
         /*HBITMAP*/ mt_handle hBitmap;  /* Only used for complex brushes. Owned by the mt_brush object and deleted in mt_brush_uninit(). */
+        mt_int32 originX;
+        mt_int32 originY;
+        mt_bool32 ownsBitmap : 1;       /* When set to true, hBitmap will be destroyed in mt_brush_uninit(). */
     } gdi;
 #endif
 };
 
 struct mt_gc_config
 {
-    mt_uint32 sizeX;            /* Set this to 0 if you are passing in a pre-existing backend context or surface (such as a HDC or cairo_surface). */
-    mt_uint32 sizeY;            /* Set this to 0 if you are passing in a pre-existing backend context or surface (such as a HDC or cairo_surface). */
-    mt_uint32 stride;           /* Stride in pixels. Only used when pInitialImageData is not null. */
-    mt_format format;           /* The format of the data contained in pInitialImageData (if any) and the preferred internal format. Cannot be mt_format_unkonwn if pInitialImageData is not null. */
-    void* pInitialImageData;    /* Can be null in which case the initial contents are undefined. */
+    mt_uint32 sizeX;                    /* Set this to 0 if you are passing in a pre-existing backend context or surface (such as a HDC or cairo_surface). */
+    mt_uint32 sizeY;                    /* Set this to 0 if you are passing in a pre-existing backend context or surface (such as a HDC or cairo_surface). */
+    mt_uint32 stride;                   /* Stride in pixels. Only used when pInitialImageData is not null. */
+    mt_format format;                   /* The format of the data contained in pInitialImageData (if any) and the preferred internal format. Cannot be mt_format_unkonwn if pInitialImageData is not null. */
+    const void* pInitialImageData;      /* Can be null in which case the initial contents are undefined. */
 
 #if defined(MT_SUPPORT_GDI)
     struct
     {
-        /*HDC*/ mt_handle hDC;  /* Existing HDC to use as the rendering target. Set this for transient context's such as those used in BeginPaint()/EndPaint() pairs. */
+        /*HDC*/ mt_handle hDC;          /* Existing HDC to use as the rendering target. Set this for transient context's such as those used in BeginPaint()/EndPaint() pairs. */
     } gdi;
 #endif
-    int _unused;
 };
 
 #if defined(MT_SUPPORT_GDI)
 typedef struct
 {
-    /*HPEN*/ mt_handle hPen;        /* Lazily initialized. Set to NULL to indicate the case when a new pen handle needs to be created. */
+    /*HPEN*/ mt_handle hPen;            /* Lazily initialized. Set to NULL to indicate the case when a new pen handle needs to be created. */
     mt_int32 lineWidth;
     mt_line_cap lineCap;
     mt_line_join lineJoin;
     mt_uint32 dashCount;
     float dashes[16];
     mt_blend_op blendOp;
-    mt_brush_config lineStockBrush; /* For use with solid and GC brushes. Only used when pLineUserBrush is NULL. */
-    mt_brush* pLineUserBrush;       /* For use with user-defined brushes. */
-    mt_brush transientFillBrush;    /* For use with solid and GC brushes. Only used when pUserFillBrush is NULL. */
-    mt_brush* pUserFillBrush;       /* For use with user-defined brushes. */
+    mt_brush_config lineStockBrush;     /* For use with solid and GC brushes. Only used when pUserLineBrush is NULL. */
+    mt_brush* pUserLineBrush;           /* For use with user-defined brushes. */
+    mt_brush transientFillBrush;        /* For use with solid and GC brushes. Only used when pUserFillBrush is NULL. */
+    mt_brush* pUserFillBrush;           /* For use with user-defined brushes. */
     mt_bool32 hasTransientFillBrush : 1;
-    mt_bool32 hasPathBegun : 1;     /* Determines whether or not BeginPath has been called. */
+    mt_bool32 hasPathBegun : 1;         /* Determines whether or not BeginPath has been called. */
 } mt_gc_state_gdi;
 #endif
 
 struct mt_gc
 {
-    mt_api* pAPI;   /* The mt_api object that was used to initialize the graphics context. */
+    mt_api* pAPI;                       /* The mt_api object that was used to initialize the graphics context. */
     mt_format format;
     mt_bool32 isTransient : 1;
 
@@ -596,6 +599,7 @@ Brushes
 ******************************************************************************/
 mt_result mt_brush_init(mt_api* pAPI, const mt_brush_config* pConfig, mt_brush* pBrush);
 void mt_brush_uninit(mt_brush* pBrush);
+void mt_brush_set_origin(mt_brush* pBrush, mt_int32 x, mt_int32 y);
 
 /******************************************************************************
 
@@ -719,6 +723,16 @@ Copies and converts image data.
 You are allowed to specify the same format for the source and target in which case this performs a direct copy with no conversion.
 */
 void mt_copy_image_data(void* pDst, const void* pSrc, mt_uint32 sizeX, mt_uint32 sizeY, mt_uint32 dstStride, mt_format dstFormat, mt_uint32 srcStride, mt_format srcFormat);
+
+/*
+Copies the given image data and flips it.
+*/
+void mt_copy_and_flip_image_data_y(void* pDst, const void* pSrc, mt_uint32 sizeX, mt_uint32 sizeY, mt_uint32 dstStride, mt_format dstFormat, mt_uint32 srcStride, mt_format srcFormat);
+
+/*
+Flips the given image data horizontally, in place.
+*/
+void mt_flip_image_data_y(void* pDst, mt_uint32 sizeX, mt_uint32 sizeY, mt_uint32 stride, mt_format format);
 
 
 /**************************************************************************************************************************************************************
@@ -1310,7 +1324,9 @@ void mt_font_uninit__gdi(mt_font* pFont)
 /* Brush */
 mt_result mt_brush_init__gdi(mt_api* pAPI, const mt_brush_config* pConfig, mt_brush* pBrush)
 {
-    HBRUSH hBrush;
+    HBRUSH    hBrush     = NULL;
+    HBITMAP   hBitmap    = NULL;
+    mt_bool32 ownsBitmap = MT_FALSE;
 
     MT_ASSERT(pAPI != NULL);
     MT_ASSERT(pConfig != NULL);
@@ -1334,13 +1350,30 @@ mt_result mt_brush_init__gdi(mt_api* pAPI, const mt_brush_config* pConfig, mt_br
         case mt_brush_type_gc:
         {
             /* TODO: Implement me. If the HDC is writing to a HBITMAP we can retrieve that. Otherwise we need to create a new HBITMAP, BitBlt the source HDC over to it and use that. */
-            return MT_INVALID_OPERATION;
+            if (pConfig->gc.pGC == NULL) {
+                return MT_INVALID_ARGS; /* GC not set for mt_brush_type_gc. */
+            }
+
+            if (pConfig->gc.pGC->gdi.hBitmap != NULL) {
+                ownsBitmap = MT_FALSE;
+                hBitmap    = (HBITMAP)pConfig->gc.pGC->gdi.hBitmap;
+                hBrush     = CreatePatternBrush(hBitmap);
+            } else {
+                /*CreatePatternBrush()*/
+                return MT_INVALID_OPERATION;
+            }
+
+            if (hBrush == NULL) {
+                return MT_ERROR;
+            }
         } break;
 
         default: return MT_INVALID_ARGS;
     }
 
-    pBrush->gdi.hBrush = hBrush;
+    pBrush->gdi.hBrush     = hBrush;
+    pBrush->gdi.hBitmap    = hBitmap;
+    pBrush->gdi.ownsBitmap = ownsBitmap;
 
     return MT_SUCCESS;
 }
@@ -1353,10 +1386,18 @@ void mt_brush_uninit__gdi(mt_brush* pBrush)
         DeleteObject((HGDIOBJ)pBrush->gdi.hBrush);
 
         /* Destroy the bitmap after the brush to ensure it's not referenced anymore. */
-        if (pBrush->gdi.hBitmap != NULL) {
+        if (pBrush->gdi.hBitmap != NULL && pBrush->gdi.ownsBitmap) {
             DeleteObject((HGDIOBJ)pBrush->gdi.hBitmap);
         }
     }
+}
+
+void mt_brush_set_origin__gdi(mt_brush* pBrush, mt_int32 x, mt_int32 y)
+{
+    MT_ASSERT(pBrush != NULL);
+
+    pBrush->gdi.originX = x;
+    pBrush->gdi.originY = y;
 }
 
 
@@ -1395,13 +1436,15 @@ mt_result mt_gc_init__gdi(mt_api* pAPI, const mt_gc_config* pConfig, mt_gc* pGC)
             }
 
             if (pConfig->pInitialImageData != NULL) {
-                mt_copy_image_data(pGC->gdi.pBitmapData, pConfig->pInitialImageData, pConfig->sizeX, pConfig->sizeY, pConfig->stride, pConfig->format, pConfig->sizeX, mt_format_bgra); /* GDI uses BGRA and a tightly packed stride internally. */
+                mt_copy_and_flip_image_data_y(pGC->gdi.pBitmapData, pConfig->pInitialImageData, pConfig->sizeX, pConfig->sizeY, pConfig->stride, pConfig->format, pConfig->sizeX, mt_format_bgra); /* GDI uses BGRA and a tightly packed stride internally. */
                 GdiFlush();
             }
 
             SelectObject((HDC)pGC->gdi.hDC, (HGDIOBJ)pGC->gdi.hBitmap);
         }
     }
+
+    SetGraphicsMode((HDC)pGC->gdi.hDC, GM_ADVANCED);    /* <-- Needed for world transforms (rotate and scale). */
 
     /* We need at least one item in the state stack. Unfortunately malloc() here - may want to think about optimizing this. Perhaps some optimized per-API scheme? */
     pGC->gdi.stateCount = 1;
@@ -1484,7 +1527,7 @@ mt_result mt_gc_restore__gdi(mt_gc* pGC)
     if (pGC->gdi.pState[pGC->gdi.stateCount].hPen != NULL) {
         SelectObject((HDC)pGC->gdi.hDC, GetStockObject(NULL_PEN));
         if (!DeleteObject((HGDIOBJ)pGC->gdi.pState[pGC->gdi.stateCount].hPen)) {
-            MT_ASSERT(MT_FALSE);    /* For debugging. */
+            MT_ASSERT(MT_FALSE);    /* For debugging. Should never happen. */
         }
         pGC->gdi.pState[pGC->gdi.stateCount].hPen = NULL;
     }
@@ -1597,7 +1640,7 @@ MT_PRIVATE void mt_gc_select_current_pen__gdi(mt_gc* pGC)
 
         MT_ZERO_OBJECT(&lbrush);
 
-        if (pGC->gdi.pState[iState].pLineUserBrush == NULL) {
+        if (pGC->gdi.pState[iState].pUserLineBrush == NULL) {
             mt_brush_config* pBrush = &pGC->gdi.pState[iState].lineStockBrush;
             if (pBrush->type == mt_brush_type_solid) {
                 if (pBrush->solid.color.a > 0) {
@@ -1617,7 +1660,7 @@ MT_PRIVATE void mt_gc_select_current_pen__gdi(mt_gc* pGC)
                 return; /* Invalid state (unknown brush type). */
             }
         } else {
-            mt_brush* pBrush = pGC->gdi.pState[iState].pLineUserBrush;
+            mt_brush* pBrush = pGC->gdi.pState[iState].pUserLineBrush;
             if (pBrush->config.type == mt_brush_type_solid) {
                 lbrush.lbStyle = BS_SOLID;
                 lbrush.lbColor = RGB(pBrush->config.solid.color.r, pBrush->config.solid.color.g, pBrush->config.solid.color.b);
@@ -1683,7 +1726,7 @@ void mt_gc_set_line_brush__gdi(mt_gc* pGC, mt_brush* pBrush)
 {
     MT_ASSERT(pGC != NULL);
 
-    pGC->gdi.pState[pGC->gdi.stateCount-1].pLineUserBrush = pBrush;
+    pGC->gdi.pState[pGC->gdi.stateCount-1].pUserLineBrush = pBrush;
     mt_gc_delete_current_pen__gdi(pGC);
 }
 
@@ -1691,7 +1734,7 @@ void mt_gc_set_line_brush_solid__gdi(mt_gc* pGC, mt_color color)
 {
     MT_ASSERT(pGC != NULL);
 
-    pGC->gdi.pState[pGC->gdi.stateCount-1].pLineUserBrush = NULL;
+    pGC->gdi.pState[pGC->gdi.stateCount-1].pUserLineBrush = NULL;
     pGC->gdi.pState[pGC->gdi.stateCount-1].lineStockBrush.type = mt_brush_type_solid;
     pGC->gdi.pState[pGC->gdi.stateCount-1].lineStockBrush.solid.color = color;
 
@@ -1702,7 +1745,7 @@ void mt_gc_set_line_brush_gc__gdi(mt_gc* pGC, mt_gc* pSrcGC)
 {
     MT_ASSERT(pGC != NULL);
 
-    pGC->gdi.pState[pGC->gdi.stateCount-1].pLineUserBrush = NULL;
+    pGC->gdi.pState[pGC->gdi.stateCount-1].pUserLineBrush = NULL;
     pGC->gdi.pState[pGC->gdi.stateCount-1].lineStockBrush.type = mt_brush_type_gc;
     pGC->gdi.pState[pGC->gdi.stateCount-1].lineStockBrush.gc.pGC = pSrcGC;
 
@@ -1858,7 +1901,7 @@ void mt_gc_rectangle__gdi(mt_gc* pGC, mt_int32 left, mt_int32 top, mt_int32 righ
     MT_ASSERT(pGC != NULL);
 
     mt_gc_begin_path_if_required__gdi(pGC);
-    Rectangle((HDC)pGC->gdi.hDC, left, top, right+1, bottom+1); /* From the documentation for Rectangle(): https://docs.microsoft.com/en-us/windows/desktop/api/wingdi/nf-wingdi-rectangle */
+    Rectangle((HDC)pGC->gdi.hDC, left, top, right, bottom);
 }
 
 void mt_gc_arc__gdi(mt_gc* pGC, mt_int32 x, mt_int32 y, mt_int32 radius, float angle1InRadians, float angle2InRadians)
@@ -1917,45 +1960,130 @@ mt_bool32 mt_gc_is_point_inside_clip__gdi(mt_gc* pGC, mt_int32 x, mt_int32 y)
 
 void mt_gc_fill__gdi(mt_gc* pGC)
 {
+    mt_uint32 iState;
+    mt_bool32 adjustBrushOrigin = MT_FALSE;
+    mt_brush* pBrushToUseForOrigin;
+    POINT prevBrushOrigin;
+
     MT_ASSERT(pGC != NULL);
 
     mt_gc_end_path__gdi(pGC);
+
+    iState = pGC->gdi.stateCount-1;
+
+    pBrushToUseForOrigin = pGC->gdi.pState[iState].pUserFillBrush;
+    if (pBrushToUseForOrigin != NULL) {
+        if (pBrushToUseForOrigin->gdi.originX != 0 || pBrushToUseForOrigin->gdi.originY != 0) {
+            adjustBrushOrigin = MT_TRUE;
+            SetBrushOrgEx((HDC)pGC->gdi.hDC, pBrushToUseForOrigin->gdi.originX, pBrushToUseForOrigin->gdi.originY, &prevBrushOrigin);
+        }
+    }
 
     if (pGC->gdi.pState[pGC->gdi.stateCount-1].blendOp == mt_blend_op_src) {
         FillPath((HDC)pGC->gdi.hDC);
     } else {
         /* TODO: Implement blending here. Might need to use and intermediary bitmap... */
         FillPath((HDC)pGC->gdi.hDC);
+    }
+
+    if (adjustBrushOrigin) {
+        SetBrushOrgEx((HDC)pGC->gdi.hDC, prevBrushOrigin.x, prevBrushOrigin.y, NULL);
     }
 }
 
 void mt_gc_stroke__gdi(mt_gc* pGC)
 {
+    mt_uint32 iState;
+    mt_bool32 adjustBrushOrigin = MT_FALSE;
+    mt_brush* pBrushToUseForOrigin;
+    POINT prevBrushOrigin;
+
     MT_ASSERT(pGC != NULL);
+
+    iState = pGC->gdi.stateCount-1;
     
     mt_gc_end_path__gdi(pGC);
     mt_gc_select_current_pen__gdi(pGC);
 
-    if (pGC->gdi.pState[pGC->gdi.stateCount-1].blendOp == mt_blend_op_src) {
+    pBrushToUseForOrigin = pGC->gdi.pState[iState].pUserLineBrush;
+    if (pBrushToUseForOrigin != NULL) {
+        if (pBrushToUseForOrigin->gdi.originX != 0 || pBrushToUseForOrigin->gdi.originY != 0) {
+            adjustBrushOrigin = MT_TRUE;
+            SetBrushOrgEx((HDC)pGC->gdi.hDC, pBrushToUseForOrigin->gdi.originX, pBrushToUseForOrigin->gdi.originY, &prevBrushOrigin);
+        }
+    }
+
+    if (pGC->gdi.pState[iState].blendOp == mt_blend_op_src) {
         StrokePath((HDC)pGC->gdi.hDC);
     } else {
         /* TODO: Implement blending here. Might need to use and intermediary bitmap... */
         StrokePath((HDC)pGC->gdi.hDC);
     }
+
+    if (adjustBrushOrigin) {
+        SetBrushOrgEx((HDC)pGC->gdi.hDC, prevBrushOrigin.x, prevBrushOrigin.y, NULL);
+    }
 }
 
 void mt_gc_fill_and_stroke__gdi(mt_gc* pGC)
 {
+    mt_uint32 iState;
+    mt_bool32 adjustBrushOrigin = MT_FALSE;
+    mt_brush* pUserLineBrush;
+    mt_brush* pUserFillBrush;
+    mt_brush* pBrushToUseForOrigin;
+    POINT prevBrushOrigin;
+
     MT_ASSERT(pGC != NULL);
+
+    iState = pGC->gdi.stateCount-1;
 
     mt_gc_end_path__gdi(pGC);
     mt_gc_select_current_pen__gdi(pGC);
+
+    pUserLineBrush = pGC->gdi.pState[iState].pUserLineBrush;
+    pUserFillBrush = pGC->gdi.pState[iState].pUserFillBrush;
+
+    pBrushToUseForOrigin = pUserFillBrush;
+    if (pBrushToUseForOrigin == NULL) {
+        pBrushToUseForOrigin = pUserLineBrush;
+    } else {
+        if (pBrushToUseForOrigin->config.type == mt_brush_type_solid) {
+            pBrushToUseForOrigin = pUserLineBrush;
+        }
+    }
+
+    if (pBrushToUseForOrigin != NULL && (pBrushToUseForOrigin->gdi.originX != 0 || pBrushToUseForOrigin->gdi.originY != 0)) {
+        adjustBrushOrigin = MT_TRUE;
+        SetBrushOrgEx((HDC)pGC->gdi.hDC, pBrushToUseForOrigin->gdi.originX, pBrushToUseForOrigin->gdi.originY, &prevBrushOrigin);
+    }
+
+
+    /*
+    BUG: If the line and fill brushes are both GC brushes and they have different origins, the origin of the fill brush will
+         be used for _both_ the stroke and the fill. The reason for this is that SetBrushOrgEx() is a global API, and there's
+         no way that I'm aware of to set this separately for pens and brushes with StrokeAndFillPath().
+
+         An idea may be to separate out the stroke and fill by calling FillPath(), followed by StrokePath(), however this has
+         two problems:
+           1) This will cause flickering in single-buffered environments; and
+           2) When FillPath() is called, the path is discarded which means it would need to be recreated again before calling
+              StrokePath(). This would require a call to GetPath() which may actually work OK.
+         
+         The current implementation will work correctly in the following cases:
+           - When only one or none of either the line brush or the fill brush is a GC-type brush and have a non-0 origin.
+           - When both the line brush and fill brush use the same origin.
+    */
 
     if (pGC->gdi.pState[pGC->gdi.stateCount-1].blendOp == mt_blend_op_src) {
         StrokeAndFillPath((HDC)pGC->gdi.hDC);
     } else {
         /* TODO: Implement blending here. Might need to use and intermediary bitmap... */
         StrokeAndFillPath((HDC)pGC->gdi.hDC);
+    }
+
+    if (adjustBrushOrigin) {
+        SetBrushOrgEx((HDC)pGC->gdi.hDC, prevBrushOrigin.x, prevBrushOrigin.y, NULL);
     }
 }
 
@@ -2101,6 +2229,7 @@ mt_result mt_init__gdi(const mt_api_config* pConfig, mt_api* pAPI)
     pAPI->fontUninit          = mt_font_uninit__gdi;
     pAPI->brushInit           = mt_brush_init__gdi;
     pAPI->brushUninit         = mt_brush_uninit__gdi;
+    pAPI->brushSetOrigin      = mt_brush_set_origin__gdi;
     pAPI->gcInit              = mt_gc_init__gdi;
     pAPI->gcUninit            = mt_gc_uninit__gdi;
     pAPI->gcSave              = mt_gc_save__gdi;
@@ -2379,6 +2508,19 @@ void mt_brush_uninit(mt_brush* pBrush)
 
     if (pBrush->pAPI->brushUninit) {
         pBrush->pAPI->brushUninit(pBrush);
+    }
+}
+
+void mt_brush_set_origin(mt_brush* pBrush, mt_int32 x, mt_int32 y)
+{
+    if (pBrush == NULL) {
+        return;
+    }
+
+    MT_ASSERT(pBrush->pAPI != NULL);
+
+    if (pBrush->pAPI->brushSetOrigin) {
+        pBrush->pAPI->brushSetOrigin(pBrush, x, y);
     }
 }
 
@@ -3459,6 +3601,51 @@ void mt_copy_image_data(void* pDst, const void* pSrc, mt_uint32 sizeX, mt_uint32
             } break;
         }
     }
+}
+
+void mt_flip_image_data_y(void* pDst, mt_uint32 sizeX, mt_uint32 sizeY, mt_uint32 stride, mt_format format)
+{
+    mt_uint32 bpp;
+
+    if (pDst == NULL) {
+        return;
+    }
+
+    if (stride == 0) {
+        stride = sizeX;
+    }
+
+    bpp = mt_get_bytes_per_pixel(format);
+    
+    /*if (bpp == 4) {
+        
+    } else*/ {
+        /* Generic naive implementation. */
+        mt_uint32 iRow;
+        mt_uint32 iCol;
+        mt_uint32 halfSizeY = sizeY >> 1;
+        mt_uint32 strideInBytes = stride * bpp;
+
+        for (iRow = 0; iRow < halfSizeY; ++iRow) {
+            mt_uint8* pUpperRow = (mt_uint8*)pDst + ((        iRow    ) * strideInBytes);
+            mt_uint8* pLowerRow = (mt_uint8*)pDst + ((sizeY - iRow - 1) * strideInBytes);
+
+            for (iCol = 0; iCol < sizeX; ++iCol) {
+                mt_uint32 iByte;
+                for (iByte = 0; iByte < bpp; ++iByte) {
+                    mt_uint8 tmp = pUpperRow[iCol*bpp + iByte];
+                    pUpperRow[iCol*bpp + iByte] = pLowerRow[iCol*bpp + iByte];
+                    pLowerRow[iCol*bpp + iByte] = tmp;
+                }
+            }
+        }
+    }
+}
+
+void mt_copy_and_flip_image_data_y(void* pDst, const void* pSrc, mt_uint32 sizeX, mt_uint32 sizeY, mt_uint32 dstStride, mt_format dstFormat, mt_uint32 srcStride, mt_format srcFormat)
+{
+    mt_copy_image_data(pDst, pSrc, sizeX, sizeY, dstStride, dstFormat, srcStride, srcFormat);
+    mt_flip_image_data_y(pDst, sizeX, sizeY, dstStride, dstFormat);
 }
 
 
