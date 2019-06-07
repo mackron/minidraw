@@ -335,6 +335,7 @@ struct mt_api
     void      (* gcFill)             (mt_gc* pGC);
     void      (* gcStroke)           (mt_gc* pGC);
     void      (* gcFillAndStroke)    (mt_gc* pGC);
+    void      (* gcDrawGC)           (mt_gc* pGC, mt_gc* pSrcGC, mt_int32 srcX, mt_int32 srcY);
 
 #if defined(MT_WIN32)
     struct
@@ -589,6 +590,7 @@ no APIs for retrieving the current state - you will need to track this manually 
 
 TODO:
     - Make sure Cairo defaults to mt_blend_op_src and not mt_blend_op_src_over which is it's native default.
+    - May need to make bitmap HDC device-independent (see Remarks on MSDN for StretchBlt).
 
 **************************************************************************************************************************************************************/
 
@@ -693,6 +695,16 @@ Fills the current path, then strokes it. The fill will never overlap the stroke.
 This will clear the path.
 */
 void mt_gc_fill_and_stroke(mt_gc* pGC);
+
+/*
+Draws the contents of the given graphics context.
+
+This will be positioned, rotated and scaled based on the current transform. srcX and srcY are the offset inside pSrcGC to use as the origin.
+
+The image will be clipped against the current clipping region. Use the clip to restrict the iamge to a particular subregion of the source
+image or if you want to draw a non-rectangular shape.
+*/
+void mt_gc_draw_gc(mt_gc* pGC, mt_gc* pSrcGC, mt_int32 srcX, mt_int32 srcY);
 
 
 /******************************************************************************
@@ -943,6 +955,9 @@ Remarks
 This is the same as mt_utf8_to_utf32ne/le/be(), except it doesn't actually do any conversion.
 */
 mt_result mt_utf8_to_utf32_length(size_t* pUTF32Len, const mt_utf8* pUTF8, size_t utf8Len, mt_uint32 flags);
+mt_result mt_utf8_to_utf32ne_length(size_t* pUTF32Len, const mt_utf8* pUTF8, size_t utf8Len, mt_uint32 flags) { return mt_utf8_to_utf32_length(pUTF32Len, pUTF8, utf8Len, flags); }
+mt_result mt_utf8_to_utf32le_length(size_t* pUTF32Len, const mt_utf8* pUTF8, size_t utf8Len, mt_uint32 flags) { return mt_utf8_to_utf32_length(pUTF32Len, pUTF8, utf8Len, flags); }
+mt_result mt_utf8_to_utf32be_length(size_t* pUTF32Len, const mt_utf8* pUTF8, size_t utf8Len, mt_uint32 flags) { return mt_utf8_to_utf32_length(pUTF32Len, pUTF8, utf8Len, flags); }
 
 /*
 Converts a UTF-8 string to a UTF-32 string.
@@ -1445,6 +1460,9 @@ mt_result mt_gc_init__gdi(mt_api* pAPI, const mt_gc_config* pConfig, mt_gc* pGC)
     }
 
     SetGraphicsMode((HDC)pGC->gdi.hDC, GM_ADVANCED);    /* <-- Needed for world transforms (rotate and scale). */
+
+    SetStretchBltMode((HDC)pGC->gdi.hDC, /*HALFTONE*/ COLORONCOLOR);
+    SetBrushOrgEx((HDC)pGC->gdi.hDC, 0, 0, NULL);       /* <-- Calling this because the documentation tells me to after SetStretchBltMode() with HALFTONE. I have no idea why on Earth this is necessary... */
 
     /* We need at least one item in the state stack. Unfortunately malloc() here - may want to think about optimizing this. Perhaps some optimized per-API scheme? */
     pGC->gdi.stateCount = 1;
@@ -2087,6 +2105,24 @@ void mt_gc_fill_and_stroke__gdi(mt_gc* pGC)
     }
 }
 
+void mt_gc_draw_gc__gdi(mt_gc* pGC, mt_gc* pSrcGC, mt_int32 srcX, mt_int32 srcY)
+{
+    HDC hDstDC;
+    HDC hSrcDC;
+    int srcSizeX;
+    int srcSizeY;
+
+    hDstDC = (HDC)pGC->gdi.hDC;
+    hSrcDC = (HDC)pSrcGC->gdi.hDC;
+
+    srcSizeX = GetDeviceCaps(hSrcDC, HORZRES) - srcX;
+    srcSizeY = GetDeviceCaps(hSrcDC, VERTRES) - srcY;
+
+    /* TODO: Add support for nearest and linear filtering. */
+
+    StretchBlt(hDstDC, 0, 0, srcSizeX, srcSizeY, hSrcDC, srcX, srcX, srcSizeX, srcSizeY, SRCCOPY);
+}
+
 
 /* API */
 mt_result mt_itemize_utf16__gdi(mt_api* pAPI, const mt_utf16* pText, size_t textLength, mt_item** ppItems, mt_uint32* pItemCount)
@@ -2264,6 +2300,7 @@ mt_result mt_init__gdi(const mt_api_config* pConfig, mt_api* pAPI)
     pAPI->gcFill              = mt_gc_fill__gdi;
     pAPI->gcStroke            = mt_gc_stroke__gdi;
     pAPI->gcFillAndStroke     = mt_gc_fill_and_stroke__gdi;
+    pAPI->gcDrawGC            = mt_gc_draw_gc__gdi;
 
     (void)pConfig;
     return MT_SUCCESS;
@@ -2325,12 +2362,11 @@ mt_result mt_init__gdi(const mt_api_config* pConfig, mt_api* pAPI)
 
 /**************************************************************************************************************************************************************
 
- Xft + HarfBuzz
+ Xft
 
  **************************************************************************************************************************************************************/
 #if defined(MT_HAS_XFT)
 #include <X11/Xft/Xft.h>
-#include <harfbuzz/hb-ft.h> /* HarfBuzz. Should usually be <hb.h> judging by the documentation. Will need to investigate. */
 
 /* Font */
 
@@ -2990,6 +3026,23 @@ void mt_gc_fill_and_stroke(mt_gc* pGC)
 
     if (pGC->pAPI->gcFillAndStroke) {
         pGC->pAPI->gcFillAndStroke(pGC);
+    }
+}
+
+void mt_gc_draw_gc(mt_gc* pGC, mt_gc* pSrcGC, mt_int32 srcX, mt_int32 srcY)
+{
+    if (pGC == NULL) {
+        return;
+    }
+
+    MT_ASSERT(pGC->pAPI != NULL);
+
+    if (pSrcGC == NULL) {
+        return; /* Nothing to draw. */
+    }
+
+    if (pGC->pAPI->gcDrawGC) {
+        pGC->pAPI->gcDrawGC(pGC, pSrcGC, srcX, srcY);
     }
 }
 
