@@ -264,6 +264,12 @@ typedef enum
 
 typedef enum
 {
+    mt_stretch_filter_nearest = 0,  /* Default. */
+    mt_stretch_filter_linear  = 1
+} mt_stretch_filter;
+
+typedef enum
+{
     mt_format_unknown = 0,
     mt_format_rgba,
     mt_format_rgb,
@@ -323,6 +329,7 @@ struct mt_api
     void      (* gcSetTextBGColor)   (mt_gc* pGC, mt_color bgColor);
     void      (* gcSetBlendOp)       (mt_gc* pGC, mt_blend_op op);
     void      (* gcSetAntialiasMode) (mt_gc* pGC, mt_antialias_mode mode);
+    void      (* gcSetStretchFilter) (mt_gc* pGC, mt_stretch_filter filter);
     void      (* gcMoveTo)           (mt_gc* pGC, mt_int32 x, mt_int32 y);
     void      (* gcLineTo)           (mt_gc* pGC, mt_int32 x, mt_int32 y);
     void      (* gcRectangle)        (mt_gc* pGC, mt_int32 left, mt_int32 top, mt_int32 right, mt_int32 bottom);
@@ -508,6 +515,8 @@ struct mt_gc
         /*HDC*/ mt_handle hDC;
         /*HBITMAP*/ mt_handle hBitmap;  /* The HBITMAP object that will be used as the target for graphics output. */
         void* pBitmapData;              /* A pointer to the raw bitmap data. Owned by hBitmap. Freed by GDI when hBitmap is deleted. */
+        mt_uint32 bitmapSizeX;
+        mt_uint32 bitmapSizeY;
         mt_gc_state_gdi* pState;        /* Heap allocated via realloc() for now. May change to a per-API allocation scheme. */
         mt_uint32 stateCap;             /* The capacity of pState. */
         mt_uint32 stateCount;           /* The number of valid items in pState. */
@@ -588,10 +597,6 @@ The graphics API uses a state system to determine how to draw something. For exa
 stroking the current path. The current state will remain until it's changed, unless otherwise noted. In order to simplify graphics backends, there are currently
 no APIs for retrieving the current state - you will need to track this manually if required.
 
-TODO:
-    - Make sure Cairo defaults to mt_blend_op_src and not mt_blend_op_src_over which is it's native default.
-    - May need to make bitmap HDC device-independent (see Remarks on MSDN for StretchBlt).
-
 **************************************************************************************************************************************************************/
 
 /******************************************************************************
@@ -636,6 +641,7 @@ void mt_gc_set_font(mt_gc* pGC, mt_font* pFont);
 void mt_gc_set_text_bg_color(mt_gc* pGC, mt_color bgColor);
 void mt_gc_set_blend_op(mt_gc* pGC, mt_blend_op op);
 void mt_gc_set_antialias_mode(mt_gc* pGC, mt_antialias_mode mode);
+void mt_gc_set_stretch_filter(mt_gc* pGC, mt_stretch_filter filter);
 
 /******************************************************************************
 
@@ -745,6 +751,16 @@ void mt_copy_and_flip_image_data_y(void* pDst, const void* pSrc, mt_uint32 sizeX
 Flips the given image data horizontally, in place.
 */
 void mt_flip_image_data_y(void* pDst, mt_uint32 sizeX, mt_uint32 sizeY, mt_uint32 stride, mt_format format);
+
+/*
+Retrieves the number of bytes per pixel for the given format.
+*/
+mt_uint32 mt_get_bytes_per_pixel(mt_format format);
+
+/*
+Determines whether or not there's an alpha channel in the given format.
+*/
+mt_bool32 mt_format_has_alpha(mt_format format);
 
 
 /**************************************************************************************************************************************************************
@@ -1451,18 +1467,19 @@ mt_result mt_gc_init__gdi(mt_api* pAPI, const mt_gc_config* pConfig, mt_gc* pGC)
             }
 
             if (pConfig->pInitialImageData != NULL) {
-                mt_copy_and_flip_image_data_y(pGC->gdi.pBitmapData, pConfig->pInitialImageData, pConfig->sizeX, pConfig->sizeY, pConfig->stride, pConfig->format, pConfig->sizeX, mt_format_bgra); /* GDI uses BGRA and a tightly packed stride internally. */
+                mt_copy_and_flip_image_data_y(pGC->gdi.pBitmapData, pConfig->pInitialImageData, pConfig->sizeX, pConfig->sizeY, 0, mt_format_bgra, pConfig->stride, pConfig->format); /* GDI uses BGRA and a tightly packed stride internally. */
                 GdiFlush();
             }
+
+            pGC->gdi.bitmapSizeX = pConfig->sizeX;
+            pGC->gdi.bitmapSizeY = pConfig->sizeY;
 
             SelectObject((HDC)pGC->gdi.hDC, (HGDIOBJ)pGC->gdi.hBitmap);
         }
     }
 
     SetGraphicsMode((HDC)pGC->gdi.hDC, GM_ADVANCED);    /* <-- Needed for world transforms (rotate and scale). */
-
-    SetStretchBltMode((HDC)pGC->gdi.hDC, /*HALFTONE*/ COLORONCOLOR);
-    SetBrushOrgEx((HDC)pGC->gdi.hDC, 0, 0, NULL);       /* <-- Calling this because the documentation tells me to after SetStretchBltMode() with HALFTONE. I have no idea why on Earth this is necessary... */
+    SetStretchBltMode((HDC)pGC->gdi.hDC, COLORONCOLOR); /* <-- COLORONCOLOR is better than the default when the image is scaled down. Not setting this results in black pixelation. */
 
     /* We need at least one item in the state stack. Unfortunately malloc() here - may want to think about optimizing this. Perhaps some optimized per-API scheme? */
     pGC->gdi.stateCount = 1;
@@ -1877,6 +1894,18 @@ void mt_gc_set_antialias_mode__gdi(mt_gc* pGC, mt_antialias_mode mode)
     (void)mode;
 }
 
+void mt_gc_set_stretch_filter__gdi(mt_gc* pGC, mt_stretch_filter filter)
+{
+    MT_ASSERT(pGC != NULL);
+
+    if (filter == mt_stretch_filter_linear) {
+        SetStretchBltMode((HDC)pGC->gdi.hDC, HALFTONE);
+        SetBrushOrgEx((HDC)pGC->gdi.hDC, 0, 0, NULL);       /* <-- Calling this because the documentation tells me to after SetStretchBltMode() with HALFTONE. I have no idea why on Earth this is necessary... */
+    } else {
+        SetStretchBltMode((HDC)pGC->gdi.hDC, COLORONCOLOR);
+    }
+}
+
 
 MT_PRIVATE void mt_gc_begin_path_if_required__gdi(mt_gc* pGC)
 {
@@ -2105,6 +2134,30 @@ void mt_gc_fill_and_stroke__gdi(mt_gc* pGC)
     }
 }
 
+void mt_gc_get_size__gdi(mt_gc* pGC, int* pSizeX, int* pSizeY)
+{
+    MT_ASSERT(pSizeX != NULL);
+    MT_ASSERT(pSizeY != NULL);
+
+    /* If it's a bitmap we use the size of that. Otherwise, if it's a window we try that. If it's none of these, we use HORZRES/VERTRES. */
+    if (pGC->gdi.hBitmap != NULL) {
+        *pSizeX = pGC->gdi.bitmapSizeX;
+        *pSizeY = pGC->gdi.bitmapSizeY;
+    } else {
+        HWND hWnd = WindowFromDC((HDC)pGC->gdi.hDC);
+        if (hWnd != NULL) {
+            RECT rect;
+            GetClientRect(hWnd, &rect);
+            *pSizeX = rect.right - rect.left;
+            *pSizeY = rect.bottom - rect.top;
+        } else {
+            /* Fallback to HORZRES/VERTRES. */
+            *pSizeX = GetDeviceCaps((HDC)pGC->gdi.hDC, HORZRES);
+            *pSizeY = GetDeviceCaps((HDC)pGC->gdi.hDC, VERTRES);
+        }
+    }
+}
+
 void mt_gc_draw_gc__gdi(mt_gc* pGC, mt_gc* pSrcGC, mt_int32 srcX, mt_int32 srcY)
 {
     HDC hDstDC;
@@ -2115,12 +2168,15 @@ void mt_gc_draw_gc__gdi(mt_gc* pGC, mt_gc* pSrcGC, mt_int32 srcX, mt_int32 srcY)
     hDstDC = (HDC)pGC->gdi.hDC;
     hSrcDC = (HDC)pSrcGC->gdi.hDC;
 
-    srcSizeX = GetDeviceCaps(hSrcDC, HORZRES) - srcX;
-    srcSizeY = GetDeviceCaps(hSrcDC, VERTRES) - srcY;
+    mt_gc_get_size__gdi(pSrcGC, &srcSizeX, &srcSizeY);
 
-    /* TODO: Add support for nearest and linear filtering. */
-
-    StretchBlt(hDstDC, 0, 0, srcSizeX, srcSizeY, hSrcDC, srcX, srcX, srcSizeX, srcSizeY, SRCCOPY);
+    /* If the image has an alpha channel we need to use AlphaBlend(). */
+    if (pSrcGC->gdi.hBitmap != NULL && mt_format_has_alpha(pSrcGC->format)) {
+        BLENDFUNCTION blend = {AC_SRC_OVER, 0, 255, AC_SRC_ALPHA};
+        AlphaBlend(hDstDC, 0, 0, srcSizeX, srcSizeY, hSrcDC, srcX, srcY, srcSizeX, srcSizeY, blend);
+    } else {
+        StretchBlt(hDstDC, 0, 0, srcSizeX, srcSizeY, hSrcDC, srcX, srcX, srcSizeX, srcSizeY, SRCCOPY);
+    }
 }
 
 
@@ -2248,12 +2304,14 @@ void mt_uninit__gdi(mt_api* pAPI)
     (void)pAPI;
 }
 
+#pragma comment(lib, "msimg32.lib")
+
 mt_result mt_init__gdi(const mt_api_config* pConfig, mt_api* pAPI)
 {
     MT_ASSERT(pConfig != NULL);
     MT_ASSERT(pAPI != NULL);
 
-    /* TODO: dlopen() usp10.dll and gdi32.dll (in that order). */
+    /* TODO: dlopen() usp10.dll and gdi32.dll (in that order). Also msimg32.dll (AlphaBlend) */
 
     /* Stock objects. */
     pAPI->gdi.hStockSolidFillBrush = GetStockObject(DC_BRUSH);    /* The brush to use for solid brushes. */
@@ -2288,6 +2346,7 @@ mt_result mt_init__gdi(const mt_api_config* pConfig, mt_api* pAPI)
     pAPI->gcSetTextBGColor    = mt_gc_set_text_bg_color__gdi;
     pAPI->gcSetBlendOp        = mt_gc_set_blend_op__gdi;
     pAPI->gcSetAntialiasMode  = mt_gc_set_antialias_mode__gdi;
+    pAPI->gcSetStretchFilter  = mt_gc_set_stretch_filter__gdi;
     pAPI->gcMoveTo            = mt_gc_move_to__gdi;
     pAPI->gcLineTo            = mt_gc_line_to__gdi;
     pAPI->gcRectangle         = mt_gc_rectangle__gdi;
@@ -2607,8 +2666,6 @@ mt_result mt_gc_save(mt_gc* pGC)
 
     MT_ASSERT(pGC->pAPI != NULL);
 
-    /* TODO: Save a copy to our own stack, then let the backend do it's own saving. */
-
     if (pGC->pAPI->gcSave) {
         return pGC->pAPI->gcSave(pGC);
     }
@@ -2623,8 +2680,6 @@ mt_result mt_gc_restore(mt_gc* pGC)
     }
 
     MT_ASSERT(pGC->pAPI != NULL);
-
-    /* TODO: Restore our own stack, then let the backend do it's own restore. */
 
     if (pGC->pAPI->gcRestore) {
         return pGC->pAPI->gcRestore(pGC);
@@ -2871,6 +2926,19 @@ void mt_gc_set_antialias_mode(mt_gc* pGC, mt_antialias_mode mode)
     }
 }
 
+void mt_gc_set_stretch_filter(mt_gc* pGC, mt_stretch_filter filter)
+{
+    if (pGC == NULL) {
+        return;
+    }
+
+    MT_ASSERT(pGC->pAPI != NULL);
+
+    if (pGC->pAPI->gcSetStretchFilter) {
+        pGC->pAPI->gcSetStretchFilter(pGC, filter);
+    }
+}
+
 void mt_gc_move_to(mt_gc* pGC, mt_int32 x, mt_int32 y)
 {
     if (pGC == NULL) {
@@ -3047,19 +3115,6 @@ void mt_gc_draw_gc(mt_gc* pGC, mt_gc* pSrcGC, mt_int32 srcX, mt_int32 srcY)
 }
 
 
-
-mt_uint32 mt_get_bytes_per_pixel(mt_format format)
-{
-    switch (format)
-    {
-        case mt_format_rgba: return 4;
-        case mt_format_rgb:  return 3;
-        case mt_format_bgra: return 4;
-        case mt_format_bgr:  return 3;
-        case mt_format_argb: return 4;
-        default: return 0;
-    }
-}
 
 void mt_copy_image_data__no_conversion(void* pDst, const void* pSrc, mt_uint32 sizeX, mt_uint32 sizeY, mt_uint32 dstStride, mt_uint32 srcStride, mt_format format)
 {
@@ -3586,65 +3641,65 @@ void mt_copy_image_data(void* pDst, const void* pSrc, mt_uint32 sizeX, mt_uint32
             case mt_format_rgba:
             {
                 if (srcFormat == mt_format_rgb) {
-                    mt_copy_image_data__rgba_to_rgb(pDst, pSrc, sizeX, sizeY, dstStride, srcStride);
+                    mt_copy_image_data__rgb_to_rgba(pDst, pSrc, sizeX, sizeY, dstStride, srcStride);
                 } else if (srcFormat == mt_format_bgra) {
-                    mt_copy_image_data__rgba_to_bgra(pDst, pSrc, sizeX, sizeY, dstStride, srcStride);
+                    mt_copy_image_data__bgra_to_rgba(pDst, pSrc, sizeX, sizeY, dstStride, srcStride);
                 } else if (srcFormat == mt_format_bgr) {
-                    mt_copy_image_data__rgba_to_bgr(pDst, pSrc, sizeX, sizeY, dstStride, srcStride);
+                    mt_copy_image_data__bgr_to_rgba(pDst, pSrc, sizeX, sizeY, dstStride, srcStride);
                 } else if (srcFormat == mt_format_argb) {
-                    mt_copy_image_data__rgba_to_argb(pDst, pSrc, sizeX, sizeY, dstStride, srcStride);
+                    mt_copy_image_data__argb_to_rgba(pDst, pSrc, sizeX, sizeY, dstStride, srcStride);
                 }
             } break;
 
             case mt_format_rgb:
             {
                 if (srcFormat == mt_format_rgba) {
-                    mt_copy_image_data__rgb_to_rgba(pDst, pSrc, sizeX, sizeY, dstStride, srcStride);
+                    mt_copy_image_data__rgba_to_rgb(pDst, pSrc, sizeX, sizeY, dstStride, srcStride);
                 } else if (srcFormat == mt_format_bgra) {
-                    mt_copy_image_data__rgb_to_bgra(pDst, pSrc, sizeX, sizeY, dstStride, srcStride);
+                    mt_copy_image_data__bgra_to_rgb(pDst, pSrc, sizeX, sizeY, dstStride, srcStride);
                 } else if (srcFormat == mt_format_bgr) {
-                    mt_copy_image_data__rgb_to_bgr(pDst, pSrc, sizeX, sizeY, dstStride, srcStride);
+                    mt_copy_image_data__bgr_to_rgb(pDst, pSrc, sizeX, sizeY, dstStride, srcStride);
                 } else if (srcFormat == mt_format_argb) {
-                    mt_copy_image_data__rgb_to_argb(pDst, pSrc, sizeX, sizeY, dstStride, srcStride);
+                    mt_copy_image_data__argb_to_rgb(pDst, pSrc, sizeX, sizeY, dstStride, srcStride);
                 }
             } break;
 
             case mt_format_bgra:
             {
                 if (srcFormat == mt_format_rgba) {
-                    mt_copy_image_data__bgra_to_rgba(pDst, pSrc, sizeX, sizeY, dstStride, srcStride);
+                    mt_copy_image_data__rgba_to_bgra(pDst, pSrc, sizeX, sizeY, dstStride, srcStride);
                 } else if (srcFormat == mt_format_rgb) {
-                    mt_copy_image_data__bgra_to_rgb(pDst, pSrc, sizeX, sizeY, dstStride, srcStride);
+                    mt_copy_image_data__rgb_to_bgra(pDst, pSrc, sizeX, sizeY, dstStride, srcStride);
                 } else if (srcFormat == mt_format_bgr) {
-                    mt_copy_image_data__bgra_to_bgr(pDst, pSrc, sizeX, sizeY, dstStride, srcStride);
+                    mt_copy_image_data__bgr_to_bgra(pDst, pSrc, sizeX, sizeY, dstStride, srcStride);
                 } else if (srcFormat == mt_format_argb) {
-                    mt_copy_image_data__bgra_to_argb(pDst, pSrc, sizeX, sizeY, dstStride, srcStride);
+                    mt_copy_image_data__argb_to_bgra(pDst, pSrc, sizeX, sizeY, dstStride, srcStride);
                 }
             } break;
 
             case mt_format_bgr:
             {
                 if (srcFormat == mt_format_rgba) {
-                    mt_copy_image_data__bgr_to_rgba(pDst, pSrc, sizeX, sizeY, dstStride, srcStride);
+                    mt_copy_image_data__rgba_to_bgr(pDst, pSrc, sizeX, sizeY, dstStride, srcStride);
                 } else if (srcFormat == mt_format_rgb) {
-                    mt_copy_image_data__bgr_to_rgb(pDst, pSrc, sizeX, sizeY, dstStride, srcStride);
+                    mt_copy_image_data__rgb_to_bgr(pDst, pSrc, sizeX, sizeY, dstStride, srcStride);
                 } else if (srcFormat == mt_format_bgra) {
-                    mt_copy_image_data__bgr_to_bgra(pDst, pSrc, sizeX, sizeY, dstStride, srcStride);
+                    mt_copy_image_data__bgra_to_bgr(pDst, pSrc, sizeX, sizeY, dstStride, srcStride);
                 } else if (srcFormat == mt_format_argb) {
-                    mt_copy_image_data__bgr_to_argb(pDst, pSrc, sizeX, sizeY, dstStride, srcStride);
+                    mt_copy_image_data__argb_to_bgr(pDst, pSrc, sizeX, sizeY, dstStride, srcStride);
                 }
             } break;
 
             case mt_format_argb:
             {
                 if (srcFormat == mt_format_rgba) {
-                    mt_copy_image_data__argb_to_rgba(pDst, pSrc, sizeX, sizeY, dstStride, srcStride);
+                    mt_copy_image_data__rgba_to_argb(pDst, pSrc, sizeX, sizeY, dstStride, srcStride);
                 } else if (srcFormat == mt_format_rgb) {
-                    mt_copy_image_data__argb_to_rgb(pDst, pSrc, sizeX, sizeY, dstStride, srcStride);
+                    mt_copy_image_data__rgb_to_argb(pDst, pSrc, sizeX, sizeY, dstStride, srcStride);
                 } else if (srcFormat == mt_format_bgra) {
-                    mt_copy_image_data__argb_to_bgra(pDst, pSrc, sizeX, sizeY, dstStride, srcStride);
+                    mt_copy_image_data__bgra_to_argb(pDst, pSrc, sizeX, sizeY, dstStride, srcStride);
                 } else if (srcFormat == mt_format_bgr) {
-                    mt_copy_image_data__argb_to_bgr(pDst, pSrc, sizeX, sizeY, dstStride, srcStride);
+                    mt_copy_image_data__bgr_to_argb(pDst, pSrc, sizeX, sizeY, dstStride, srcStride);
                 }
             } break;
 
@@ -3699,6 +3754,35 @@ void mt_copy_and_flip_image_data_y(void* pDst, const void* pSrc, mt_uint32 sizeX
 {
     mt_copy_image_data(pDst, pSrc, sizeX, sizeY, dstStride, dstFormat, srcStride, srcFormat);
     mt_flip_image_data_y(pDst, sizeX, sizeY, dstStride, dstFormat);
+}
+
+mt_uint32 mt_get_bytes_per_pixel(mt_format format)
+{
+    switch (format)
+    {
+        case mt_format_rgba: return 4;
+        case mt_format_rgb:  return 3;
+        case mt_format_bgra: return 4;
+        case mt_format_bgr:  return 3;
+        case mt_format_argb: return 4;
+        default: return 0;
+    }
+}
+
+mt_bool32 mt_format_has_alpha(mt_format format)
+{
+    switch (format)
+    {
+        case mt_format_rgba:
+        case mt_format_bgra:
+        case mt_format_argb:
+            return MT_TRUE;
+
+        case mt_format_rgb:
+        case mt_format_bgr:
+        default:
+            return MT_FALSE;
+    }
 }
 
 
