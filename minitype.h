@@ -1047,6 +1047,40 @@ Converts a UTF-16 string to a UTF-32 string, with the endianness defined by the 
 */
 mt_result mt_utf16_to_utf32(mt_utf32* pUTF32, size_t utf32Cap, size_t* pUTF32Len, const mt_utf16* pUTF16, size_t utf16Len, size_t* pUTF16LenProcessed, mt_uint32 flags);
 
+
+
+/*
+Calculates the number of UTF-8's required to fully contain the given UTF-32 string after conversion, not including the null terminator.
+
+Remarks
+-------
+This is the same as mt_utf32/be/le_to_utf8(), except it doesn't actually do any conversion.
+*/
+mt_result mt_utf32ne_to_utf8_length(size_t* pUTF8Len, const mt_utf32* pUTF32, size_t utf32Len, mt_uint32 flags);
+mt_result mt_utf32le_to_utf8_length(size_t* pUTF8Len, const mt_utf32* pUTF32, size_t utf32Len, mt_uint32 flags);
+mt_result mt_utf32be_to_utf8_length(size_t* pUTF8Len, const mt_utf32* pUTF32, size_t utf32Len, mt_uint32 flags);
+
+/*
+Calculates the number of UTF-32's required to fully contain the given UTF-32 string after conversion, not including the null terminator, with the
+endianness defined by the BOM if present, and if not, assuming native/host endian.
+*/
+mt_result mt_utf32_to_utf8_length(size_t* pUTF8Len, const mt_utf32* pUTF32, size_t utf32Len, mt_uint32 flags);
+
+/*
+Converts a UTF-32 string to a UTF-8 string.
+*/
+mt_result mt_utf32ne_to_utf8(mt_utf8* pUTF8, size_t utf8Cap, size_t* pUTF8Len, const mt_utf32* pUTF32, size_t utf32Len, size_t* pUTF32LenProcessed, mt_uint32 flags);
+mt_result mt_utf32le_to_utf8(mt_utf8* pUTF8, size_t utf8Cap, size_t* pUTF8Len, const mt_utf32* pUTF32, size_t utf32Len, size_t* pUTF32LenProcessed, mt_uint32 flags);
+mt_result mt_utf32be_to_utf8(mt_utf8* pUTF8, size_t utf8Cap, size_t* pUTF8Len, const mt_utf32* pUTF32, size_t utf32Len, size_t* pUTF32LenProcessed, mt_uint32 flags);
+
+/*
+Converts a UTF-32 string to a UTF-8 string, with the endianness defined by the BOM if present, and if not, assuming native/host endian.
+*/
+mt_result mt_utf32_to_utf8(mt_utf8* pUTF8, size_t utf8Cap, size_t* pUTF8Len, const mt_utf32* pUTF32, size_t utf32Len, size_t* pUTF32LenProcessed, mt_uint32 flags);
+
+
+
+
 #ifdef __cplusplus
 }
 #endif
@@ -4826,11 +4860,11 @@ mt_result mt_utf16_to_utf8_length_internal(size_t* pUTF8Len, const mt_utf16* pUT
     }
 
     if (pUTF16 == NULL) {
-        return MT_INVALID_ARGS;   /* Invalid input. */
+        return MT_INVALID_ARGS; /* Invalid input. */
     }
 
     if (utf16Len == 0 || pUTF16[0] == 0) {
-        return MT_SUCCESS;   /* Empty input string. Length is always 0. */
+        return MT_SUCCESS;  /* Empty input string. Length is always 0. */
     }
 
     /* Check for BOM. */
@@ -5695,6 +5729,314 @@ mt_result mt_utf16_to_utf32(mt_utf32* pUTF32, size_t utf32Cap, size_t* pUTF32Len
 
     /* Getting here means there was no BOM, so assume native endian. */
     return mt_utf16ne_to_utf32ne(pUTF32, utf32Cap, pUTF32Len, pUTF16, utf16Len, pUTF16LenProcessed, flags);
+}
+
+
+mt_result mt_utf32_to_utf8_length_internal(size_t* pUTF8Len, const mt_utf32* pUTF32, size_t utf32Len, mt_uint32 flags, mt_bool32 isLE)
+{
+    mt_result result = MT_SUCCESS;
+    size_t utf8Len = 0;
+    mt_utf32 utf32;
+
+    if (pUTF8Len != NULL) {
+        *pUTF8Len = 0;
+    }
+
+    if (pUTF32 == NULL) {
+        return MT_INVALID_ARGS; /* Invalid input. */
+    }
+
+    if (utf32Len == 0 || pUTF32[0] == 0) {
+        return MT_SUCCESS;  /* Empty input string. Length is always 0. */
+    }
+
+    /* Check for BOM. */
+    if (mt_has_utf32_bom((const mt_uint8*)pUTF32, utf32Len)) {
+        if ((flags & MT_FORBID_BOM) != 0) {
+            return MT_INVALID_BOM;  /* Found a BOM, but it's forbidden. */
+        }
+
+        pUTF32 += 1;    /* Skip past the BOM. */
+        if (utf32Len != (size_t)-1) {
+            utf32Len -= 1;
+        }
+    }
+
+    if (utf32Len == (size_t)-1) {
+        /* Null terminated string. */
+        while (pUTF32[0] != 0) {
+            if (isLE) {
+                utf32 = mt_le2host_32(pUTF32[0]);
+            } else {
+                utf32 = mt_be2host_32(pUTF32[0]);
+            }
+
+            if (mt_is_valid_code_point(utf32)) {
+                if ((flags & MT_ERROR_ON_INVALID_CODE_POINT) != 0) {
+                    result = MT_INVALID_CODE_POINT;
+                    break;
+                } else {
+                    utf32 = MT_UNICODE_REPLACEMENT_CHARACTER;
+                }
+            }
+
+            utf8Len += mt_utf32_cp_to_utf8_length(utf32);
+            pUTF32  += 1;
+        }
+    } else {
+        /* Fixed length string. */
+        size_t iUTF32;
+        for (iUTF32 = 0; iUTF32 < utf32Len; iUTF32 += 1) {
+            if (isLE) {
+                utf32 = mt_le2host_32(pUTF32[iUTF32]);
+            } else {
+                utf32 = mt_be2host_32(pUTF32[iUTF32]);
+            }
+
+            if (mt_is_valid_code_point(utf32)) {
+                if ((flags & MT_ERROR_ON_INVALID_CODE_POINT) != 0) {
+                    result = MT_INVALID_CODE_POINT;
+                    break;
+                } else {
+                    utf32 = MT_UNICODE_REPLACEMENT_CHARACTER;
+                }
+            }
+
+            utf8Len += mt_utf32_cp_to_utf8_length(utf32);
+            pUTF32  += 1;
+        }
+    }
+
+    if (pUTF8Len != NULL) {
+        *pUTF8Len = utf8Len;
+    }
+
+    return result;
+}
+
+mt_result mt_utf32ne_to_utf8_length(size_t* pUTF8Len, const mt_utf32* pUTF32, size_t utf32Len, mt_uint32 flags)
+{
+    if (mt_is_little_endian()) {
+        return mt_utf32le_to_utf8_length(pUTF8Len, pUTF32, utf32Len, flags);
+    } else {
+        return mt_utf32be_to_utf8_length(pUTF8Len, pUTF32, utf32Len, flags);
+    }
+}
+
+mt_result mt_utf32le_to_utf8_length(size_t* pUTF8Len, const mt_utf32* pUTF32, size_t utf32Len, mt_uint32 flags)
+{
+    return mt_utf32_to_utf8_length_internal(pUTF8Len, pUTF32, utf32Len, flags, MT_TRUE);
+}
+
+mt_result mt_utf32be_to_utf8_length(size_t* pUTF8Len, const mt_utf32* pUTF32, size_t utf32Len, mt_uint32 flags)
+{
+    return mt_utf32_to_utf8_length_internal(pUTF8Len, pUTF32, utf32Len, flags, MT_FALSE);
+}
+
+mt_result mt_utf32_to_utf8_length(size_t* pUTF8Len, const mt_utf32* pUTF32, size_t utf32Len, mt_uint32 flags)
+{
+    if (pUTF8Len != NULL) {
+        *pUTF8Len = 0;
+    }
+
+    /* Check for BOM. */
+    if (mt_has_utf32_bom((const mt_uint8*)pUTF32, utf32Len)) {
+        mt_bool32 isLE;
+        if ((flags & MT_FORBID_BOM) != 0) {
+            return MT_INVALID_BOM;  /* Found a BOM, but it's forbidden. */
+        }
+
+        /* With this function, we need to use the endian defined by the BOM. */
+        isLE = mt_is_utf32_bom_le((const mt_uint8*)pUTF32);
+        
+        pUTF32 += 1;    /* Skip past the BOM. */
+        if (utf32Len != (size_t)-1) {
+            utf32Len -= 1;
+        }
+
+        if (isLE) {
+            return mt_utf32le_to_utf8_length(pUTF8Len, pUTF32+1, utf32Len-1, flags | MT_FORBID_BOM); /* <-- We already found a BOM, so we don't want to allow another occurance. */
+        } else {
+            return mt_utf32be_to_utf8_length(pUTF8Len, pUTF32+1, utf32Len-1, flags | MT_FORBID_BOM); /* <-- We already found a BOM, so we don't want to allow another occurance. */
+        }
+    }
+
+    /* Getting here means there was no BOM, so assume native endian. */
+    return mt_utf32ne_to_utf8_length(pUTF8Len, pUTF32, utf32Len, flags);
+}
+
+
+mt_result mt_utf32_to_utf8_internal(mt_utf8* pUTF8, size_t utf8Cap, size_t* pUTF8Len, const mt_utf32* pUTF32, size_t utf32Len, size_t* pUTF32LenProcessed, mt_uint32 flags, mt_bool32 isLE)
+{
+    mt_result result = MT_SUCCESS;
+    size_t utf8CapOriginal = utf8Cap;
+    size_t utf8cpLen;   /* Code point length in UTF-8 code units. */
+    mt_utf32 utf32;
+
+    if (pUTF8 == NULL) {
+        return mt_utf32_to_utf8_internal(pUTF8, utf8Cap, pUTF8Len, pUTF32, utf32Len, pUTF32LenProcessed, flags, isLE);
+    }
+
+    if (pUTF8Len != NULL) {
+        *pUTF8Len = 0;
+    }
+
+    if (pUTF8 == NULL) {
+        return MT_INVALID_ARGS;
+    }
+
+    /* Check for BOM. */
+    if (mt_has_utf32_bom((const mt_uint8*)pUTF32, utf32Len)) {
+        if ((flags & MT_FORBID_BOM) != 0) {
+            return MT_INVALID_BOM;  /* Found a BOM, but it's forbidden. */
+        }
+
+        pUTF32 += 1;    /* Skip past the BOM. */
+        if (utf32Len != (size_t)-1) {
+            utf32Len -= 1;
+        }
+    }
+
+    if (utf32Len == (size_t)-1) {
+        /* Null terminated string. */
+        const mt_utf32* pUTF32Original = pUTF32;
+        while (pUTF32[0] != 0) {
+            if (utf8Cap == 0) {
+                result = MT_OUT_OF_MEMORY;
+                break;
+            }
+
+            if (isLE) {
+                utf32 = mt_le2host_32(pUTF32[0]);
+            } else {
+                utf32 = mt_be2host_32(pUTF32[0]);
+            }
+
+            if (mt_is_valid_code_point(utf32)) {
+                if ((flags & MT_ERROR_ON_INVALID_CODE_POINT) != 0) {
+                    result = MT_INVALID_CODE_POINT;
+                    break;
+                } else {
+                    utf32 = MT_UNICODE_REPLACEMENT_CHARACTER;
+                }
+            }
+
+            utf8cpLen = mt_utf32_cp_to_utf8(utf32, pUTF8, utf8Cap);
+            if (utf8cpLen == 0) {
+                result = MT_OUT_OF_MEMORY;    /* A return value of 0 at this point means there was not enough room in the output buffer. */
+                break;
+            }
+
+            pUTF8   += utf8cpLen;
+            utf8Cap -= utf8cpLen;
+            pUTF32  += 1;
+        }
+
+        if (pUTF32LenProcessed != NULL) {
+            *pUTF32LenProcessed = (pUTF32 - pUTF32Original);
+        }
+    } else {
+        /* Fixed length string. */
+        size_t iUTF32;
+        for (iUTF32 = 0; iUTF32 < utf32Len; iUTF32 += 1) {
+            if (utf8Cap == 0) {
+                result = MT_OUT_OF_MEMORY;
+                break;
+            }
+
+            if (isLE) {
+                utf32 = mt_le2host_16(pUTF32[iUTF32]);
+            } else {
+                utf32 = mt_be2host_16(pUTF32[iUTF32]);
+            }
+
+            if (mt_is_valid_code_point(utf32)) {
+                if ((flags & MT_ERROR_ON_INVALID_CODE_POINT) != 0) {
+                    result = MT_INVALID_CODE_POINT;
+                    break;
+                } else {
+                    utf32 = MT_UNICODE_REPLACEMENT_CHARACTER;
+                }
+            }
+
+            utf8cpLen = mt_utf32_cp_to_utf8(utf32, pUTF8, utf8Cap);
+            if (utf8cpLen == 0) {
+                result = MT_OUT_OF_MEMORY;    /* A return value of 0 at this point means there was not enough room in the output buffer. */
+                break;
+            }
+
+            pUTF8   += utf8cpLen;
+            utf8Cap -= utf8cpLen;
+        }
+
+        if (pUTF32LenProcessed != NULL) {
+            *pUTF32LenProcessed = iUTF32;
+        }
+    }
+
+    /* Null terminate. */
+    if (utf8Cap == 0) {
+        result = MT_OUT_OF_MEMORY;    /* Not enough room in the output buffer. */
+    } else {
+        pUTF8[0] = 0;
+    }
+
+    if (pUTF8Len != NULL) {
+        *pUTF8Len = (utf8CapOriginal - utf8Cap);
+    }
+
+    return result;
+}
+
+mt_result mt_utf32ne_to_utf8(mt_utf8* pUTF8, size_t utf8Cap, size_t* pUTF8Len, const mt_utf32* pUTF32, size_t utf32Len, size_t* pUTF32LenProcessed, mt_uint32 flags)
+{
+    if (mt_is_little_endian()) {
+        return mt_utf32le_to_utf8(pUTF8, utf8Cap, pUTF8Len, pUTF32, utf32Len, pUTF32LenProcessed, flags);
+    } else {
+        return mt_utf32be_to_utf8(pUTF8, utf8Cap, pUTF8Len, pUTF32, utf32Len, pUTF32LenProcessed, flags);
+    }
+}
+
+mt_result mt_utf32le_to_utf8(mt_utf8* pUTF8, size_t utf8Cap, size_t* pUTF8Len, const mt_utf32* pUTF32, size_t utf32Len, size_t* pUTF32LenProcessed, mt_uint32 flags)
+{
+    return mt_utf32_to_utf8_internal(pUTF8, utf8Cap, pUTF8Len, pUTF32, utf32Len, pUTF32LenProcessed, flags, MT_TRUE);
+}
+
+mt_result mt_utf32be_to_utf8(mt_utf8* pUTF8, size_t utf8Cap, size_t* pUTF8Len, const mt_utf32* pUTF32, size_t utf32Len, size_t* pUTF32LenProcessed, mt_uint32 flags)
+{
+    return mt_utf32_to_utf8_internal(pUTF8, utf8Cap, pUTF8Len, pUTF32, utf32Len, pUTF32LenProcessed, flags, MT_FALSE);
+}
+
+mt_result mt_utf32_to_utf8(mt_utf8* pUTF8, size_t utf8Cap, size_t* pUTF8Len, const mt_utf32* pUTF32, size_t utf32Len, size_t* pUTF32LenProcessed, mt_uint32 flags)
+{
+    if (pUTF8Len != NULL) {
+        *pUTF8Len = 0;
+    }
+
+    /* Check for BOM. */
+    if (mt_has_utf32_bom((const mt_uint8*)pUTF32, utf32Len)) {
+        mt_bool32 isLE;
+        if ((flags & MT_FORBID_BOM) != 0) {
+            return MT_INVALID_BOM;  /* Found a BOM, but it's forbidden. */
+        }
+
+        /* With this function, we need to use the endian defined by the BOM. */
+        isLE = mt_is_utf32_bom_le((const mt_uint8*)pUTF32);
+        
+        pUTF32 += 1;    /* Skip past the BOM. */
+        if (utf32Len != (size_t)-1) {
+            utf32Len -= 1;
+        }
+
+        if (isLE) {
+            return mt_utf32le_to_utf8_length(pUTF8Len, pUTF32+1, utf32Len-1, flags | MT_FORBID_BOM); /* <-- We already found a BOM, so we don't want to allow another occurance. */
+        } else {
+            return mt_utf32be_to_utf8_length(pUTF8Len, pUTF32+1, utf32Len-1, flags | MT_FORBID_BOM); /* <-- We already found a BOM, so we don't want to allow another occurance. */
+        }
+    }
+
+    /* Getting here means there was no BOM, so assume native endian. */
+    return mt_utf32ne_to_utf8_length(pUTF8Len, pUTF32, utf32Len, flags);
 }
 
 
