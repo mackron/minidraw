@@ -364,6 +364,16 @@ struct mt_api
     {
         /*HDC*/ /*mt_handle hDC;*/  /* Optional pre-created global device context. */
         /*HBRUSH*/ mt_handle hStockSolidFillBrush;  /* The GDI stock brush to use for solid brushes. */
+
+        /* usp10.dll */
+        mt_handle hUsp10DLL;
+
+        /* gdi32.dll */
+        mt_handle hGdi32DLL;
+
+        /* msimg32.dll */
+        mt_handle hMsimg32DLL;
+        mt_proc AlphaBlend;
     } gdi;
 #endif
 #if defined(MT_SUPPORT_DIRECT2D)
@@ -1463,6 +1473,49 @@ mt_result mt_result_from_errno(errno_t e)
 }
 
 
+mt_handle mt_dlopen(const char* filename)
+{
+    mt_handle handle;
+
+#ifdef _WIN32
+    handle = (mt_handle)LoadLibraryA(filename);
+#else
+    handle = (mt_handle)dlopen(filename, RTLD_NOW);
+#endif
+
+    return handle;
+}
+
+void mt_dlclose(mt_handle handle)
+{
+#ifdef _WIN32
+    FreeLibrary((HMODULE)handle);
+#else
+    dlclose((void*)handle);
+#endif
+}
+
+mt_proc mt_dlsym(mt_handle handle, const char* symbol)
+{
+    mt_proc proc;
+
+#ifdef _WIN32
+    proc = (mt_proc)GetProcAddress((HMODULE)handle, symbol);
+#else
+#if defined(__GNUC__) && (__GNUC__ > 4 || (__GNUC__ == 4 && __GNUC_MINOR__ >= 6))
+    #pragma GCC diagnostic push
+    #pragma GCC diagnostic ignored "-Wpedantic"
+#endif
+    proc = (mt_proc)dlsym((void*)handle, symbol);
+#if defined(__GNUC__) && (__GNUC__ > 4 || (__GNUC__ == 4 && __GNUC_MINOR__ >= 6))
+    #pragma GCC diagnostic pop
+#endif
+#endif
+
+    return proc;
+}
+
+
 /**************************************************************************************************************************************************************
 
  GDI + Uniscribe
@@ -1471,6 +1524,10 @@ mt_result mt_result_from_errno(errno_t e)
 #if defined(MT_HAS_GDI)
 #include <usp10.h>
 #include <math.h>   /* For cosf() and sinf(). May want to move this out of here and into the general implementation section. */
+
+/* msimg32.dll */
+typedef BOOL (WINAPI * MT_PFN_AlphaBlend)(HDC hdcDest, int xoriginDest, int yoriginDest, int wDest, int hDest, HDC hdcSrc, int xoriginSrc, int yoriginSrc, int wSrc, int hSrc, BLENDFUNCTION ftn);
+
 
 /* Font */
 mt_result mt_font_init__gdi(mt_api* pAPI, const mt_font_config* pConfig, mt_font* pFont)
@@ -2315,7 +2372,7 @@ void mt_gc_draw_gc__gdi(mt_gc* pGC, mt_gc* pSrcGC, mt_int32 srcX, mt_int32 srcY)
     /* If the image has an alpha channel we need to use AlphaBlend(). */
     if (pSrcGC->gdi.hBitmap != NULL && mt_format_has_alpha(pSrcGC->format)) {
         BLENDFUNCTION blend = {AC_SRC_OVER, 0, 255, AC_SRC_ALPHA};
-        AlphaBlend(hDstDC, 0, 0, srcSizeX, srcSizeY, hSrcDC, srcX, srcY, srcSizeX, srcSizeY, blend);
+        ((MT_PFN_AlphaBlend)pGC->pAPI->gdi.AlphaBlend)(hDstDC, 0, 0, srcSizeX, srcSizeY, hSrcDC, srcX, srcY, srcSizeX, srcSizeY, blend);
     } else {
         StretchBlt(hDstDC, 0, 0, srcSizeX, srcSizeY, hSrcDC, srcX, srcX, srcSizeX, srcSizeY, SRCCOPY);
     }
@@ -2443,17 +2500,42 @@ void mt_uninit__gdi(mt_api* pAPI)
 {
     MT_ASSERT(pAPI != NULL);
 
-    (void)pAPI;
+    mt_dlclose(pAPI->gdi.hMsimg32DLL);
+    mt_dlclose(pAPI->gdi.hGdi32DLL);
+    mt_dlclose(pAPI->gdi.hUsp10DLL);
 }
-
-#pragma comment(lib, "msimg32.lib")
 
 mt_result mt_init__gdi(const mt_api_config* pConfig, mt_api* pAPI)
 {
     MT_ASSERT(pConfig != NULL);
     MT_ASSERT(pAPI != NULL);
 
-    /* TODO: dlopen() usp10.dll and gdi32.dll (in that order). Also msimg32.dll (AlphaBlend) */
+    /* usp10.dll. Always do this before gdi32.dll. */
+    pAPI->gdi.hUsp10DLL = mt_dlopen("Usp10.dll");
+    if (pAPI->gdi.hUsp10DLL == NULL) {
+        return MT_ERROR;    /* Failed to load usp10.dll. */
+    }
+
+
+    /* gdi32.dll */
+    pAPI->gdi.hGdi32DLL = mt_dlopen("gdi32.dll");
+    if (pAPI->gdi.hGdi32DLL == NULL) {
+        mt_dlclose(pAPI->gdi.hUsp10DLL);
+        return MT_ERROR;    /* Failed to load gdi32.dll. */
+    }
+
+
+    /* msimg32.dll */
+    pAPI->gdi.hMsimg32DLL = mt_dlopen("msimg32.dll");
+    if (pAPI->gdi.hMsimg32DLL == NULL) {
+        mt_dlclose(pAPI->gdi.hUsp10DLL);
+        mt_dlclose(pAPI->gdi.hGdi32DLL);
+        return MT_ERROR;
+    }
+
+    pAPI->gdi.AlphaBlend = mt_dlsym(pAPI->gdi.hMsimg32DLL, "AlphaBlend");
+
+
 
     /* Stock objects. */
     pAPI->gdi.hStockSolidFillBrush = GetStockObject(DC_BRUSH);    /* The brush to use for solid brushes. */
