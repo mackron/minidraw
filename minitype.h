@@ -1529,6 +1529,31 @@ mt_proc mt_dlsym(mt_handle handle, const char* symbol)
 typedef BOOL (WINAPI * MT_PFN_AlphaBlend)(HDC hdcDest, int xoriginDest, int yoriginDest, int wDest, int hDest, HDC hdcSrc, int xoriginSrc, int yoriginSrc, int wSrc, int hSrc, BLENDFUNCTION ftn);
 
 
+void mt_gc_get_size__gdi(mt_gc* pGC, int* pSizeX, int* pSizeY)
+{
+    MT_ASSERT(pSizeX != NULL);
+    MT_ASSERT(pSizeY != NULL);
+
+    /* If it's a bitmap we use the size of that. Otherwise, if it's a window we try that. If it's none of these, we use HORZRES/VERTRES. */
+    if (pGC->gdi.hBitmap != NULL) {
+        *pSizeX = pGC->gdi.bitmapSizeX;
+        *pSizeY = pGC->gdi.bitmapSizeY;
+    } else {
+        HWND hWnd = WindowFromDC((HDC)pGC->gdi.hDC);
+        if (hWnd != NULL) {
+            RECT rect;
+            GetClientRect(hWnd, &rect);
+            *pSizeX = rect.right - rect.left;
+            *pSizeY = rect.bottom - rect.top;
+        } else {
+            /* Fallback to HORZRES/VERTRES. */
+            *pSizeX = GetDeviceCaps((HDC)pGC->gdi.hDC, HORZRES);
+            *pSizeY = GetDeviceCaps((HDC)pGC->gdi.hDC, VERTRES);
+        }
+    }
+}
+
+
 /* Font */
 mt_result mt_font_init__gdi(mt_api* pAPI, const mt_font_config* pConfig, mt_font* pFont)
 {
@@ -1579,7 +1604,7 @@ mt_result mt_brush_init__gdi(mt_api* pAPI, const mt_brush_config* pConfig, mt_br
 
         case mt_brush_type_gc:
         {
-            /* TODO: Implement me. If the HDC is writing to a HBITMAP we can retrieve that. Otherwise we need to create a new HBITMAP, BitBlt the source HDC over to it and use that. */
+            /* If the HDC is writing to a HBITMAP we can retrieve that. Otherwise we need to create a new HBITMAP, BitBlt the source HDC over to it and use that. */
             if (pConfig->gc.pGC == NULL) {
                 return MT_INVALID_ARGS; /* GC not set for mt_brush_type_gc. */
             }
@@ -1589,11 +1614,36 @@ mt_result mt_brush_init__gdi(mt_api* pAPI, const mt_brush_config* pConfig, mt_br
                 hBitmap    = (HBITMAP)pConfig->gc.pGC->gdi.hBitmap;
                 hBrush     = CreatePatternBrush(hBitmap);
             } else {
-                /*CreatePatternBrush()*/
-                return MT_INVALID_OPERATION;
+                HDC hTempDC;
+                int sizeX;
+                int sizeY;
+                mt_gc_get_size__gdi(pConfig->gc.pGC, &sizeX, &sizeY);
+
+                ownsBitmap = MT_TRUE;
+
+                hBitmap = CreateCompatibleBitmap((HDC)pConfig->gc.pGC->gdi.hDC, sizeX, sizeY);
+                if (hBitmap == NULL) {
+                    return MT_ERROR;    /* Failed to create bitmap. */
+                }
+
+                hTempDC = CreateCompatibleDC((HDC)pConfig->gc.pGC->gdi.hDC);
+                if (hTempDC == NULL) {
+                    DeleteObject(hBitmap);
+                    return MT_ERROR;    /* Failed to create temp DC. */
+                }
+
+                SelectObject(hTempDC, hBitmap);
+                BitBlt(hTempDC, 0, 0, sizeX, sizeY, (HDC)pConfig->gc.pGC->gdi.hDC, 0, 0, SRCCOPY);
+
+                DeleteDC(hTempDC);
+                
+                hBrush = CreatePatternBrush(hBitmap);
             }
 
             if (hBrush == NULL) {
+                if (hBitmap != NULL && ownsBitmap) {
+                    DeleteObject(hBitmap);
+                }
                 return MT_ERROR;
             }
         } break;
@@ -1680,7 +1730,7 @@ mt_result mt_gc_init__gdi(mt_api* pAPI, const mt_gc_config* pConfig, mt_gc* pGC)
     SetGraphicsMode((HDC)pGC->gdi.hDC, GM_ADVANCED);    /* <-- Needed for world transforms (rotate and scale). */
     SetStretchBltMode((HDC)pGC->gdi.hDC, COLORONCOLOR); /* <-- COLORONCOLOR is better than the default when the image is scaled down. Not setting this results in black pixelation. */
 
-    /* We need at least one item in the state stack. Unfortunately malloc() here - may want to think about optimizing this. Perhaps some optimized per-API scheme? */
+    /* We need at least one item in the state stack. Unfortunate malloc() here - may want to think about optimizing this. Perhaps some optimized per-API scheme? */
     pGC->gdi.stateCount = 1;
     pGC->gdi.stateCap   = 1;
     pGC->gdi.pState = (mt_gc_state_gdi*)MT_CALLOC(pGC->gdi.stateCap, sizeof(*pGC->gdi.pState));
@@ -2333,30 +2383,6 @@ void mt_gc_fill_and_stroke__gdi(mt_gc* pGC)
     }
 }
 
-void mt_gc_get_size__gdi(mt_gc* pGC, int* pSizeX, int* pSizeY)
-{
-    MT_ASSERT(pSizeX != NULL);
-    MT_ASSERT(pSizeY != NULL);
-
-    /* If it's a bitmap we use the size of that. Otherwise, if it's a window we try that. If it's none of these, we use HORZRES/VERTRES. */
-    if (pGC->gdi.hBitmap != NULL) {
-        *pSizeX = pGC->gdi.bitmapSizeX;
-        *pSizeY = pGC->gdi.bitmapSizeY;
-    } else {
-        HWND hWnd = WindowFromDC((HDC)pGC->gdi.hDC);
-        if (hWnd != NULL) {
-            RECT rect;
-            GetClientRect(hWnd, &rect);
-            *pSizeX = rect.right - rect.left;
-            *pSizeY = rect.bottom - rect.top;
-        } else {
-            /* Fallback to HORZRES/VERTRES. */
-            *pSizeX = GetDeviceCaps((HDC)pGC->gdi.hDC, HORZRES);
-            *pSizeY = GetDeviceCaps((HDC)pGC->gdi.hDC, VERTRES);
-        }
-    }
-}
-
 void mt_gc_draw_gc__gdi(mt_gc* pGC, mt_gc* pSrcGC, mt_int32 srcX, mt_int32 srcY)
 {
     HDC hDstDC;
@@ -2511,7 +2537,7 @@ mt_result mt_init__gdi(const mt_api_config* pConfig, mt_api* pAPI)
     MT_ASSERT(pAPI != NULL);
 
     /* usp10.dll. Always do this before gdi32.dll. */
-    pAPI->gdi.hUsp10DLL = mt_dlopen("Usp10.dll");
+    pAPI->gdi.hUsp10DLL = mt_dlopen("usp10.dll");
     if (pAPI->gdi.hUsp10DLL == NULL) {
         return MT_ERROR;    /* Failed to load usp10.dll. */
     }
