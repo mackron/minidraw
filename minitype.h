@@ -1,9 +1,11 @@
 /*
 Typography library. Choice of public domain or MIT-0. See license statements at the end of this file.
-minitype - v0.x.x - 2018-xx-xx
+minitype - v0.x.x - 2019-xx-xx
 
 David Reid - davidreidsoftware@gmail.com
 */
+
+/* WORK IN PROGRESS */
 
 #ifndef MINITYPE_H
 #define MINITYPE_H
@@ -4185,7 +4187,7 @@ mt_result mt_utf8_to_utf16ne(mt_utf16* pUTF16, size_t utf16Cap, size_t* pUTF16Le
                         /* Replacement. */
                         pUTF16[0] = MT_UNICODE_REPLACEMENT_CHARACTER;
                         pUTF16   += MT_UNICODE_REPLACEMENT_CHARACTER_LENGTH_UTF16;
-                        utf16Cap += MT_UNICODE_REPLACEMENT_CHARACTER_LENGTH_UTF16;
+                        utf16Cap -= MT_UNICODE_REPLACEMENT_CHARACTER_LENGTH_UTF16;
                         pUTF8    += 1;
                     }
                 } else {
@@ -4227,7 +4229,7 @@ mt_result mt_utf8_to_utf16ne(mt_utf16* pUTF16, size_t utf16Cap, size_t* pUTF16Le
                                     /* Replacement. */
                                     pUTF16[0] = MT_UNICODE_REPLACEMENT_CHARACTER;
                                     pUTF16   += MT_UNICODE_REPLACEMENT_CHARACTER_LENGTH_UTF16;
-                                    utf16Cap += MT_UNICODE_REPLACEMENT_CHARACTER_LENGTH_UTF16;
+                                    utf16Cap -= MT_UNICODE_REPLACEMENT_CHARACTER_LENGTH_UTF16;
                                     pUTF8    += 4;
                                 }
                             } else {
@@ -4245,7 +4247,7 @@ mt_result mt_utf8_to_utf16ne(mt_utf16* pUTF16, size_t utf16Cap, size_t* pUTF16Le
                             /* Replacement. */
                             pUTF16[0] = MT_UNICODE_REPLACEMENT_CHARACTER;
                             pUTF16   += MT_UNICODE_REPLACEMENT_CHARACTER_LENGTH_UTF16;
-                            utf16Cap += MT_UNICODE_REPLACEMENT_CHARACTER_LENGTH_UTF16;
+                            utf16Cap -= MT_UNICODE_REPLACEMENT_CHARACTER_LENGTH_UTF16;
                             pUTF8    += 1;
                         }
                     }
