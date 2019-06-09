@@ -260,7 +260,7 @@ typedef enum
 
 typedef enum
 {
-    mt_antialias_mode_default = 0,  /* Let the backend decide, but prefer anti-aliasing if available. Will be the same as mt_antialias_none on GDI since GDI not support anti-aliasing. */
+    mt_antialias_mode_default = 0,  /* Let the backend decide, but prefer anti-aliasing if available. Will be the same as mt_antialias_none on GDI since GDI does not support anti-aliasing. */
     mt_antialias_mode_none    = 1   /* Anti-aliasing will be disabled. Useful for straight-edge primitives like un-rotated rectangles or where performance is a concern. */
 } mt_antialias_mode;
 
@@ -281,6 +281,51 @@ typedef enum
 } mt_format;
 
 /* Structures */
+#if defined(MT_SUPPORT_GDI)
+typedef struct 
+{
+    mt_uint16 uJustification : 4;
+    mt_uint16 fClusterStart  : 1;
+    mt_uint16 fDiacritic     : 1;
+    mt_uint16 fZeroWidth     : 1;
+    mt_uint16 fReserved      : 1;
+    mt_uint16 fShapeReserved : 8;
+} MT_SCRIPT_VISATTR;
+
+typedef struct
+{
+    mt_uint16 uBidiLevel         : 5;
+    mt_uint16 fOverrideDirection : 1;
+    mt_uint16 fInhibitSymSwap    : 1;
+    mt_uint16 fCharShape         : 1;
+    mt_uint16 fDigitSubstitute   : 1;
+    mt_uint16 fInhibitLigate     : 1;
+    mt_uint16 fDisplayZWG        : 1;
+    mt_uint16 fArabicNumContext  : 1;
+    mt_uint16 fGcpClusters       : 1;
+    mt_uint16 fReserved          : 1;
+    mt_uint16 fEngineReserved    : 2;
+} MT_SCRIPT_STATE;
+
+typedef struct
+{
+    mt_uint16 eScript       : 10;
+    mt_uint16 fRTL          : 1;
+    mt_uint16 fLayoutRTL    : 1;
+    mt_uint16 fLinkBefore   : 1;
+    mt_uint16 fLinkAfter    : 1;
+    mt_uint16 fLogicalOrder : 1;
+    mt_uint16 fNoGlyphIndex : 1;
+    MT_SCRIPT_STATE s;
+} MT_SCRIPT_ANALYSIS;
+
+typedef struct
+{
+    int iCharPos;
+    MT_SCRIPT_ANALYSIS a;
+} MT_SCRIPT_ITEM;
+#endif
+
 typedef struct
 {
     mt_uint8 r;
@@ -288,6 +333,48 @@ typedef struct
     mt_uint8 b;
     mt_uint8 a;
 } mt_color;
+
+typedef struct
+{
+    mt_uint32 index;
+    double x;
+    double y;
+    union
+    {
+    #if defined(MT_SUPPORT_GDI)
+        struct
+        {
+            MT_SCRIPT_VISATTR sv;   /* Passed around to ScriptShape() and ScriptPlace(). */
+        } gdi;
+    #endif
+        mt_uint32 _unused;
+    } backend;
+} mt_glyph;
+
+typedef struct
+{
+    double sizeX;
+    double sizeY;
+} mt_text_metrics;
+
+struct mt_item
+{
+    size_t offset;  /* Offset in code units (bytes for UTF-8, shorts for UTF-16, integers for UTF-32. */
+    size_t length;  /* Length in code units. */
+
+    /* Backend-specific data. */
+    union
+    {
+    #if defined(MT_SUPPORT_GDI)
+        struct
+        {
+            MT_SCRIPT_ANALYSIS sa;   /* Passed around to Script*() APIs. */
+        } gdi;
+    #endif
+        mt_uint32 _unused;
+    } backend;
+};
+
 
 struct mt_api_config
 {
@@ -302,8 +389,13 @@ struct mt_api
 {
     mt_backend backend;
     void      (* uninit)             (mt_api* pAPI);
-    mt_result (* itemizeUTF8)        (mt_api* pAPI, const mt_utf8* pText, size_t textLength, mt_item** ppItems, mt_uint32* pItemCount);
-    void      (* freeItems)          (mt_api* pAPI, mt_item* pItems);
+    mt_result (* itemizeUTF8)        (mt_api* pAPI, const mt_utf8* pTextUTF8, size_t textLength, mt_item* pItems, mt_uint32* pItemCount);
+    mt_result (* itemizeUTF16)       (mt_api* pAPI, const mt_utf16* pTextUTF16, size_t textLength, mt_item* pItems, mt_uint32* pItemCount);
+    mt_result (* itemizeUTF32)       (mt_api* pAPI, const mt_utf32* pTextUTF32, size_t textLength, mt_item* pItems, mt_uint32* pItemCount);
+    mt_result (* shapeUTF8)          (mt_font* pFont, mt_item* pItem, const mt_utf8* pTextUTF8, size_t textLength, mt_glyph* pGlyphs, size_t* pGlyphCount, size_t* pClusters, size_t* pClusterCount);
+    mt_result (* shapeUTF16)         (mt_font* pFont, mt_item* pItem, const mt_utf16* pTextUTF16, size_t textLength, mt_glyph* pGlyphs, size_t* pGlyphCount, size_t* pClusters, size_t* pClusterCount);
+    mt_result (* shapeUTF32)         (mt_font* pFont, mt_item* pItem, const mt_utf32* pTextUTF32, size_t textLength, mt_glyph* pGlyphs, size_t* pGlyphCount, size_t* pClusters, size_t* pClusterCount);
+    mt_result (* place)              (mt_font* pFont, mt_item* pItem, mt_glyph* pGlyphs, size_t glyphCount, mt_text_metrics* pRunMetrics);
     mt_result (* fontInit)           (mt_api* pAPI, const mt_font_config* pConfig, mt_font* pFont);
     void      (* fontUninit)         (mt_font* pFont);
     mt_result (* brushInit)          (mt_api* pAPI, const mt_brush_config* pConfig, mt_brush* pBrush);
@@ -345,6 +437,7 @@ struct mt_api
     void      (* gcStroke)           (mt_gc* pGC);
     void      (* gcFillAndStroke)    (mt_gc* pGC);
     void      (* gcDrawGC)           (mt_gc* pGC, mt_gc* pSrcGC, mt_int32 srcX, mt_int32 srcY);
+    void      (* gcDrawGlyphs)       (mt_gc* pGC, const mt_item* pItem, mt_int32 x, mt_int32 y, const mt_glyph* pGlyphs, size_t glyphCount);
 
 #if defined(MT_WIN32)
     struct
@@ -416,6 +509,7 @@ struct mt_font
     struct
     {
         /*HFONT*/ mt_handle hFont;
+        /*SCRIPT_CACHE*/ mt_ptr sc; /* The SCRIPT_CACHE object passed around to ScriptShape(), ScriptPlace() and ScriptTextOut(). */
     } gdi;
 #endif
 #if defined(MT_SUPPORT_DIRECT2D)
@@ -560,12 +654,6 @@ struct mt_gc
 #endif
 };
 
-struct mt_item
-{
-    mt_uint8 bidiLevel;
-    void* pBackendData; /* Internal use only. Backend-specific data. */
-};
-
 
 /**************************************************************************************************************************************************************
 
@@ -574,8 +662,86 @@ API
 **************************************************************************************************************************************************************/
 mt_result mt_init(const mt_api_config* pConfig, mt_api* pAPI);
 void mt_uninit(mt_api* pAPI);
-mt_result mt_itemize_utf8(mt_api* pAPI, const mt_utf8* pText, size_t textLength, mt_item** ppItems, mt_uint32* pItemCount);
-void mt_free_items(mt_api* pAPI, mt_item* pItems);
+
+/*
+Itemizes a UTF-8 string in preparation for shaping, placement and drawing.
+
+[pItems](out, optional)
+    A pointer to a buffer that will receive the items. Can be NULL, in which case only the item count is returned.
+
+[pItemCount](in, out)
+    A pointer to an unsigned integer that, on input, contains the capacity of [pItems] and on output will receive the actual item count. Cannot be NULL.
+
+
+Return Value
+------------
+MT_SUCCESS is returned on success.
+
+MT_INVALID_ARGS will be returned if [pText] is NULL, [textLength] is zero or [pItemCount] is NULL.
+
+MT_NO_SPACE will be returned when [pItems] is not large enough to contain the items. In this case, [pItemCount] will be set to the required count.
+
+Remarks
+-------
+This is the first function you should call when preparing text for drawing.
+*/
+mt_result mt_itemize_utf8(mt_api* pAPI, const mt_utf8* pTextUTF8, size_t textLength, mt_item* pItems, mt_uint32* pItemCount);
+
+/*
+Performs text shaping on the given text run. This function is used to convert text to glyphs.
+
+[pFont](in)
+    The font to use for the shaping.
+
+[pItem](in, out)
+    A pointer to the mt_item object from a previous call to mt_itemize*().
+
+[pText](in)
+    The text to itemize.
+
+[textLength](in)
+    The length of the text in code units.
+
+[pGlyphs](out)
+    A pointer to a buffer that will receive the glyphs for the given text. This buffer must be large enough to contain [textLength] glyphs.
+
+[pGlyphCount](out)
+    A pointer to the variable that will receive the glyph count.
+
+[pClusters](out)
+    A pointer to a buffer that will receive the clusters for the given text. This buffer must be large enough to contain [textLength] clusters.
+
+[pClusterCount](out)
+    A pointer to the variable that will receive the cluster count.
+
+Remarks
+-------
+You should call mt_itemize_utf8() before calling this function.
+*/
+mt_result mt_shape_utf8(mt_font* pFont, mt_item* pItem, const mt_utf8* pTextUTF8, size_t textLength, mt_glyph* pGlyphs, size_t* pGlyphCount, size_t* pClusters, size_t* pClusterCount);
+
+/*
+Performs glyphs placement.
+
+[pItem](in, out)
+    A pointer to the mt_item object from a previous call to mt_itemize*().
+
+[pGlyphs](in, out)
+    A pointer to a buffer containing the glyphs to place.
+
+[glyphCount](in)
+    The number of glyphs in [pGlyphs].
+
+[pRunMetrics](out, optional)
+    A pointer to a mt_text_metrics object that will receive the width and height of the entire run as a whole.
+
+Remarks
+-------
+You should call mt_shape_*() before calling this function.
+
+This will modify the [x] and [y] members of each glyph in [pGlyphs].
+*/
+mt_result mt_place(mt_font* pFont, mt_item* pItem, mt_glyph* pGlyphs, size_t glyphCount, mt_text_metrics* pRunMetrics);
 
 
 /**************************************************************************************************************************************************************
@@ -1572,6 +1738,8 @@ void mt_font_uninit__gdi(mt_font* pFont)
 {
     MT_ASSERT(pFont != NULL);
 
+    // TODO: Check if the SCRIPT_CACHE object needs to be deleted. ScriptFreeCache().
+
     (void)pFont;
 }
 
@@ -2404,122 +2572,83 @@ void mt_gc_draw_gc__gdi(mt_gc* pGC, mt_gc* pSrcGC, mt_int32 srcX, mt_int32 srcY)
     }
 }
 
+#pragma comment(lib, "usp10.lib")  /* TODO: Remove this and replace with runtime linking. */
 
 /* API */
-mt_result mt_itemize_utf16__gdi(mt_api* pAPI, const mt_utf16* pText, size_t textLength, mt_item** ppItems, mt_uint32* pItemCount)
+mt_result mt_itemize_utf16__gdi(mt_api* pAPI, const mt_utf16* pTextUTF16, size_t textLength, mt_item* pItems, mt_uint32* pItemCount)
 {
     HRESULT hResult;
-    mt_item* pItems = NULL;
-    int itemCapacity;
-    int itemCount = 0;
+    mt_uint32 itemCapacity;
+    int scriptItemHeapCapacity; (void)scriptItemHeapCapacity;
+    int scriptItemCount = 0;
+    MT_SCRIPT_ITEM  pScriptItemsStack[1024];
+    MT_SCRIPT_ITEM* pScriptItemsHeap = NULL;
+    MT_SCRIPT_ITEM* pScriptItems = NULL;   /* Set to either pScriptItemsStack or pScriptItemsHeap. */
 
     MT_ASSERT(pAPI != NULL);
-    MT_ASSERT(pText != NULL);
-    MT_ASSERT(pText[0] != '\0');
+    MT_ASSERT(pTextUTF16 != NULL);
+    MT_ASSERT(pTextUTF16[0] != '\0');
     MT_ASSERT(textLength > 0);
-    MT_ASSERT(ppItems != NULL);
+    MT_ASSERT(pItems != NULL);
     MT_ASSERT(pItemCount != NULL);
 
     /* ScriptItemize() uses an integer for the text length, so keep it simple and return an error if we're asking for more. */
-    if (textLength > 0xEFFFFFFF) {
+    if (textLength > 0x7FFFFFFF) {
         return MT_INVALID_ARGS;
     }
+
+    itemCapacity = *pItemCount;
 
     /*
     Unfortunately ScriptItemize() is kind of bad when it comes to counting the number of items in the string. From the documentation:
     
         If the function returns E_OUTOFMEMORY, the application can call it again with a larger pItems buffer.
 
-    This means that the way to do this is to repeatedly call ScriptItemize() with ever increasing buffer sizes.
+    This means that the way to do this is to repeatedly call ScriptItemize() with ever increasing buffer sizes. We first try using a
+    stack-allocated buffer. If this is too small we will use the heap.
     */
 
-    /* TODO: This needs optimizing. Try reusing caching buffers rather than calling malloc/realloc each time. */
-    itemCapacity = 16;
-    for (;;) {
-        size_t bufferSizeInBytes;
-        mt_item* pNewItems;
-
-        /*
-        The buffer is made up of two parts. The first part is the list of mt_item objects. The second part is the array of Uniscribe
-        SCRIPT_ITEM objects. Everything is in the same allocation.
-        */
-        bufferSizeInBytes = itemCapacity * (sizeof(mt_item) + sizeof(SCRIPT_ITEM));
-        MT_ASSERT(bufferSizeInBytes > 0);
-
-        pNewItems = (mt_item*)MT_REALLOC(pItems, bufferSizeInBytes);
-        if (pNewItems == NULL) {
-            MT_FREE(pItems);
-            return MT_OUT_OF_MEMORY;
-        }
-
-        pItems = pNewItems;
-
-        /* Subtract 1 from item capacity because the last item is always used as a null terminator. */
-
-        /* Temporarily commented out to avoid a link error with ScriptItemize() while testing stuff. */
-#if 0
-        hResult = ScriptItemize((const wchar_t*)pText, (int)textLength, itemCapacity-1, NULL, NULL, (SCRIPT_ITEM*)MT_OFFSET_PTR(pItems, itemCapacity*sizeof(mt_item)), &itemCount);
+    /* Try itemizing into the stack first. If this fails we fall back to the heap. */
+    hResult = ScriptItemize((const wchar_t*)pTextUTF16, (int)textLength, MT_COUNTOF(pScriptItemsStack)-1, NULL, NULL, (SCRIPT_ITEM*)pScriptItemsStack, &scriptItemCount);   /* Subtract 1 from item capacity because the last item is always used as a null terminator. */
+    if (hResult == S_OK) {
+        pScriptItems = &pScriptItemsStack[0];
+    } else {
         if (hResult == E_OUTOFMEMORY) {
-            /* Not enough room. Increase the capacity and try again. */
-            itemCapacity *= 2;
-            continue;
+            /* Not enough room in the stack so try the heap. We just continuously increase the size of the buffer until it's big enough. */
+
+            /* TODO: Implement me. Use pScriptItemsHeap. When successful, set pScriptItems to pScriptItemsHeap. */
         }
-#else
-        hResult = S_OK;
-#endif
-
-        /*
-        Getting here means we were able to itemize the string. Something we need to do here is move the SCRIPT_ITEMs so that they're
-        sitting immediately after the mt_items. The reason for this is to make it easy to find where the first SCRIPT_ITEM is located
-        in the buffer by looking at the item count instead of the capacity. This is beneficial because the item count is always readily
-        available with the item array, whereas the capacity is not.
-        */
-        MT_MOVE_MEMORY(MT_OFFSET_PTR(pItems, itemCount*sizeof(mt_item)), MT_OFFSET_PTR(pItems, itemCapacity*sizeof(mt_item)), itemCount*sizeof(SCRIPT_ITEM));
-
-        /* We need to duplicate some data from the platform-specific SCRIPT_ITEMs over to the cross-platform mt_items. */
-
-    }
-    
-    *pItemCount = (mt_uint32)itemCount;
-    return MT_SUCCESS;
-}
-
-mt_result mt_itemize_utf8__gdi(mt_api* pAPI, const mt_utf8* pTextUTF8, size_t textLength, mt_item** ppItems, mt_uint32* pItemCount)
-{
-    HRESULT hResult;
-    mt_result result;
-    size_t utf8Size;
-
-    MT_ASSERT(pAPI != NULL);
-    MT_ASSERT(pTextUTF8 != NULL);
-    MT_ASSERT(pTextUTF8[0] != '\0');
-    MT_ASSERT(textLength > 0);
-    MT_ASSERT(ppItems != NULL);
-    MT_ASSERT(pItemCount != NULL);
-
-    /* Unfortunately Uniscribe only supports wchar_t. This is 2 bytes on Windows so I'm treating this as UTF-16. We need to convert. */
-    result = mt_utf8_to_utf16ne(NULL, 0, &utf8Size, pTextUTF8, textLength, NULL, 0);
-    if (result != MT_SUCCESS) {
-        return result;  /* Some error has occurred with UTF-8 to UTF-16 conversion. */
     }
 
-    
+    if (hResult != S_OK) {
+        return mt_result_from_HRESULT(hResult); /* Something bad happened. */
+    }
 
-    
-    (void)hResult;
 
+    /*
+    Make sure the item count is always set, even in the event of future errors. This ensures the count is available in the event that the input capacity is too small in which
+    case the caller can resize their input buffer accordingly.
+    */
+    *pItemCount = (mt_uint32)scriptItemCount;
+
+
+    /* At this point we have our SCRIPT_ITEM objects, so now we need to convert the SCRIPT_ITEM objects to mt_item objects. */
+    if (pItems != NULL) {
+        if (itemCapacity >= (mt_uint32)scriptItemCount) {
+            int iItem;
+            for (iItem = 0; iItem < scriptItemCount; ++iItem) {
+                pItems[iItem].offset         = (size_t)pScriptItems[iItem].iCharPos;
+                pItems[iItem].length         = (size_t)(pScriptItems[iItem+1].iCharPos - pScriptItems[iItem].iCharPos);
+                pItems[iItem].backend.gdi.sa = pScriptItems[iItem].a;
+            }
+        } else {
+            MT_FREE(pScriptItemsHeap);
+            return MT_NO_SPACE; /* Not enough room*/
+        }
+    }
+
+    MT_FREE(pScriptItemsHeap);
     return MT_SUCCESS;
-}
-
-void mt_free_items__gdi(mt_api* pAPI, mt_item* pItems)
-{
-    MT_ASSERT(pAPI != NULL);
-
-    /* TODO: Use some caching or something to make item memory management more efficient. */
-
-    MT_FREE(pItems);
-
-    (void)pAPI;
 }
 
 void mt_uninit__gdi(mt_api* pAPI)
@@ -2567,8 +2696,9 @@ mt_result mt_init__gdi(const mt_api_config* pConfig, mt_api* pAPI)
     pAPI->gdi.hStockSolidFillBrush = GetStockObject(DC_BRUSH);    /* The brush to use for solid brushes. */
 
     pAPI->uninit              = mt_uninit__gdi;
-    pAPI->itemizeUTF8         = mt_itemize_utf8__gdi;
-    pAPI->freeItems           = mt_free_items__gdi;
+    pAPI->itemizeUTF8         = NULL;   /* No native support for UTF-8 with Uniscribe. */
+    pAPI->itemizeUTF16        = mt_itemize_utf16__gdi;
+    pAPI->itemizeUTF32        = NULL;   /* No native support for UTF-32 with Uniscribe. */
     pAPI->fontInit            = mt_font_init__gdi;
     pAPI->fontUninit          = mt_font_uninit__gdi;
     pAPI->brushInit           = mt_brush_init__gdi;
@@ -2736,7 +2866,7 @@ void mt_uninit(mt_api* pAPI)
     pAPI->uninit(pAPI);
 }
 
-mt_result mt_itemize_utf8(mt_api* pAPI, const mt_utf8* pText, size_t textLength, mt_item** ppItems, mt_uint32* pItemCount)
+mt_result mt_itemize_utf8(mt_api* pAPI, const mt_utf8* pTextUTF8, size_t textLength, mt_item* pItems, mt_uint32* pItemCount)
 {
     mt_result result;
     mt_uint32 itemCount;
@@ -2745,7 +2875,7 @@ mt_result mt_itemize_utf8(mt_api* pAPI, const mt_utf8* pText, size_t textLength,
         *pItemCount = 0;    /* Safety. */
     }
 
-    if (pAPI == NULL || pText == NULL || ppItems == NULL) {
+    if (pAPI == NULL || pTextUTF8 == NULL || textLength == 0 || pItemCount == NULL) {
         return MT_INVALID_ARGS;
     }
 
@@ -2753,23 +2883,134 @@ mt_result mt_itemize_utf8(mt_api* pAPI, const mt_utf8* pText, size_t textLength,
     We could do some generic itemization here such as line breaks and tabs, however it makes things awkward with memory management. I'm therefore
     leaving this to each of the backends.
     */
-    result = pAPI->itemizeUTF8(pAPI, pText, textLength, ppItems, &itemCount);
 
-    if (pItemCount != NULL) {
-        *pItemCount = itemCount;
+    /* If the backend directly supports UTF-8, just pass it straight through. Otherwise we need to convert. */
+    if (pAPI->itemizeUTF8) {
+        /* UTF-8 natively supported. */
+        result = pAPI->itemizeUTF8(pAPI, pTextUTF8, textLength, pItems, &itemCount);
+    } else {
+        /* UTF-8 not natively supported. Need to convert the string to another format. */
+        if (pAPI->itemizeUTF16) {
+            /*
+            Convert the input string to UTF-16, itemize, then convert offsets back to UTF-8 equivalents. To make things more efficient for small
+            strings we can try converting to a stack-allocated buffer first. If this is too small we will fall back to the heap which will be
+            slightly less efficient.
+            */
+            size_t utf16Len;
+            mt_utf16  pUTF16Stack[4096];
+            mt_utf16* pUTF16Heap = NULL;
+            mt_utf16* pUTF16 = NULL;    /* Will be set to either pUTF16Stack or pUTF16Heap. */
+
+            result = mt_utf8_to_utf16ne(pUTF16Stack, MT_COUNTOF(pUTF16Stack), &utf16Len, pTextUTF8, textLength, NULL, 0);
+            if (result == MT_SUCCESS) {
+                pUTF16 = &pUTF16Stack[0];
+            } else {
+                /* Fall back to the heap. */
+                result = mt_utf8_to_utf16ne_length(&utf16Len, pTextUTF8, textLength, 0);
+                if (result == MT_SUCCESS) {
+                    pUTF16Heap = (mt_utf16*)MT_MALLOC(sizeof(*pUTF16Heap) * (utf16Len+1));
+                    if (pUTF16Heap != NULL) {
+                        result = mt_utf8_to_utf16ne(pUTF16Heap, utf16Len+1, &utf16Len, pTextUTF8, textLength, NULL, 0);
+                        if (result == MT_SUCCESS) {
+                            pUTF16 = pUTF16Heap;
+                        }
+                    } else {
+                        result = MT_OUT_OF_MEMORY;
+                    }
+                }
+
+                if (result != MT_SUCCESS) {
+                    return result;  /* An error occurred when converting to UTF-16. */
+                }
+            }
+
+            /* We have the UTF-16 string, so now we need to itemize these. */
+            result = pAPI->itemizeUTF16(pAPI, pUTF16, utf16Len, pItems, &itemCount);
+            if (result == MT_SUCCESS) {
+                /* We have the items, so now we need to convert the offsets and lengths to the UTF-8 equivalents. */
+                if (pItems != NULL) {
+                    size_t runningOffset = 0;
+                    mt_uint32 iItem;
+                    for (iItem = 0; iItem < itemCount; ++iItem) {
+                        size_t itemLengthUTF8;
+                        result = mt_utf16ne_to_utf8_length(&itemLengthUTF8, pUTF16 + pItems[iItem].offset, pItems[iItem].length, 0);
+                        if (result != MT_SUCCESS) {
+                            break;  /* Conversion error. */
+                        }
+
+                        pItems[iItem].offset = runningOffset;
+                        pItems[iItem].length = itemLengthUTF8;
+                        runningOffset += itemLengthUTF8;
+                    }
+                }
+            }
+            
+            /* Done. */
+            MT_FREE(pUTF16Heap);
+        } else if (pAPI->itemizeUTF32) {
+            /* TODO: Convert the input string to UTF-32, itemize, then convert offsets back to UTF-8 equivalents. */
+            return MT_INVALID_OPERATION;
+        } else {
+            return MT_INVALID_OPERATION;    /* Itemization not supported by the backend. */
+        }
+    }
+
+    *pItemCount = itemCount;
+    return result;
+}
+
+mt_result mt_shape_utf8(mt_font* pFont, mt_item* pItem, const mt_utf8* pTextUTF8, size_t textLength, mt_glyph* pGlyphs, size_t* pGlyphCount, size_t* pClusters, size_t* pClusterCount)
+{
+    mt_result result;
+
+    if (pGlyphCount != NULL) {
+        *pGlyphCount = 0;
+    }
+    if (pClusterCount != NULL) {
+        *pClusterCount = 0;
+    }
+
+    if (pFont == NULL || pItem == NULL || pTextUTF8 == NULL) {
+        return MT_INVALID_ARGS;
+    }
+
+    /* If the backend directly supports UTF-8, just pass it straight through. Otherwise we need to convert. */
+    if (pFont->pAPI->shapeUTF8) {
+        result = pFont->pAPI->shapeUTF8(pFont, pItem, pTextUTF8, textLength, pGlyphs, pGlyphCount, pClusters, pClusterCount);
+    } else {
+        if (pFont->pAPI->shapeUTF16) {
+            /* Convert to UTF-16. We can try using the stack first, and then fall back to a heap-allocation implementation if necessary. */
+
+
+        } else if (pFont->pAPI->shapeUTF32) {
+            /* TODO: Implement me. */
+            return MT_INVALID_OPERATION;
+        } else {
+            return MT_INVALID_OPERATION;    /* Itemization not supported by the backend. */
+        }
     }
 
     return result;
 }
 
-void mt_free_items(mt_api* pAPI, mt_item* pItems)
+mt_result mt_place(mt_font* pFont, mt_item* pItem, mt_glyph* pGlyphs, size_t glyphCount, mt_text_metrics* pRunMetrics)
 {
-    if (pAPI == NULL || pItems == NULL) {
-        return;
+    if (pRunMetrics != NULL) {
+        pRunMetrics->sizeX = 0;
+        pRunMetrics->sizeY = 0;
     }
 
-    pAPI->freeItems(pAPI, pItems);
+    if (pFont == NULL || pItem == NULL || pGlyphs == NULL) {
+        return MT_INVALID_ARGS;
+    }
+
+    if (pFont->pAPI->place == NULL) {
+        return MT_INVALID_OPERATION;
+    }
+
+    return pFont->pAPI->place(pFont, pItem, pGlyphs, glyphCount, pRunMetrics);
 }
+
 
 
 /**************************************************************************************************************************************************************
