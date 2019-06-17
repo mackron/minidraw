@@ -1143,6 +1143,22 @@ This will modify the [x] and [y] members of each glyph in [pGlyphs].
 mt_result mt_place(mt_font* pFont, mt_item* pItem, mt_glyph* pGlyphs, size_t glyphCount, mt_text_metrics* pRunMetrics);
 
 
+/*
+Measure the length of a glyph string in pixels.
+*/
+mt_result mt_measure_x(mt_api* pAPI, mt_item* pItem, size_t glyphCount, const mt_glyph* pGlyphs, mt_int32* pX);
+
+/*
+Retrieves the index of the Unicode code point under the given pixel position.
+*/
+mt_result mt_x_to_cp(mt_api* pAPI, mt_item* pItem, mt_int32 x, size_t textLength, const size_t* pClusters, size_t glyphCount, const mt_glyph* pGlyphs, size_t* piCP, mt_int32* pOffsetToEdge);
+
+/*
+Retrieves the position within a string that contains the given pixel position.
+*/
+mt_result mt_cp_to_x(mt_api* pAPI, mt_item* pItem, size_t iCP, size_t textLength, const size_t* pClusters, size_t glyphCount, const mt_glyph* pGlyphs, mt_int32* pX);
+
+
 /**************************************************************************************************************************************************************
 
 Fonts
@@ -5527,7 +5543,7 @@ mt_result mt_shape_utf16__gdi(mt_font* pFont, mt_item* pItem, const mt_utf16* pT
     hResult = ScriptShape(NULL, (SCRIPT_CACHE*)&pFont->gdi.sc, (const WCHAR*)pTextUTF16, (int)textLength, MT_COUNTOF(pUniscribeGlyphsStack), (SCRIPT_ANALYSIS*)&pItem->backend.gdi.sa, pUniscribeGlyphsStack, pUniscribeClusters, (SCRIPT_VISATTR*)pUniscribeSVAStack, &glyphCount);
     if (hResult == E_PENDING) {
         /* Select the font into the global DC and try again, this time with the DC set to the global DC. */
-        hDC = pFont->pAPI->gdi.hGlobalDC;
+        hDC = (HDC)pFont->pAPI->gdi.hGlobalDC;
         SelectObject(hDC, (HGDIOBJ)pFont->gdi.hFont);
         hResult = ScriptShape(hDC, (SCRIPT_CACHE*)&pFont->gdi.sc, (const WCHAR*)pTextUTF16, (int)textLength, MT_COUNTOF(pUniscribeGlyphsStack), (SCRIPT_ANALYSIS*)&pItem->backend.gdi.sa, pUniscribeGlyphsStack, pUniscribeClusters, (SCRIPT_VISATTR*)pUniscribeSVAStack, &glyphCount);
     }
@@ -6194,6 +6210,133 @@ mt_result mt_place(mt_font* pFont, mt_item* pItem, mt_glyph* pGlyphs, size_t gly
     return pFont->pAPI->place(pFont, pItem, pGlyphs, glyphCount, pRunMetrics);
 }
 
+mt_result mt_measure_x(mt_api* pAPI, mt_item* pItem, size_t glyphCount, const mt_glyph* pGlyphs, mt_int32* pX)
+{
+    size_t iGlyph;
+    mt_int32 runningX;
+
+    if (pAPI == NULL || pItem == NULL || pGlyphs == NULL) {
+        return MT_SUCCESS;
+    }
+
+    runningX = 0;
+    for (iGlyph = 0; iGlyph < glyphCount; ++iGlyph) {
+        runningX += pGlyphs[iGlyph].advance;
+    }
+
+    if (pX != NULL) {
+        *pX = runningX;
+    }
+
+    return MT_SUCCESS;
+}
+
+mt_result mt_x_to_cp(mt_api* pAPI, mt_item* pItem, mt_int32 x, size_t textLength, const size_t* pClusters, size_t glyphCount, const mt_glyph* pGlyphs, size_t* piCP, mt_int32* pOffsetToEdge)
+{
+    /* Naive implementation for now while I figure things out. */
+
+    size_t iGlyph;
+    size_t iCluster;
+    mt_int32 runningX;
+
+    if (piCP != NULL) {
+        *piCP = (size_t)0;
+    }
+    if (pOffsetToEdge != NULL) {
+        *pOffsetToEdge = 0;
+    }
+
+    /* If x is negative we need to clamp it to edge of the run. */
+    if (x < 0) {
+        return MT_SUCCESS;
+    }
+
+    if (pAPI == NULL || pItem == NULL || pClusters == NULL || pGlyphs == NULL) {
+        return MT_INVALID_ARGS;
+    }
+
+    runningX = 0;
+    for (iGlyph = 0; iGlyph < glyphCount; ++iGlyph) {
+        mt_int32 nextRunningX = runningX + pGlyphs[iGlyph].advance;
+        if (x >= runningX && x < nextRunningX) {
+            /* It's somewhere on this glyph. */
+            mt_bool32 found = MT_FALSE;
+            for (iCluster = 0; iCluster < textLength; ++iCluster) {
+                if (pClusters[iCluster] == iGlyph) {
+                    if (piCP != NULL) {
+                        *piCP = iCluster;
+                    }
+                        
+                    found = MT_TRUE;
+                }
+            }
+
+            if (pOffsetToEdge != NULL) {
+                *pOffsetToEdge = runningX - x;
+            }
+
+            return MT_SUCCESS;
+        }
+
+        runningX = nextRunningX;
+    }
+
+    /* Geting here means the point is beyond the string. We just place it at the end. */
+    if (piCP != NULL) {
+        *piCP = textLength;
+    }
+    if (pOffsetToEdge != NULL) {
+        *pOffsetToEdge = 0;
+    }
+
+    return MT_SUCCESS;
+}
+
+mt_result mt_cp_to_x(mt_api* pAPI, mt_item* pItem, size_t iCP, size_t textLength, const size_t* pClusters, size_t glyphCount, const mt_glyph* pGlyphs, mt_int32* pX)
+{
+    /* Naive implementation for now while I figure things out. */
+
+    size_t iGlyph;
+    mt_int32 runningX;
+
+    if (pX != NULL) {
+        *pX = 0;
+    }
+
+    if (pAPI == NULL || pClusters == NULL || pGlyphs == NULL) {
+        return MT_INVALID_ARGS;
+    }
+
+    if (glyphCount == 0) {
+        return MT_SUCCESS;
+    }
+
+    /* Normalize the index if it's out of range. */
+    if (iCP > textLength) {
+        iCP = textLength;
+    }
+
+    /* Special case when the code unit is beyond the length of the text. In this case we set pX to end of the run. */
+    runningX = 0;
+    if (iCP == textLength) {
+        size_t iTargetGlyph = pClusters[iCP];
+        if (iTargetGlyph > 0) {
+            for (iGlyph = 0; iGlyph < iTargetGlyph; ++iTargetGlyph) {
+                runningX += pGlyphs[iGlyph].advance;
+            }
+        }
+
+        if (pX != NULL) {
+            *pX = runningX;
+        }
+    } else {
+        /* Go to the end. */
+        MT_ASSERT(iCP == textLength);
+        return mt_measure_x(pAPI, pItem, glyphCount, pGlyphs, pX);
+    }
+
+    return MT_SUCCESS;
+}
 
 
 /**************************************************************************************************************************************************************
