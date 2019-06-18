@@ -447,6 +447,7 @@ struct mt_api
     void      (* brushSetOrigin)     (mt_brush* pBrush, mt_int32 x, mt_int32 y);
     mt_result (* gcInit)             (mt_api* pAPI, const mt_gc_config* pConfig, mt_gc* pGC);
     void      (* gcUninit)           (mt_gc* pGC);
+    mt_result (* gcGetSize)          (mt_gc* pGC, mt_uint32* pSizeX, mt_uint32* pSizeY);
     mt_result (* gcSave)             (mt_gc* pGC);
     mt_result (* gcRestore)          (mt_gc* pGC);
     void      (* gcTranslate)        (mt_gc* pGC, mt_int32 offsetX, mt_int32 offsetY);
@@ -483,6 +484,7 @@ struct mt_api
     void      (* gcFillAndStroke)    (mt_gc* pGC);
     void      (* gcDrawGC)           (mt_gc* pGC, mt_gc* pSrcGC, mt_int32 srcX, mt_int32 srcY);
     void      (* gcDrawGlyphs)       (mt_gc* pGC, const mt_item* pItem, const mt_glyph* pGlyphs, size_t glyphCount, mt_int32 x, mt_int32 y);
+    void      (* gcClear)            (mt_gc* pGC, mt_color color);
 
 #if defined(MT_WIN32)
     struct
@@ -1233,6 +1235,7 @@ void mt_gc_uninit(mt_gc* pGC);
 State Management
 
 ******************************************************************************/
+mt_result mt_gc_get_size(mt_gc* pGC, mt_uint32* pSizeX, mt_uint32* pSizeY);
 mt_result mt_gc_save(mt_gc* pGC);
 mt_result mt_gc_restore(mt_gc* pGC);
 void mt_gc_translate(mt_gc* pGC, mt_int32 offsetX, mt_int32 offsetY);
@@ -1329,6 +1332,11 @@ void mt_gc_draw_gc(mt_gc* pGC, mt_gc* pSrcGC, mt_int32 srcX, mt_int32 srcY);
 Draws a glyph string using the currently selected font.
 */
 void mt_gc_draw_glyphs(mt_gc* pGC, const mt_item* pItem, const mt_glyph* pGlyphs, size_t glyphCount, mt_int32 x, mt_int32 y);
+
+/*
+Clears the surface to the given color.
+*/
+void mt_gc_clear(mt_gc* pGC, mt_color color);
 
 
 /******************************************************************************
@@ -4460,31 +4468,6 @@ mt_result mt_utf32_to_utf16(mt_utf16* pUTF16, size_t utf16Cap, size_t* pUTF16Len
 typedef BOOL (WINAPI * MT_PFN_AlphaBlend)(HDC hdcDest, int xoriginDest, int yoriginDest, int wDest, int hDest, HDC hdcSrc, int xoriginSrc, int yoriginSrc, int wSrc, int hSrc, BLENDFUNCTION ftn);
 
 
-void mt_gc_get_size__gdi(mt_gc* pGC, int* pSizeX, int* pSizeY)
-{
-    MT_ASSERT(pSizeX != NULL);
-    MT_ASSERT(pSizeY != NULL);
-
-    /* If it's a bitmap we use the size of that. Otherwise, if it's a window we try that. If it's none of these, we use HORZRES/VERTRES. */
-    if (pGC->gdi.hBitmap != NULL) {
-        *pSizeX = pGC->gdi.bitmapSizeX;
-        *pSizeY = pGC->gdi.bitmapSizeY;
-    } else {
-        HWND hWnd = WindowFromDC((HDC)pGC->gdi.hDC);
-        if (hWnd != NULL) {
-            RECT rect;
-            GetClientRect(hWnd, &rect);
-            *pSizeX = rect.right - rect.left;
-            *pSizeY = rect.bottom - rect.top;
-        } else {
-            /* Fallback to HORZRES/VERTRES. */
-            *pSizeX = GetDeviceCaps((HDC)pGC->gdi.hDC, HORZRES);
-            *pSizeY = GetDeviceCaps((HDC)pGC->gdi.hDC, VERTRES);
-        }
-    }
-}
-
-
 /* Font */
 mt_result mt_font_init__gdi(mt_api* pAPI, const mt_font_config* pConfig, mt_font* pFont)
 {
@@ -4535,6 +4518,7 @@ mt_result mt_font_init__gdi(mt_api* pAPI, const mt_font_config* pConfig, mt_font
     {
         TEXTMETRICW metrics;
 
+        SelectObject((HDC)pAPI->gdi.hGlobalDC, hFont);
         GetTextMetricsW((HDC)pAPI->gdi.hGlobalDC, &metrics);
         pFont->metrics.ascent     = metrics.tmAscent;
         pFont->metrics.descent    = metrics.tmDescent;
@@ -4598,13 +4582,13 @@ mt_result mt_brush_init__gdi(mt_api* pAPI, const mt_brush_config* pConfig, mt_br
                 hBrush     = CreatePatternBrush(hBitmap);
             } else {
                 HDC hTempDC;
-                int sizeX;
-                int sizeY;
-                mt_gc_get_size__gdi(pConfig->gc.pGC, &sizeX, &sizeY);
+                mt_uint32 sizeX;
+                mt_uint32 sizeY;
+                mt_gc_get_size(pConfig->gc.pGC, &sizeX, &sizeY);
 
                 ownsBitmap = MT_TRUE;
 
-                hBitmap = CreateCompatibleBitmap((HDC)pConfig->gc.pGC->gdi.hDC, sizeX, sizeY);
+                hBitmap = CreateCompatibleBitmap((HDC)pConfig->gc.pGC->gdi.hDC, (int)sizeX, (int)sizeY);
                 if (hBitmap == NULL) {
                     return MT_ERROR;    /* Failed to create bitmap. */
                 }
@@ -4616,7 +4600,7 @@ mt_result mt_brush_init__gdi(mt_api* pAPI, const mt_brush_config* pConfig, mt_br
                 }
 
                 SelectObject(hTempDC, hBitmap);
-                BitBlt(hTempDC, 0, 0, sizeX, sizeY, (HDC)pConfig->gc.pGC->gdi.hDC, 0, 0, SRCCOPY);
+                BitBlt(hTempDC, 0, 0, (int)sizeX, (int)sizeY, (HDC)pConfig->gc.pGC->gdi.hDC, 0, 0, SRCCOPY);
 
                 DeleteDC(hTempDC);
                 
@@ -4748,6 +4732,32 @@ void mt_gc_uninit__gdi(mt_gc* pGC)
     }
 
     MT_FREE(pGC->gdi.pState);
+}
+
+mt_result mt_gc_get_size__gdi(mt_gc* pGC, mt_uint32* pSizeX, mt_uint32* pSizeY)
+{
+    MT_ASSERT(pSizeX != NULL);
+    MT_ASSERT(pSizeY != NULL);
+
+    /* If it's a bitmap we use the size of that. Otherwise, if it's a window we try that. If it's none of these, we use HORZRES/VERTRES. */
+    if (pGC->gdi.hBitmap != NULL) {
+        *pSizeX = pGC->gdi.bitmapSizeX;
+        *pSizeY = pGC->gdi.bitmapSizeY;
+    } else {
+        HWND hWnd = WindowFromDC((HDC)pGC->gdi.hDC);
+        if (hWnd != NULL) {
+            RECT rect;
+            GetClientRect(hWnd, &rect);
+            *pSizeX = (mt_uint32)(rect.right - rect.left);
+            *pSizeY = (mt_uint32)(rect.bottom - rect.top);
+        } else {
+            /* Fallback to HORZRES/VERTRES. */
+            *pSizeX = (mt_uint32)GetDeviceCaps((HDC)pGC->gdi.hDC, HORZRES);
+            *pSizeY = (mt_uint32)GetDeviceCaps((HDC)pGC->gdi.hDC, VERTRES);
+        }
+    }
+
+    return MT_SUCCESS;
 }
 
 mt_result mt_gc_save__gdi(mt_gc* pGC)
@@ -5198,7 +5208,7 @@ void mt_gc_arc__gdi(mt_gc* pGC, mt_int32 x, mt_int32 y, mt_int32 radius, float a
     MT_ASSERT(pGC != NULL);
 
     mt_gc_begin_path_if_required__gdi(pGC);
-    AngleArc((HDC)pGC->gdi.hDC, x, y, (DWORD)radius, angle1InRadians, angle2InRadians);
+    AngleArc((HDC)pGC->gdi.hDC, x, y, (DWORD)radius, MT_DEGREESF(angle1InRadians), MT_DEGREESF(angle2InRadians));
 }
 
 void mt_gc_curve_to__gdi(mt_gc* pGC, mt_int32 x1, mt_int32 y1, mt_int32 x2, mt_int32 y2, mt_int32 x3, mt_int32 y3)
@@ -5835,6 +5845,7 @@ mt_result mt_init__gdi(const mt_api_config* pConfig, mt_api* pAPI)
     pAPI->brushSetOrigin      = mt_brush_set_origin__gdi;
     pAPI->gcInit              = mt_gc_init__gdi;
     pAPI->gcUninit            = mt_gc_uninit__gdi;
+    pAPI->gcGetSize           = mt_gc_get_size__gdi;
     pAPI->gcSave              = mt_gc_save__gdi;
     pAPI->gcRestore           = mt_gc_restore__gdi;
     pAPI->gcTranslate         = mt_gc_translate__gdi;
@@ -6481,6 +6492,40 @@ void mt_gc_uninit(mt_gc* pGC)
     }
 }
 
+mt_result mt_gc_get_size(mt_gc* pGC, mt_uint32* pSizeX, mt_uint32* pSizeY)
+{
+    if (pSizeX != NULL) {
+        *pSizeX = 0;
+    }
+    if (pSizeY != NULL) {
+        *pSizeY = 0;
+    }
+
+    if (pGC == NULL) {
+        return MT_INVALID_ARGS;
+    }
+
+    MT_ASSERT(pGC->pAPI != NULL);
+
+    if (pGC->pAPI->gcGetSize) {
+        mt_uint32 sizeX;
+        mt_uint32 sizeY;
+        mt_result result = pGC->pAPI->gcGetSize(pGC, &sizeX, &sizeY);
+        if (result != MT_SUCCESS) {
+            return result;
+        }
+
+        if (pSizeX != NULL) {
+            *pSizeX = sizeX;
+        }
+        if (pSizeY != NULL) {
+            *pSizeY = sizeY;
+        }
+    }
+
+    return MT_SUCCESS;
+}
+
 mt_result mt_gc_save(mt_gc* pGC)
 {
     if (pGC == NULL) {
@@ -6964,6 +7009,33 @@ void mt_gc_draw_glyphs(mt_gc* pGC, const mt_item* pItem, const mt_glyph* pGlyphs
 
     if (pGC->pAPI->gcDrawGlyphs) {
         pGC->pAPI->gcDrawGlyphs(pGC, pItem, pGlyphs, glyphCount, x, y);
+    }
+}
+
+void mt_gc_clear(mt_gc* pGC, mt_color color)
+{
+    if (pGC == NULL || color.a == 0) {
+        return;
+    }
+
+    MT_ASSERT(pGC->pAPI != NULL);
+
+    /* Clearing can be emulated if the backend does not provide one explicitly. */
+    if (pGC->pAPI->gcClear) {
+        pGC->pAPI->gcClear(pGC, color);
+    } else {
+        mt_gc_save(pGC);
+        {
+            mt_uint32 sizeX;
+            mt_uint32 sizeY;
+            mt_gc_get_size(pGC, &sizeX, &sizeY);
+
+            mt_gc_set_antialias_mode(pGC, mt_antialias_mode_none);
+            mt_gc_set_fill_brush_solid(pGC, color);
+            mt_gc_rectangle(pGC, 0, 0, (mt_int32)sizeX, (mt_int32)sizeY);
+            mt_gc_fill(pGC);
+        }
+        mt_gc_restore(pGC);
     }
 }
 
