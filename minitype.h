@@ -3833,7 +3833,7 @@ mt_result mt_utf32_to_utf8_length_internal(size_t* pUTF8Len, const mt_utf32* pUT
                 utf32 = mt_be2host_32(pUTF32[0]);
             }
 
-            if (mt_is_valid_code_point(utf32)) {
+            if (!mt_is_valid_code_point(utf32)) {
                 if ((flags & MT_ERROR_ON_INVALID_CODE_POINT) != 0) {
                     result = MT_INVALID_CODE_POINT;
                     break;
@@ -3855,7 +3855,7 @@ mt_result mt_utf32_to_utf8_length_internal(size_t* pUTF8Len, const mt_utf32* pUT
                 utf32 = mt_be2host_32(pUTF32[iUTF32]);
             }
 
-            if (mt_is_valid_code_point(utf32)) {
+            if (!mt_is_valid_code_point(utf32)) {
                 if ((flags & MT_ERROR_ON_INVALID_CODE_POINT) != 0) {
                     result = MT_INVALID_CODE_POINT;
                     break;
@@ -3865,7 +3865,6 @@ mt_result mt_utf32_to_utf8_length_internal(size_t* pUTF8Len, const mt_utf32* pUT
             }
 
             utf8Len += mt_utf32_cp_to_utf8_length(utf32);
-            pUTF32  += 1;
         }
     }
 
@@ -3974,7 +3973,7 @@ mt_result mt_utf32_to_utf8_internal(mt_utf8* pUTF8, size_t utf8Cap, size_t* pUTF
                 utf32 = mt_be2host_32(pUTF32[0]);
             }
 
-            if (mt_is_valid_code_point(utf32)) {
+            if (!mt_is_valid_code_point(utf32)) {
                 if ((flags & MT_ERROR_ON_INVALID_CODE_POINT) != 0) {
                     result = MT_INVALID_CODE_POINT;
                     break;
@@ -4007,12 +4006,12 @@ mt_result mt_utf32_to_utf8_internal(mt_utf8* pUTF8, size_t utf8Cap, size_t* pUTF
             }
 
             if (isLE) {
-                utf32 = mt_le2host_16(pUTF32[iUTF32]);
+                utf32 = mt_le2host_32(pUTF32[iUTF32]);
             } else {
-                utf32 = mt_be2host_16(pUTF32[iUTF32]);
+                utf32 = mt_be2host_32(pUTF32[iUTF32]);
             }
 
-            if (mt_is_valid_code_point(utf32)) {
+            if (!mt_is_valid_code_point(utf32)) {
                 if ((flags & MT_ERROR_ON_INVALID_CODE_POINT) != 0) {
                     result = MT_INVALID_CODE_POINT;
                     break;
@@ -4151,7 +4150,7 @@ mt_result mt_utf32_to_utf16_length_internal(size_t* pUTF16Len, const mt_utf32* p
                 utf32 = mt_be2host_32(pUTF32[0]);
             }
 
-            if (mt_is_valid_code_point(utf32)) {
+            if (!mt_is_valid_code_point(utf32)) {
                 if ((flags & MT_ERROR_ON_INVALID_CODE_POINT) != 0) {
                     result = MT_INVALID_CODE_POINT;
                     break;
@@ -4173,7 +4172,7 @@ mt_result mt_utf32_to_utf16_length_internal(size_t* pUTF16Len, const mt_utf32* p
                 utf32 = mt_be2host_32(pUTF32[iUTF32]);
             }
 
-            if (mt_is_valid_code_point(utf32)) {
+            if (!mt_is_valid_code_point(utf32)) {
                 if ((flags & MT_ERROR_ON_INVALID_CODE_POINT) != 0) {
                     result = MT_INVALID_CODE_POINT;
                     break;
@@ -4183,7 +4182,6 @@ mt_result mt_utf32_to_utf16_length_internal(size_t* pUTF16Len, const mt_utf32* p
             }
 
             utf16Len += mt_utf32_cp_to_utf16_length(utf32);
-            pUTF32   += 1;
         }
     }
 
@@ -4292,7 +4290,7 @@ mt_result mt_utf32_to_utf16_internal(mt_utf16* pUTF16, size_t utf16Cap, size_t* 
                 utf32 = mt_be2host_32(pUTF32[0]);
             }
 
-            if (mt_is_valid_code_point(utf32)) {
+            if (!mt_is_valid_code_point(utf32)) {
                 if ((flags & MT_ERROR_ON_INVALID_CODE_POINT) != 0) {
                     result = MT_INVALID_CODE_POINT;
                     break;
@@ -4341,12 +4339,12 @@ mt_result mt_utf32_to_utf16_internal(mt_utf16* pUTF16, size_t utf16Cap, size_t* 
             }
 
             if (isLE) {
-                utf32 = mt_le2host_16(pUTF32[iUTF32]);
+                utf32 = mt_le2host_32(pUTF32[iUTF32]);
             } else {
-                utf32 = mt_be2host_16(pUTF32[iUTF32]);
+                utf32 = mt_be2host_32(pUTF32[iUTF32]);
             }
 
-            if (mt_is_valid_code_point(utf32)) {
+            if (!mt_is_valid_code_point(utf32)) {
                 if ((flags & MT_ERROR_ON_INVALID_CODE_POINT) != 0) {
                     result = MT_INVALID_CODE_POINT;
                     break;
