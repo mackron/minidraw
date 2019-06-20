@@ -2486,7 +2486,7 @@ mt_result mt_utf8_to_utf16be(mt_utf16* pUTF16, size_t utf16Cap, size_t* pUTF16Le
 
 mt_result mt_utf8_to_utf32_length(size_t* pUTF32Len, const mt_utf8* pUTF8, size_t utf8Len, mt_uint32 flags)
 {
-    mt_result result;
+    mt_result result = MT_SUCCESS;
     size_t utf32Len = 0;
 
     if (pUTF32Len != NULL) {
@@ -2731,10 +2731,10 @@ mt_result mt_utf8_to_utf32ne(mt_utf32* pUTF32, size_t utf32Cap, size_t* pUTF32Le
                         }
                     }
                 }
-
-                pUTF32   += 1;
-                utf32Cap -= 1;
             }
+
+            pUTF32   += 1;
+            utf32Cap -= 1;
         }
 
         if (pUTF8LenProcessed != NULL) {
@@ -2808,10 +2808,10 @@ mt_result mt_utf8_to_utf32ne(mt_utf32* pUTF32, size_t utf32Cap, size_t* pUTF32Le
                         }
                     }
                 }
-
-                pUTF32   += 1;
-                utf32Cap -= 1;
             }
+
+            pUTF32   += 1;
+            utf32Cap -= 1;
         }
 
         if (pUTF8LenProcessed != NULL) {
@@ -5960,6 +5960,7 @@ mt_result mt_init__gdi(const mt_api_config* pConfig, mt_api* pAPI)
     pAPI->gcFillAndStroke     = mt_gc_fill_and_stroke__gdi;
     pAPI->gcDrawGC            = mt_gc_draw_gc__gdi;
     pAPI->gcDrawGlyphs        = mt_gc_draw_glyphs__gdi;
+    pAPI->gcClear             = NULL;   /* TODO: Do a native implementation for this. Setting this to NULL uses the default implementation. */
 
     (void)pConfig;
     return MT_SUCCESS;
