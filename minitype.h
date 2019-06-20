@@ -360,6 +360,16 @@ typedef struct
 
 typedef struct
 {
+    float m00;  /* Rotation cosine. Horizontal scale. */
+    float m01;  /* Rotation sine. */
+    float m10;  /* Rotation negative sine. */
+    float m11;  /* Rotation cosine. Vertical scale. */
+    float dx;   /* X translation. */
+    float dy;   /* Y translation. */
+} mt_matrix;
+
+typedef struct
+{
     mt_uint32 index;
     mt_int32 advance;
     union
@@ -450,6 +460,10 @@ struct mt_api
     mt_result (* gcGetSize)          (mt_gc* pGC, mt_uint32* pSizeX, mt_uint32* pSizeY);
     mt_result (* gcSave)             (mt_gc* pGC);
     mt_result (* gcRestore)          (mt_gc* pGC);
+    void      (* gcSetMatrix)        (mt_gc* pGC, const mt_matrix* pMatrix);
+    void      (* gcGetMatrix)        (mt_gc* pGC, mt_matrix* pMatrix);
+    void      (* gcSetMatrixIdentity)(mt_gc* pGC);
+    void      (* gcTransform)        (mt_gc* pGC, const mt_matrix* pMatrix);
     void      (* gcTranslate)        (mt_gc* pGC, mt_int32 offsetX, mt_int32 offsetY);
     void      (* gcRotate)           (mt_gc* pGC, float rotationInRadians);
     void      (* gcScale)            (mt_gc* pGC, float scaleX, float scaleY);
@@ -1238,6 +1252,10 @@ State Management
 mt_result mt_gc_get_size(mt_gc* pGC, mt_uint32* pSizeX, mt_uint32* pSizeY);
 mt_result mt_gc_save(mt_gc* pGC);
 mt_result mt_gc_restore(mt_gc* pGC);
+void mt_gc_set_matrix(mt_gc* pGC, const mt_matrix* pMatrix);
+void mt_gc_get_matrix(mt_gc* pGC, mt_matrix* pMatrix);
+void mt_gc_set_matrix_identity(mt_gc* pGC);
+void mt_gc_transform(mt_gc* pGC, const mt_matrix* pMatrix);
 void mt_gc_translate(mt_gc* pGC, mt_int32 offsetX, mt_int32 offsetY);
 void mt_gc_rotate(mt_gc* pGC, float rotationInRadians);
 void mt_gc_scale(mt_gc* pGC, float scaleX, float scaleY);
@@ -4816,6 +4834,62 @@ mt_result mt_gc_restore__gdi(mt_gc* pGC)
     return MT_SUCCESS;
 }
 
+void mt_gc_set_matrix__gdi(mt_gc* pGC, const mt_matrix* pMatrix)
+{
+    XFORM transform;
+
+    MT_ASSERT(pGC != NULL);
+    MT_ASSERT(pMatrix != NULL);
+
+    transform.eM11 = pMatrix->m00;
+    transform.eM12 = pMatrix->m01;
+    transform.eM21 = pMatrix->m10;
+    transform.eM22 = pMatrix->m11;
+    transform.eDx  = pMatrix->dx;
+    transform.eDy  = pMatrix->dy;
+    SetWorldTransform((HDC)pGC->gdi.hDC, &transform);
+}
+
+void mt_gc_get_matrix__gdi(mt_gc* pGC, mt_matrix* pMatrix)
+{
+    XFORM transform;
+
+    MT_ASSERT(pGC != NULL);
+    MT_ASSERT(pMatrix != NULL);
+
+    GetWorldTransform((HDC)pGC->gdi.hDC, &transform);
+
+    pMatrix->m00 = transform.eM11;
+    pMatrix->m01 = transform.eM12;
+    pMatrix->m10 = transform.eM21;
+    pMatrix->m11 = transform.eM22;
+    pMatrix->dx  = transform.eDx;
+    pMatrix->dy  = transform.eDy;
+}
+
+void mt_gc_set_matrix_identity__gdi(mt_gc* pGC)
+{
+    MT_ASSERT(pGC != NULL);
+
+    ModifyWorldTransform((HDC)pGC->gdi.hDC, NULL, MWT_IDENTITY);
+}
+
+void mt_gc_transform__gdi(mt_gc* pGC, const mt_matrix* pMatrix)
+{
+    XFORM transform;
+
+    MT_ASSERT(pGC != NULL);
+    MT_ASSERT(pMatrix != NULL);
+
+    transform.eM11 = pMatrix->m00;
+    transform.eM12 = pMatrix->m01;
+    transform.eM21 = pMatrix->m10;
+    transform.eM22 = pMatrix->m11;
+    transform.eDx  = pMatrix->dx;
+    transform.eDy  = pMatrix->dy;
+    ModifyWorldTransform((HDC)pGC->gdi.hDC, &transform, MWT_LEFTMULTIPLY);
+}
+
 void mt_gc_translate__gdi(mt_gc* pGC, mt_int32 offsetX, mt_int32 offsetY)
 {
     XFORM transform = {0};
@@ -4824,8 +4898,8 @@ void mt_gc_translate__gdi(mt_gc* pGC, mt_int32 offsetX, mt_int32 offsetY)
 
     transform.eM11 = 1;
     transform.eM22 = 1;
-    transform.eDx = (float)offsetX;
-    transform.eDy = (float)offsetY;
+    transform.eDx  = (float)offsetX;
+    transform.eDy  = (float)offsetY;
     ModifyWorldTransform((HDC)pGC->gdi.hDC, &transform, MWT_LEFTMULTIPLY);
 }
 
@@ -5848,6 +5922,10 @@ mt_result mt_init__gdi(const mt_api_config* pConfig, mt_api* pAPI)
     pAPI->gcGetSize           = mt_gc_get_size__gdi;
     pAPI->gcSave              = mt_gc_save__gdi;
     pAPI->gcRestore           = mt_gc_restore__gdi;
+    pAPI->gcSetMatrix         = mt_gc_set_matrix__gdi;
+    pAPI->gcGetMatrix         = mt_gc_get_matrix__gdi;
+    pAPI->gcSetMatrixIdentity = mt_gc_set_matrix_identity__gdi;
+    pAPI->gcTransform         = mt_gc_transform__gdi;
     pAPI->gcTranslate         = mt_gc_translate__gdi;
     pAPI->gcRotate            = mt_gc_rotate__gdi;
     pAPI->gcScale             = mt_gc_scale__gdi;
@@ -6556,6 +6634,58 @@ mt_result mt_gc_restore(mt_gc* pGC)
     return MT_SUCCESS;
 }
 
+void mt_gc_set_matrix(mt_gc* pGC, const mt_matrix* pMatrix)
+{
+    if (pGC == NULL || pMatrix == NULL) {
+        return;
+    }
+
+    MT_ASSERT(pGC->pAPI != NULL);
+
+    if (pGC->pAPI->gcSetMatrix) {
+        pGC->pAPI->gcSetMatrix(pGC, pMatrix);
+    }
+}
+
+void mt_gc_get_matrix(mt_gc* pGC, mt_matrix* pMatrix)
+{
+    if (pGC == NULL || pMatrix == NULL) {
+        return;
+    }
+
+    MT_ASSERT(pGC->pAPI != NULL);
+
+    if (pGC->pAPI->gcGetMatrix) {
+        pGC->pAPI->gcGetMatrix(pGC, pMatrix);
+    }
+}
+
+void mt_gc_set_matrix_identity(mt_gc* pGC)
+{
+    if (pGC == NULL) {
+        return;
+    }
+
+    MT_ASSERT(pGC->pAPI != NULL);
+
+    if (pGC->pAPI->gcSetMatrixIdentity) {
+        pGC->pAPI->gcSetMatrixIdentity(pGC);
+    }
+}
+
+void mt_gc_transform(mt_gc* pGC, const mt_matrix* pMatrix)
+{
+    if (pGC == NULL || pMatrix == NULL) {
+        return;
+    }
+
+    MT_ASSERT(pGC->pAPI != NULL);
+
+    if (pGC->pAPI->gcTransform) {
+        pGC->pAPI->gcTransform(pGC, pMatrix);
+    }
+}
+
 void mt_gc_translate(mt_gc* pGC, mt_int32 offsetX, mt_int32 offsetY)
 {
     if (pGC == NULL) {
@@ -7030,6 +7160,7 @@ void mt_gc_clear(mt_gc* pGC, mt_color color)
             mt_uint32 sizeY;
             mt_gc_get_size(pGC, &sizeX, &sizeY);
 
+            mt_gc_set_matrix_identity(pGC);
             mt_gc_set_antialias_mode(pGC, mt_antialias_mode_none);
             mt_gc_set_fill_brush_solid(pGC, color);
             mt_gc_rectangle(pGC, 0, 0, (mt_int32)sizeX, (mt_int32)sizeY);
