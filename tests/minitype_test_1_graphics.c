@@ -75,60 +75,57 @@ void draw_logo(mt_gc* pGC)
                         mt_glyph glyphs[128];
                         size_t glyphCount = MT_COUNTOF(glyphs);
                         size_t clusters[128];
-                        result = mt_shape_utf8(&g_font, pItem, g_text + pItem->offset, pItem->length, glyphs, &glyphCount, clusters);
+                        mt_text_metrics runMetrics;
+                        result = mt_shape_utf8(&g_font, pItem, g_text + pItem->offset, pItem->length, glyphs, &glyphCount, clusters, &runMetrics);
                         if (result == MT_SUCCESS) {
-                            mt_text_metrics runMetrics;
-                            result = mt_place(&g_font, pItem, glyphs, glyphCount, &runMetrics);
-                            if (result == MT_SUCCESS) {
-                                mt_int32 cornerRadius = 4;
-                                mt_int32 textPosX = midX - (runMetrics.sizeX/2);
-                                mt_int32 textPosY = midY - (runMetrics.sizeY/2);
-                                mt_gc_draw_glyphs(pGC, pItem, glyphs, glyphCount, textPosX, textPosY);
+                            mt_int32 cornerRadius = 4;
+                            mt_int32 textPosX = midX - (runMetrics.sizeX/2);
+                            mt_int32 textPosY = midY - (runMetrics.sizeY/2);
+                            mt_gc_draw_glyphs(pGC, pItem, glyphs, glyphCount, textPosX, textPosY);
 
-                                /* Left and right boundaries. */
-                                mt_gc_set_line_brush_solid(pGC, mt_rgba(160, 64, 32, 255));
-                                mt_gc_move_to(pGC, textPosX, 0);
-                                mt_gc_line_to(pGC, textPosX, gcSizeY);
-                                mt_gc_move_to(pGC, textPosX + runMetrics.sizeX, 0);
-                                mt_gc_line_to(pGC, textPosX + runMetrics.sizeX, gcSizeY);
-                                mt_gc_stroke(pGC);
+                            /* Left and right boundaries. */
+                            mt_gc_set_line_brush_solid(pGC, mt_rgba(160, 64, 32, 255));
+                            mt_gc_move_to(pGC, textPosX, 0);
+                            mt_gc_line_to(pGC, textPosX, gcSizeY);
+                            mt_gc_move_to(pGC, textPosX + runMetrics.sizeX, 0);
+                            mt_gc_line_to(pGC, textPosX + runMetrics.sizeX, gcSizeY);
+                            mt_gc_stroke(pGC);
 
-                                /* Base line. */
-                                mt_gc_set_line_brush_solid(pGC, mt_rgba(0, 0, 0, 255));
-                                mt_gc_move_to(pGC, 0,       textPosY + g_font.metrics.ascent);
-                                mt_gc_line_to(pGC, gcSizeX, textPosY + g_font.metrics.ascent);
-                                mt_gc_stroke(pGC);
+                            /* Base line. */
+                            mt_gc_set_line_brush_solid(pGC, mt_rgba(0, 0, 0, 255));
+                            mt_gc_move_to(pGC, 0,       textPosY + g_font.metrics.ascent);
+                            mt_gc_line_to(pGC, gcSizeX, textPosY + g_font.metrics.ascent);
+                            mt_gc_stroke(pGC);
 
-                                /* Ascender line. */
-                                mt_gc_set_line_dash(pGC, MT_COUNTOF(dashes), dashes);
-                                mt_gc_move_to(pGC, 0,       textPosY);
-                                mt_gc_line_to(pGC, gcSizeX, textPosY);
-                                mt_gc_stroke(pGC);
+                            /* Ascender line. */
+                            mt_gc_set_line_dash(pGC, MT_COUNTOF(dashes), dashes);
+                            mt_gc_move_to(pGC, 0,       textPosY);
+                            mt_gc_line_to(pGC, gcSizeX, textPosY);
+                            mt_gc_stroke(pGC);
 
-                                /* Decender line. */
-                                mt_gc_set_line_dash(pGC, MT_COUNTOF(dashes), dashes);
-                                mt_gc_move_to(pGC, 0,       textPosY + g_font.metrics.lineHeight);
-                                mt_gc_line_to(pGC, gcSizeX, textPosY + g_font.metrics.lineHeight);
-                                mt_gc_move_to(pGC, 0,       textPosY + g_font.metrics.ascent + g_font.metrics.descent);
-                                mt_gc_line_to(pGC, gcSizeX, textPosY + g_font.metrics.ascent + g_font.metrics.descent);
-                                mt_gc_stroke(pGC);
+                            /* Decender line. */
+                            mt_gc_set_line_dash(pGC, MT_COUNTOF(dashes), dashes);
+                            mt_gc_move_to(pGC, 0,       textPosY + g_font.metrics.lineHeight);
+                            mt_gc_line_to(pGC, gcSizeX, textPosY + g_font.metrics.lineHeight);
+                            mt_gc_move_to(pGC, 0,       textPosY + g_font.metrics.ascent + g_font.metrics.descent);
+                            mt_gc_line_to(pGC, gcSizeX, textPosY + g_font.metrics.ascent + g_font.metrics.descent);
+                            mt_gc_stroke(pGC);
 
-                                /* Corder dots. */
-                                mt_gc_set_fill_brush_solid(pGC, mt_rgba(92, 92, 92, 255));
-                                mt_gc_move_to(pGC, textPosX + cornerRadius,                    textPosY + g_font.metrics.lineHeight);
-                                mt_gc_arc(    pGC, textPosX,                                   textPosY + g_font.metrics.lineHeight, cornerRadius, 0, MT_RADIANSF(360));
-                                mt_gc_move_to(pGC, textPosX + runMetrics.sizeX + cornerRadius, textPosY + g_font.metrics.lineHeight);
-                                mt_gc_arc(    pGC, textPosX + runMetrics.sizeX,                textPosY + g_font.metrics.lineHeight, cornerRadius, 0, MT_RADIANSF(360));
-                                mt_gc_move_to(pGC, textPosX + cornerRadius,                    textPosY                            );
-                                mt_gc_arc(    pGC, textPosX,                                   textPosY                            , cornerRadius, 0, MT_RADIANSF(360));
-                                mt_gc_move_to(pGC, textPosX + runMetrics.sizeX + cornerRadius, textPosY                            );
-                                mt_gc_arc(    pGC, textPosX + runMetrics.sizeX,                textPosY                            , cornerRadius, 0, MT_RADIANSF(360));
-                                mt_gc_move_to(pGC, textPosX + cornerRadius,                    textPosY + g_font.metrics.ascent    );
-                                mt_gc_arc(    pGC, textPosX,                                   textPosY + g_font.metrics.ascent    , cornerRadius, 0, MT_RADIANSF(360));
-                                mt_gc_move_to(pGC, textPosX + runMetrics.sizeX + cornerRadius, textPosY + g_font.metrics.ascent    );
-                                mt_gc_arc(    pGC, textPosX + runMetrics.sizeX,                textPosY + g_font.metrics.ascent    , cornerRadius, 0, MT_RADIANSF(360));
-                                mt_gc_fill(pGC);
-                            }
+                            /* Corder dots. */
+                            mt_gc_set_fill_brush_solid(pGC, mt_rgba(92, 92, 92, 255));
+                            mt_gc_move_to(pGC, textPosX + cornerRadius,                    textPosY + g_font.metrics.lineHeight);
+                            mt_gc_arc(    pGC, textPosX,                                   textPosY + g_font.metrics.lineHeight, cornerRadius, 0, MT_RADIANSF(360));
+                            mt_gc_move_to(pGC, textPosX + runMetrics.sizeX + cornerRadius, textPosY + g_font.metrics.lineHeight);
+                            mt_gc_arc(    pGC, textPosX + runMetrics.sizeX,                textPosY + g_font.metrics.lineHeight, cornerRadius, 0, MT_RADIANSF(360));
+                            mt_gc_move_to(pGC, textPosX + cornerRadius,                    textPosY                            );
+                            mt_gc_arc(    pGC, textPosX,                                   textPosY                            , cornerRadius, 0, MT_RADIANSF(360));
+                            mt_gc_move_to(pGC, textPosX + runMetrics.sizeX + cornerRadius, textPosY                            );
+                            mt_gc_arc(    pGC, textPosX + runMetrics.sizeX,                textPosY                            , cornerRadius, 0, MT_RADIANSF(360));
+                            mt_gc_move_to(pGC, textPosX + cornerRadius,                    textPosY + g_font.metrics.ascent    );
+                            mt_gc_arc(    pGC, textPosX,                                   textPosY + g_font.metrics.ascent    , cornerRadius, 0, MT_RADIANSF(360));
+                            mt_gc_move_to(pGC, textPosX + runMetrics.sizeX + cornerRadius, textPosY + g_font.metrics.ascent    );
+                            mt_gc_arc(    pGC, textPosX + runMetrics.sizeX,                textPosY + g_font.metrics.ascent    , cornerRadius, 0, MT_RADIANSF(360));
+                            mt_gc_fill(pGC);
                         }
                     }
                 }

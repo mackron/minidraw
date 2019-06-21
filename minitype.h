@@ -446,10 +446,9 @@ struct mt_api
     mt_result (* itemizeUTF8)        (mt_api* pAPI, const mt_utf8* pTextUTF8, size_t textLength, mt_item* pItems, mt_uint32* pItemCount);
     mt_result (* itemizeUTF16)       (mt_api* pAPI, const mt_utf16* pTextUTF16, size_t textLength, mt_item* pItems, mt_uint32* pItemCount);
     mt_result (* itemizeUTF32)       (mt_api* pAPI, const mt_utf32* pTextUTF32, size_t textLength, mt_item* pItems, mt_uint32* pItemCount);
-    mt_result (* shapeUTF8)          (mt_font* pFont, mt_item* pItem, const mt_utf8* pTextUTF8, size_t textLength, mt_glyph* pGlyphs, size_t* pGlyphCount, size_t* pClusters);
-    mt_result (* shapeUTF16)         (mt_font* pFont, mt_item* pItem, const mt_utf16* pTextUTF16, size_t textLength, mt_glyph* pGlyphs, size_t* pGlyphCount, size_t* pClusters);
-    mt_result (* shapeUTF32)         (mt_font* pFont, mt_item* pItem, const mt_utf32* pTextUTF32, size_t textLength, mt_glyph* pGlyphs, size_t* pGlyphCount, size_t* pClusters);
-    mt_result (* place)              (mt_font* pFont, mt_item* pItem, mt_glyph* pGlyphs, size_t glyphCount, mt_text_metrics* pRunMetrics);
+    mt_result (* shapeUTF8)          (mt_font* pFont, mt_item* pItem, const mt_utf8* pTextUTF8, size_t textLength, mt_glyph* pGlyphs, size_t* pGlyphCount, size_t* pClusters, mt_text_metrics* pRunMetrics);
+    mt_result (* shapeUTF16)         (mt_font* pFont, mt_item* pItem, const mt_utf16* pTextUTF16, size_t textLength, mt_glyph* pGlyphs, size_t* pGlyphCount, size_t* pClusters, mt_text_metrics* pRunMetrics);
+    mt_result (* shapeUTF32)         (mt_font* pFont, mt_item* pItem, const mt_utf32* pTextUTF32, size_t textLength, mt_glyph* pGlyphs, size_t* pGlyphCount, size_t* pClusters, mt_text_metrics* pRunMetrics);
     mt_result (* fontInit)           (mt_api* pAPI, const mt_font_config* pConfig, mt_font* pFont);
     void      (* fontUninit)         (mt_font* pFont);
     mt_result (* brushInit)          (mt_api* pAPI, const mt_brush_config* pConfig, mt_brush* pBrush);
@@ -1109,7 +1108,7 @@ This is the first function you should call when preparing text for drawing.
 mt_result mt_itemize_utf8(mt_api* pAPI, const mt_utf8* pTextUTF8, size_t textLength, mt_item* pItems, mt_uint32* pItemCount);
 
 /*
-Performs text shaping on the given text run. This function is used to convert text to glyphs.
+Performs text shaping and placement on the given text run. This function is used to convert text to glyphs and calculate their relative positions.
 
 [pFont](in)
     The font to use for the shaping.
@@ -1133,36 +1132,16 @@ Performs text shaping on the given text run. This function is used to convert te
     A pointer to a buffer that will receive the clusters for the given text. The length of this buffer must be at least [textLength] size_t's. This will
     receive the index of the glyph that each code unit in [pTextUTF8] maps to.
 
+[pRunMetrics](out, optional)
+    A pointer to a mt_text_metrics object that will receive the width and height of the entire run as a whole.
+
 Remarks
 -------
 You should call mt_itemize_utf8() before calling this function.
 
 You can determine the number glyphs required for the input string by calling this with [pGlyphs] set the NULL.
 */
-mt_result mt_shape_utf8(mt_font* pFont, mt_item* pItem, const mt_utf8* pTextUTF8, size_t textLength, mt_glyph* pGlyphs, size_t* pGlyphCount, size_t* pClusters);
-
-/*
-Performs glyphs placement.
-
-[pItem](in, out)
-    A pointer to the mt_item object from a previous call to mt_itemize*().
-
-[pGlyphs](in, out)
-    A pointer to a buffer containing the glyphs to place.
-
-[glyphCount](in)
-    The number of glyphs in [pGlyphs].
-
-[pRunMetrics](out, optional)
-    A pointer to a mt_text_metrics object that will receive the width and height of the entire run as a whole.
-
-Remarks
--------
-You should call mt_shape_*() before calling this function.
-
-This will modify the [x] and [y] members of each glyph in [pGlyphs].
-*/
-mt_result mt_place(mt_font* pFont, mt_item* pItem, mt_glyph* pGlyphs, size_t glyphCount, mt_text_metrics* pRunMetrics);
+mt_result mt_shape_utf8(mt_font* pFont, mt_item* pItem, const mt_utf8* pTextUTF8, size_t textLength, mt_glyph* pGlyphs, size_t* pGlyphCount, size_t* pClusters, mt_text_metrics* pRunMetrics);
 
 
 /*
@@ -5652,22 +5631,29 @@ mt_result mt_itemize_utf16__gdi(mt_api* pAPI, const mt_utf16* pTextUTF16, size_t
     return MT_SUCCESS;
 }
 
-mt_result mt_shape_utf16__gdi(mt_font* pFont, mt_item* pItem, const mt_utf16* pTextUTF16, size_t textLength, mt_glyph* pGlyphs, size_t* pGlyphCount, size_t* pClusters)
+mt_result mt_shape_utf16__gdi(mt_font* pFont, mt_item* pItem, const mt_utf16* pTextUTF16, size_t textLength, mt_glyph* pGlyphs, size_t* pGlyphCount, size_t* pClusters, mt_text_metrics* pRunMetrics)
 {
     HRESULT hResult;
     HDC hDC = NULL;
+    ABC abc;
     int glyphCount;
     size_t outputGlyphCap;
-    void* pGlyphsAndSVAHeap = NULL;                 /* Single heap allocation for both pUniscribeGlyphsHeap and pUniscribeClustersHeap. */
-    WORD  pUniscribeGlyphsStack[4096];
-    WORD* pUniscribeGlyphsHeap = NULL;              /* Offset of pGlyphsAndSVAHeap. */
-    WORD* pUniscribeGlyphs;
     WORD  pUniscribeClustersStack[4096];
     WORD* pUniscribeClustersHeap = NULL;
     WORD* pUniscribeClusters = NULL;
+    void* pGlyphDataHeap = NULL;                    /* Single heap allocation for all per-glyph data. */
+    WORD  pUniscribeGlyphsStack[4096];
+    WORD* pUniscribeGlyphsHeap = NULL;              /* Offset of pGlyphDataHeap. */
+    WORD* pUniscribeGlyphs;
     MT_SCRIPT_VISATTR  pUniscribeSVAStack[4096];
-    MT_SCRIPT_VISATTR* pUniscribeSVAHeap = NULL;    /* Offset of pGlyphsAndSVAHeap. */
+    MT_SCRIPT_VISATTR* pUniscribeSVAHeap = NULL;    /* Offset of pGlyphDataHeap. */
     MT_SCRIPT_VISATTR* pUniscribeSVA = NULL;
+    int  pUniscribeAdvancesStack[4096];
+    int* pUniscribeAdvancesHeap = NULL;             /* Offset of pGlyphDataHeap. */
+    int* pUniscribeAdvances = NULL;
+    GOFFSET  pUniscribeOffsetsStack[4096];
+    GOFFSET* pUniscribeOffsetsHeap = NULL;          /* Offset of pGlyphDataHeap. */
+    GOFFSET* pUniscribeOffsets = NULL;
 
     MT_ASSERT(pItem != NULL);
     MT_ASSERT(pFont != NULL);
@@ -5706,44 +5692,59 @@ mt_result mt_shape_utf16__gdi(mt_font* pFont, mt_item* pItem, const mt_utf16* pT
     }
 
     if (hResult == S_OK) {
-        pUniscribeGlyphs = &pUniscribeGlyphsStack[0];
-        pUniscribeSVA = &pUniscribeSVAStack[0];
+        pUniscribeGlyphs   = &pUniscribeGlyphsStack[0];
+        pUniscribeSVA      = &pUniscribeSVAStack[0];
+        pUniscribeAdvances = &pUniscribeAdvancesStack[0];
+        pUniscribeOffsets  = &pUniscribeOffsetsStack[0];
     } else {
         if (hResult == E_OUTOFMEMORY) {
             /* Not enough room in the stack, so try the heap. We need to continuously call ScriptShape() with ever increasing buffer sizes until it works. */
             size_t heapCap = MT_COUNTOF(pUniscribeGlyphsStack);
             while (hResult == E_OUTOFMEMORY) {
-                void* pNewGlyphsAndSVAHeap;
+                void* pNewGlyphDataHeap;
 
                 heapCap *= 2;
                 if (heapCap > 0x7FFFFFFF) {
                     MT_FREE(pUniscribeClustersHeap);
-                    MT_FREE(pGlyphsAndSVAHeap);
+                    MT_FREE(pGlyphDataHeap);
                     return MT_INVALID_ARGS; /* String is too long for Uniscribe. */
                 }
 
-                pNewGlyphsAndSVAHeap = MT_REALLOC(pGlyphsAndSVAHeap, (sizeof(*pUniscribeGlyphsHeap)+sizeof(*pUniscribeSVAHeap)) * heapCap);
-                if (pNewGlyphsAndSVAHeap == NULL) {
+                pNewGlyphDataHeap = MT_REALLOC(pGlyphDataHeap, (sizeof(*pUniscribeGlyphsHeap)+sizeof(*pUniscribeSVAHeap)+sizeof(*pUniscribeAdvancesHeap)+sizeof(*pUniscribeOffsetsHeap)) * heapCap);
+                if (pNewGlyphDataHeap == NULL) {
                     MT_FREE(pUniscribeClustersHeap);
-                    MT_FREE(pGlyphsAndSVAHeap);
+                    MT_FREE(pGlyphDataHeap);
                     return MT_OUT_OF_MEMORY;
                 }
 
-                pGlyphsAndSVAHeap = pNewGlyphsAndSVAHeap;
+                pGlyphDataHeap = pNewGlyphDataHeap;
 
-                pUniscribeGlyphsHeap = (WORD*)pGlyphsAndSVAHeap;
-                pUniscribeSVAHeap = (MT_SCRIPT_VISATTR*)MT_OFFSET_PTR(pGlyphsAndSVAHeap, sizeof(*pUniscribeGlyphsHeap) * heapCap);
+                pUniscribeGlyphsHeap   = (WORD*)pGlyphDataHeap;
+                pUniscribeSVAHeap      = (MT_SCRIPT_VISATTR*)MT_OFFSET_PTR(pGlyphDataHeap, (sizeof(*pUniscribeGlyphsHeap))                                                            * heapCap);
+                pUniscribeAdvancesHeap =               (int*)MT_OFFSET_PTR(pGlyphDataHeap, (sizeof(*pUniscribeGlyphsHeap)+sizeof(*pUniscribeSVAHeap))                                 * heapCap);
+                pUniscribeOffsetsHeap  =           (GOFFSET*)MT_OFFSET_PTR(pGlyphDataHeap, (sizeof(*pUniscribeGlyphsHeap)+sizeof(*pUniscribeSVAHeap)+sizeof(*pUniscribeAdvancesHeap)) * heapCap);
 
                 hResult = ((MT_PFN_ScriptShape)pFont->pAPI->gdi.ScriptShape)(hDC, (SCRIPT_CACHE*)&pFont->gdi.sc, (const WCHAR*)pTextUTF16, (int)textLength, (int)heapCap, (SCRIPT_ANALYSIS*)&pItem->backend.gdi.sa, pUniscribeGlyphsHeap, pUniscribeClusters, (SCRIPT_VISATTR*)pUniscribeSVAHeap, &glyphCount);
             }
 
-            pUniscribeGlyphs = pUniscribeGlyphsHeap;
-            pUniscribeSVA = pUniscribeSVAHeap;
+            pUniscribeGlyphs   = pUniscribeGlyphsHeap;
+            pUniscribeSVA      = pUniscribeSVAHeap;
+            pUniscribeAdvances = pUniscribeAdvancesHeap;
+            pUniscribeOffsets  = pUniscribeOffsetsHeap;
         } else {
             MT_FREE(pUniscribeClustersHeap);
             return mt_result_from_HRESULT(hResult);
         }
     }
+
+    /* Placement. */
+    hResult = ((MT_PFN_ScriptPlace)pFont->pAPI->gdi.ScriptPlace)(hDC, (SCRIPT_CACHE*)&pFont->gdi.sc, pUniscribeGlyphs, (int)glyphCount, (const SCRIPT_VISATTR*)pUniscribeSVA, (SCRIPT_ANALYSIS*)&pItem->backend.gdi.sa, pUniscribeAdvances, pUniscribeOffsets, &abc);
+    if (hResult != S_OK) {
+        MT_FREE(pUniscribeClustersHeap);
+        MT_FREE(pGlyphDataHeap);
+        return mt_result_from_HRESULT(hResult);
+    }
+
     
     /* At this point we have the glyphs in Uniscribe format, so now we need to convert that to minitype format. */
     *pGlyphCount = glyphCount;  /* <-- Always make sure this is set to that the client can know how many glyphs are required in the event that MT_NO_SPACE is returned. */
@@ -5754,7 +5755,9 @@ mt_result mt_shape_utf16__gdi(mt_font* pFont, mt_item* pItem, const mt_utf16* pT
         for (iGlyph = 0; iGlyph < (size_t)glyphCount; ++iGlyph) {
             pGlyphs[iGlyph].backend.gdi.sv = pUniscribeSVA[iGlyph];
             pGlyphs[iGlyph].index = pUniscribeGlyphs[iGlyph];
-            pGlyphs[iGlyph].advance = 0;
+            pGlyphs[iGlyph].advance = pUniscribeAdvances[iGlyph];
+            pGlyphs[iGlyph].backend.gdi.offsetX = pUniscribeOffsets[iGlyph].du;
+            pGlyphs[iGlyph].backend.gdi.offsetY = pUniscribeOffsets[iGlyph].dv;
         }
     }
 
@@ -5765,79 +5768,6 @@ mt_result mt_shape_utf16__gdi(mt_font* pFont, mt_item* pItem, const mt_utf16* pT
         }
     }
 
-
-    MT_FREE(pUniscribeClustersHeap);
-    MT_FREE(pGlyphsAndSVAHeap);
-
-    /* Make sure MT_NO_SPACE is returned in the event that the output glyph count exceeds the capacity of the output buffer. */
-    if ((size_t)glyphCount > outputGlyphCap) {
-        return MT_NO_SPACE;
-    } else {
-        return MT_SUCCESS;
-    }
-}
-
-mt_result mt_place__gdi(mt_font* pFont, mt_item* pItem, mt_glyph* pGlyphs, size_t glyphCount, mt_text_metrics* pRunMetrics)
-{
-    HRESULT hResult;
-    ABC abc;
-    size_t iGlyph;
-    void* pHeap = NULL;
-    WORD  pUniscribeGlyphsStack[4096];
-    WORD* pUniscribeGlyphsHeap = NULL;              /* Offset of pHead. */
-    WORD* pUniscribeGlyphs;
-    MT_SCRIPT_VISATTR  pUniscribeSVAStack[4096];
-    MT_SCRIPT_VISATTR* pUniscribeSVAHeap = NULL;    /* Offset of pHeap. */
-    MT_SCRIPT_VISATTR* pUniscribeSVA = NULL;
-    int  pUniscribeAdvancesStack[4096];
-    int* pUniscribeAdvancesHeap = NULL;             /* Offset of pHeap. */
-    int* pUniscribeAdvances = NULL;
-    GOFFSET  pUniscribeOffsetsStack[4096];
-    GOFFSET* pUniscribeOffsetsHeap = NULL;          /* Offset of pHeap. */
-    GOFFSET* pUniscribeOffsets = NULL;
-
-    /* ScriptPlace() uses an integer for the glyph count, so keep it simple and return an error if we're asking for more. */
-    if (glyphCount > 0x7FFFFFFF) {
-        return MT_INVALID_ARGS;
-    }
-
-    if (glyphCount <= MT_COUNTOF(pUniscribeAdvancesStack)) {
-        /* Stack allocation. */
-        pUniscribeGlyphs   = &pUniscribeGlyphsStack[0];
-        pUniscribeSVA      = &pUniscribeSVAStack[0];
-        pUniscribeAdvances = &pUniscribeAdvancesStack[0];
-        pUniscribeOffsets  = &pUniscribeOffsetsStack[0];
-    } else {
-        /* Heap allocation. */
-        pHeap = MT_MALLOC((sizeof(*pUniscribeGlyphsHeap)+sizeof(*pUniscribeSVAHeap)+sizeof(*pUniscribeAdvancesHeap)+sizeof(*pUniscribeOffsetsHeap)) * glyphCount);
-        if (pHeap == NULL) {
-            return MT_OUT_OF_MEMORY;
-        }
-
-        pUniscribeGlyphs   =              (WORD*)MT_OFFSET_PTR(pHeap, 0);
-        pUniscribeSVA      = (MT_SCRIPT_VISATTR*)MT_OFFSET_PTR(pHeap, (sizeof(*pUniscribeGlyphsHeap))                                                            * glyphCount);
-        pUniscribeAdvances =               (int*)MT_OFFSET_PTR(pHeap, (sizeof(*pUniscribeGlyphsHeap)+sizeof(*pUniscribeSVAHeap))                                 * glyphCount);
-        pUniscribeOffsets  =           (GOFFSET*)MT_OFFSET_PTR(pHeap, (sizeof(*pUniscribeGlyphsHeap)+sizeof(*pUniscribeSVAHeap)+sizeof(*pUniscribeAdvancesHeap)) * glyphCount);
-    }
-
-    for (iGlyph = 0; iGlyph < (size_t)glyphCount; ++iGlyph) {
-        pUniscribeGlyphs[iGlyph] = (WORD)pGlyphs[iGlyph].index;
-        pUniscribeSVA[iGlyph] = pGlyphs[iGlyph].backend.gdi.sv;
-    }
-
-    hResult = ((MT_PFN_ScriptPlace)pFont->pAPI->gdi.ScriptPlace)(NULL, (SCRIPT_CACHE*)&pFont->gdi.sc, pUniscribeGlyphs, (int)glyphCount, (const SCRIPT_VISATTR*)pUniscribeSVA, (SCRIPT_ANALYSIS*)&pItem->backend.gdi.sa, pUniscribeAdvances, pUniscribeOffsets, &abc);
-    if (hResult == E_PENDING) {
-        /* Select the font into the global DC and try again, this time with the DC set to the global DC. */
-        SelectObject((HDC)pFont->pAPI->gdi.hGlobalDC, (HGDIOBJ)pFont->gdi.hFont);
-        hResult = ((MT_PFN_ScriptPlace)pFont->pAPI->gdi.ScriptPlace)((HDC)pFont->pAPI->gdi.hGlobalDC, (SCRIPT_CACHE*)&pFont->gdi.sc, pUniscribeGlyphs, (int)glyphCount, (const SCRIPT_VISATTR*)pUniscribeSVA, (SCRIPT_ANALYSIS*)&pItem->backend.gdi.sa, pUniscribeAdvances, pUniscribeOffsets, &abc);
-    }
-
-    if (hResult != S_OK) {
-        MT_FREE(pHeap);
-        return mt_result_from_HRESULT(hResult);
-    }
-
-    /* At this point we have the glyphs in Uniscribe format, so now we need to convert that to minitype format. */
     if (pRunMetrics != NULL) {
         pRunMetrics->lPadding = abc.abcA;
         pRunMetrics->rPadding = abc.abcC;
@@ -5845,16 +5775,16 @@ mt_result mt_place__gdi(mt_font* pFont, mt_item* pItem, mt_glyph* pGlyphs, size_
         pRunMetrics->sizeY = pFont->metrics.lineHeight;
     }
 
-    if (pGlyphs != NULL) {
-        for (iGlyph = 0; iGlyph < (size_t)glyphCount; ++iGlyph) {
-            pGlyphs[iGlyph].advance = pUniscribeAdvances[iGlyph];
-            pGlyphs[iGlyph].backend.gdi.offsetX = pUniscribeOffsets[iGlyph].du;
-            pGlyphs[iGlyph].backend.gdi.offsetY = pUniscribeOffsets[iGlyph].dv;
-        }
-    }
 
-    MT_FREE(pHeap);
-    return MT_SUCCESS;
+    MT_FREE(pUniscribeClustersHeap);
+    MT_FREE(pGlyphDataHeap);
+
+    /* Make sure MT_NO_SPACE is returned in the event that the output glyph count exceeds the capacity of the output buffer. */
+    if ((size_t)glyphCount > outputGlyphCap) {
+        return MT_NO_SPACE;
+    } else {
+        return MT_SUCCESS;
+    }
 }
 
 void mt_gc_draw_glyphs__gdi(mt_gc* pGC, const mt_item* pItem, const mt_glyph* pGlyphs, size_t glyphCount, mt_int32 x, mt_int32 y)
@@ -5990,7 +5920,6 @@ mt_result mt_init__gdi(const mt_api_config* pConfig, mt_api* pAPI)
     pAPI->shapeUTF8           = NULL;   /* No native support for UTF-8 with Uniscribe. */
     pAPI->shapeUTF16          = mt_shape_utf16__gdi;
     pAPI->shapeUTF32          = NULL;   /* No native support for UTF-32 with Uniscribe. */
-    pAPI->place               = mt_place__gdi;
     pAPI->fontInit            = mt_font_init__gdi;
     pAPI->fontUninit          = mt_font_uninit__gdi;
     pAPI->brushInit           = mt_brush_init__gdi;
@@ -6260,7 +6189,7 @@ mt_result mt_itemize_utf8(mt_api* pAPI, const mt_utf8* pTextUTF8, size_t textLen
     return result;
 }
 
-mt_result mt_shape_utf8(mt_font* pFont, mt_item* pItem, const mt_utf8* pTextUTF8, size_t textLength, mt_glyph* pGlyphs, size_t* pGlyphCount, size_t* pClusters)
+mt_result mt_shape_utf8(mt_font* pFont, mt_item* pItem, const mt_utf8* pTextUTF8, size_t textLength, mt_glyph* pGlyphs, size_t* pGlyphCount, size_t* pClusters, mt_text_metrics* pRunMetrics)
 {
     mt_result result;
 
@@ -6270,7 +6199,7 @@ mt_result mt_shape_utf8(mt_font* pFont, mt_item* pItem, const mt_utf8* pTextUTF8
 
     /* If the backend directly supports UTF-8, just pass it straight through. Otherwise we need to convert. */
     if (pFont->pAPI->shapeUTF8) {
-        result = pFont->pAPI->shapeUTF8(pFont, pItem, pTextUTF8, textLength, pGlyphs, pGlyphCount, pClusters);
+        result = pFont->pAPI->shapeUTF8(pFont, pItem, pTextUTF8, textLength, pGlyphs, pGlyphCount, pClusters, pRunMetrics);
     } else {
         if (pFont->pAPI->shapeUTF16) {
             /* Convert to UTF-16. We can try using the stack first, and then fall back to a heap-allocation if necessary. */
@@ -6317,7 +6246,7 @@ mt_result mt_shape_utf8(mt_font* pFont, mt_item* pItem, const mt_utf8* pTextUTF8
             MT_ASSERT(utf16Len <= textLength);
 
             /* We have the UTF-16 string, so now we perform shaping. */
-            result = pFont->pAPI->shapeUTF16(pFont, pItem, pUTF16, utf16Len, pGlyphs, pGlyphCount, pUTF16Clusters);
+            result = pFont->pAPI->shapeUTF16(pFont, pItem, pUTF16, utf16Len, pGlyphs, pGlyphCount, pUTF16Clusters, pRunMetrics);
             if (result == MT_SUCCESS) {
                 /* The values in pClusters need to be expanded so that they map to the original UTF-8 string. */
                 if (pClusters != NULL) {
@@ -6360,24 +6289,6 @@ mt_result mt_shape_utf8(mt_font* pFont, mt_item* pItem, const mt_utf8* pTextUTF8
     }
 
     return result;
-}
-
-mt_result mt_place(mt_font* pFont, mt_item* pItem, mt_glyph* pGlyphs, size_t glyphCount, mt_text_metrics* pRunMetrics)
-{
-    if (pRunMetrics != NULL) {
-        pRunMetrics->sizeX = 0;
-        pRunMetrics->sizeY = 0;
-    }
-
-    if (pFont == NULL || pItem == NULL || pGlyphs == NULL) {
-        return MT_INVALID_ARGS;
-    }
-
-    if (pFont->pAPI->place == NULL) {
-        return MT_INVALID_OPERATION;    /* Placement not supported by the backend. */
-    }
-
-    return pFont->pAPI->place(pFont, pItem, pGlyphs, glyphCount, pRunMetrics);
 }
 
 mt_result mt_measure_x(mt_api* pAPI, mt_item* pItem, size_t glyphCount, const mt_glyph* pGlyphs, mt_int32* pX)
