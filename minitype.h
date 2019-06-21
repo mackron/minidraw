@@ -1152,12 +1152,12 @@ mt_result mt_measure_x(mt_api* pAPI, mt_item* pItem, size_t glyphCount, const mt
 /*
 Retrieves the index of the Unicode code point under the given pixel position.
 */
-mt_result mt_x_to_cp(mt_api* pAPI, mt_item* pItem, mt_int32 x, size_t textLength, const size_t* pClusters, size_t glyphCount, const mt_glyph* pGlyphs, size_t* piCP, mt_int32* pOffsetToEdge);
+mt_result mt_x_to_index(mt_api* pAPI, mt_item* pItem, mt_int32 x, size_t textLength, const size_t* pClusters, size_t glyphCount, const mt_glyph* pGlyphs, size_t* pIndex, mt_int32* pOffsetToEdge);
 
 /*
 Retrieves the position within a string that contains the given pixel position.
 */
-mt_result mt_cp_to_x(mt_api* pAPI, mt_item* pItem, size_t iCP, size_t textLength, const size_t* pClusters, size_t glyphCount, const mt_glyph* pGlyphs, mt_int32* pX);
+mt_result mt_index_to_x(mt_api* pAPI, mt_item* pItem, size_t index, size_t textLength, const size_t* pClusters, size_t glyphCount, const mt_glyph* pGlyphs, mt_int32* pX);
 
 
 /**************************************************************************************************************************************************************
@@ -6328,7 +6328,7 @@ mt_result mt_measure_x(mt_api* pAPI, mt_item* pItem, size_t glyphCount, const mt
     return MT_SUCCESS;
 }
 
-mt_result mt_x_to_cp(mt_api* pAPI, mt_item* pItem, mt_int32 x, size_t textLength, const size_t* pClusters, size_t glyphCount, const mt_glyph* pGlyphs, size_t* piCP, mt_int32* pOffsetToEdge)
+mt_result mt_x_to_index(mt_api* pAPI, mt_item* pItem, mt_int32 x, size_t textLength, const size_t* pClusters, size_t glyphCount, const mt_glyph* pGlyphs, size_t* pIndex, mt_int32* pOffsetToEdge)
 {
     /* Naive implementation for now while I figure things out. */
 
@@ -6336,8 +6336,8 @@ mt_result mt_x_to_cp(mt_api* pAPI, mt_item* pItem, mt_int32 x, size_t textLength
     size_t iCluster;
     mt_int32 runningX;
 
-    if (piCP != NULL) {
-        *piCP = (size_t)0;
+    if (pIndex != NULL) {
+        *pIndex = (size_t)0;
     }
     if (pOffsetToEdge != NULL) {
         *pOffsetToEdge = 0;
@@ -6360,8 +6360,8 @@ mt_result mt_x_to_cp(mt_api* pAPI, mt_item* pItem, mt_int32 x, size_t textLength
             mt_bool32 found = MT_FALSE;
             for (iCluster = 0; iCluster < textLength; ++iCluster) {
                 if (pClusters[iCluster] == iGlyph) {
-                    if (piCP != NULL) {
-                        *piCP = iCluster;
+                    if (pIndex != NULL) {
+                        *pIndex = iCluster;
                     }
                         
                     found = MT_TRUE;
@@ -6379,8 +6379,8 @@ mt_result mt_x_to_cp(mt_api* pAPI, mt_item* pItem, mt_int32 x, size_t textLength
     }
 
     /* Geting here means the point is beyond the string. We just place it at the end. */
-    if (piCP != NULL) {
-        *piCP = textLength;
+    if (pIndex != NULL) {
+        *pIndex = textLength;
     }
     if (pOffsetToEdge != NULL) {
         *pOffsetToEdge = 0;
@@ -6389,7 +6389,7 @@ mt_result mt_x_to_cp(mt_api* pAPI, mt_item* pItem, mt_int32 x, size_t textLength
     return MT_SUCCESS;
 }
 
-mt_result mt_cp_to_x(mt_api* pAPI, mt_item* pItem, size_t iCP, size_t textLength, const size_t* pClusters, size_t glyphCount, const mt_glyph* pGlyphs, mt_int32* pX)
+mt_result mt_index_to_x(mt_api* pAPI, mt_item* pItem, size_t index, size_t textLength, const size_t* pClusters, size_t glyphCount, const mt_glyph* pGlyphs, mt_int32* pX)
 {
     /* Naive implementation for now while I figure things out. */
 
@@ -6409,14 +6409,14 @@ mt_result mt_cp_to_x(mt_api* pAPI, mt_item* pItem, size_t iCP, size_t textLength
     }
 
     /* Normalize the index if it's out of range. */
-    if (iCP > textLength) {
-        iCP = textLength;
+    if (index > textLength) {
+        index = textLength;
     }
 
     /* Special case when the code unit is beyond the length of the text. In this case we set pX to end of the run. */
     runningX = 0;
-    if (iCP == textLength) {
-        size_t iTargetGlyph = pClusters[iCP];
+    if (index == textLength) {
+        size_t iTargetGlyph = pClusters[index];
         if (iTargetGlyph > 0) {
             for (iGlyph = 0; iGlyph < iTargetGlyph; ++iTargetGlyph) {
                 runningX += pGlyphs[iGlyph].advance;
@@ -6428,7 +6428,7 @@ mt_result mt_cp_to_x(mt_api* pAPI, mt_item* pItem, size_t iCP, size_t textLength
         }
     } else {
         /* Go to the end. */
-        MT_ASSERT(iCP == textLength);
+        MT_ASSERT(index == textLength);
         return mt_measure_x(pAPI, pItem, glyphCount, pGlyphs, pX);
     }
 
