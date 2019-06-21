@@ -457,6 +457,7 @@ struct mt_api
     void      (* brushSetOrigin)     (mt_brush* pBrush, mt_int32 x, mt_int32 y);
     mt_result (* gcInit)             (mt_api* pAPI, const mt_gc_config* pConfig, mt_gc* pGC);
     void      (* gcUninit)           (mt_gc* pGC);
+    mt_result (* gcGetImageData)     (mt_gc* pGC, mt_format outputFormat, void* pImageData);
     mt_result (* gcGetSize)          (mt_gc* pGC, mt_uint32* pSizeX, mt_uint32* pSizeY);
     mt_result (* gcSave)             (mt_gc* pGC);
     mt_result (* gcRestore)          (mt_gc* pGC);
@@ -1243,6 +1244,8 @@ Graphics Context
 ******************************************************************************/
 mt_result mt_gc_init(mt_api* pAPI, const mt_gc_config* pConfig, mt_gc* pGC);
 void mt_gc_uninit(mt_gc* pGC);
+mt_result mt_gc_get_image_data_size_in_bytes(mt_gc* pGC, mt_format outputFormat, size_t* pSizeInBytes);
+mt_result mt_gc_get_image_data(mt_gc* pGC, mt_format outputFormat, void* pImageData);
 
 /******************************************************************************
 
@@ -4776,6 +4779,68 @@ mt_result mt_gc_get_size__gdi(mt_gc* pGC, mt_uint32* pSizeX, mt_uint32* pSizeY)
     return MT_SUCCESS;
 }
 
+mt_result mt_gc_get_image_data__gdi(mt_gc* pGC, mt_format outputFormat, void* pImageData)
+{
+    mt_result result;
+    HDC hTempDC;
+    HBITMAP hTempBitmap;
+    BITMAPINFO bmi;
+    void* pTempBitmapData;
+    mt_uint32 sizeX;
+    mt_uint32 sizeY;
+    mt_uint32 x;
+    mt_uint32 y;
+
+    MT_ASSERT(pGC != NULL);
+
+    result = mt_gc_get_size__gdi(pGC, &sizeX, &sizeY);
+    if (result != MT_SUCCESS) {
+        return result;
+    }
+
+    /* We need to BitBlt into a DIB, flush, and then move that data into pImageData with the necessary data conversion. */
+    hTempDC = CreateCompatibleDC(NULL);
+    if (hTempDC == NULL) {
+        return MT_ERROR;    /* Failed to create the temporary DC. */
+    }
+
+    MT_ZERO_OBJECT(&bmi);
+    bmi.bmiHeader.biSize        = sizeof(bmi.bmiHeader);
+    bmi.bmiHeader.biWidth       = (LONG)sizeX;
+    bmi.bmiHeader.biHeight      = (LONG)sizeY;
+    bmi.bmiHeader.biPlanes      = 1;
+    bmi.bmiHeader.biBitCount    = 32;   /* Only supporting 32-bit formats. */
+    bmi.bmiHeader.biCompression = BI_RGB;
+
+    hTempBitmap = CreateDIBSection(hTempDC, &bmi, DIB_RGB_COLORS, &pTempBitmapData, NULL, 0);
+    if (hTempBitmap == NULL) {
+        DeleteDC(hTempDC);
+        return MT_ERROR;    /* Failed to create the temporary bitmap. */
+    }
+
+    SelectObject(hTempDC, hTempBitmap);
+    BitBlt(hTempDC, 0, 0, (int)sizeX, (int)sizeY, (HDC)pGC->gdi.hDC, 0, 0, SRCCOPY);
+    GdiFlush();
+
+    /*
+    GDI does not support alpha on the bitmap. Or at least, I haven't figured out how to use it properly. Therefore, I need to set  the alpha channel
+    to 0xFF explicitly because GDI seems to ignore the alpha channel when it draws.
+    */
+    for (y = 0; y < sizeY; ++y) {
+        mt_uint8* pDstRow = (mt_uint8*)MT_OFFSET_PTR(pTempBitmapData, y*sizeX*4);
+        for (x = 0; x < sizeX; ++x) {
+            pDstRow[x*4 + 3] = 0xFF;
+        }
+    }
+
+    mt_copy_and_flip_image_data_y(pImageData, pTempBitmapData, sizeX, sizeY, 0, outputFormat, 0, mt_format_bgra);
+
+    DeleteDC(hTempDC);
+    DeleteObject(hTempBitmap);
+
+    return MT_SUCCESS;
+}
+
 mt_result mt_gc_save__gdi(mt_gc* pGC)
 {
     MT_ASSERT(pGC != NULL);
@@ -5917,6 +5982,7 @@ mt_result mt_init__gdi(const mt_api_config* pConfig, mt_api* pAPI)
     pAPI->brushSetOrigin      = mt_brush_set_origin__gdi;
     pAPI->gcInit              = mt_gc_init__gdi;
     pAPI->gcUninit            = mt_gc_uninit__gdi;
+    pAPI->gcGetImageData      = mt_gc_get_image_data__gdi;
     pAPI->gcGetSize           = mt_gc_get_size__gdi;
     pAPI->gcSave              = mt_gc_save__gdi;
     pAPI->gcRestore           = mt_gc_restore__gdi;
@@ -6566,6 +6632,54 @@ void mt_gc_uninit(mt_gc* pGC)
 
     if (pGC->pAPI->gcUninit) {
         pGC->pAPI->gcUninit(pGC);
+    }
+}
+
+mt_result mt_gc_get_image_data_size_in_bytes(mt_gc* pGC, mt_format outputFormat, size_t* pSizeInBytes)
+{
+    mt_result result;
+    mt_uint32 sizeX;
+    mt_uint32 sizeY;
+
+    if (pSizeInBytes != NULL) {
+        *pSizeInBytes = 0;  /* Safety. */
+    }
+
+    if (pGC == NULL || pSizeInBytes == NULL) {
+        return MT_INVALID_ARGS;
+    }
+
+    MT_ASSERT(pGC->pAPI != NULL);
+
+    result = mt_gc_get_size(pGC, &sizeX, &sizeY);
+    if (result != MT_SUCCESS) {
+        return result;
+    }
+
+    *pSizeInBytes = sizeX * sizeY * mt_get_bytes_per_pixel(outputFormat);
+
+    return MT_SUCCESS;
+}
+
+mt_result mt_gc_get_image_data(mt_gc* pGC, mt_format outputFormat, void* pImageData)
+{
+    mt_result result;
+
+    if (pGC == NULL || pImageData == NULL) {
+        return MT_INVALID_ARGS;
+    }
+
+    MT_ASSERT(pGC->pAPI != NULL);
+
+    if (pGC->pAPI->gcGetImageData) {
+        result = pGC->pAPI->gcGetImageData(pGC, outputFormat, pImageData);
+        if (result != MT_SUCCESS) {
+            return result;
+        }
+
+        return result;
+    } else {
+        return MT_INVALID_OPERATION;
     }
 }
 
