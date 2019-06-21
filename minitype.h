@@ -5753,9 +5753,9 @@ mt_result mt_shape_utf16__gdi(mt_font* pFont, mt_item* pItem, const mt_utf16* pT
     if (pGlyphs != NULL && (size_t)glyphCount <= outputGlyphCap) {
         size_t iGlyph;
         for (iGlyph = 0; iGlyph < (size_t)glyphCount; ++iGlyph) {
-            pGlyphs[iGlyph].backend.gdi.sv = pUniscribeSVA[iGlyph];
-            pGlyphs[iGlyph].index = pUniscribeGlyphs[iGlyph];
-            pGlyphs[iGlyph].advance = pUniscribeAdvances[iGlyph];
+            pGlyphs[iGlyph].backend.gdi.sv      = pUniscribeSVA[iGlyph];
+            pGlyphs[iGlyph].index               = pUniscribeGlyphs[iGlyph];
+            pGlyphs[iGlyph].advance             = pUniscribeAdvances[iGlyph];
             pGlyphs[iGlyph].backend.gdi.offsetX = pUniscribeOffsets[iGlyph].du;
             pGlyphs[iGlyph].backend.gdi.offsetY = pUniscribeOffsets[iGlyph].dv;
         }
@@ -5771,8 +5771,8 @@ mt_result mt_shape_utf16__gdi(mt_font* pFont, mt_item* pItem, const mt_utf16* pT
     if (pRunMetrics != NULL) {
         pRunMetrics->lPadding = abc.abcA;
         pRunMetrics->rPadding = abc.abcC;
-        pRunMetrics->sizeX = abc.abcA + abc.abcB + abc.abcC;
-        pRunMetrics->sizeY = pFont->metrics.lineHeight;
+        pRunMetrics->sizeX    = abc.abcA + abc.abcB + abc.abcC;
+        pRunMetrics->sizeY    = pFont->metrics.lineHeight;
     }
 
 
@@ -5841,6 +5841,22 @@ void mt_gc_draw_glyphs__gdi(mt_gc* pGC, const mt_item* pItem, const mt_glyph* pG
     if (hResult != S_OK) {
         return; /* Error occurred. */
     }
+}
+
+void mt_gc_clear__gdi(mt_gc* pGC, mt_color color)
+{
+    SaveDC((HDC)pGC->gdi.hDC);
+    {
+        mt_uint32 sizeX;
+        mt_uint32 sizeY;
+        mt_gc_get_size__gdi(pGC, &sizeX, &sizeY);
+
+        ModifyWorldTransform((HDC)pGC->gdi.hDC, NULL, MWT_IDENTITY);
+        SetDCBrushColor((HDC)pGC->gdi.hDC, RGB(color.r, color.g, color.b));
+        SelectObject((HDC)pGC->gdi.hDC, GetStockObject(NULL_PEN));
+        Rectangle((HDC)pGC->gdi.hDC, 0, 0, (int)sizeX, (int)sizeY);
+    }
+    RestoreDC((HDC)pGC->gdi.hDC, -1);
 }
 
 
@@ -5969,7 +5985,7 @@ mt_result mt_init__gdi(const mt_api_config* pConfig, mt_api* pAPI)
     pAPI->gcFillAndStroke     = mt_gc_fill_and_stroke__gdi;
     pAPI->gcDrawGC            = mt_gc_draw_gc__gdi;
     pAPI->gcDrawGlyphs        = mt_gc_draw_glyphs__gdi;
-    pAPI->gcClear             = NULL;   /* TODO: Do a native implementation for this. Setting this to NULL uses the default implementation. */
+    pAPI->gcClear             = mt_gc_clear__gdi;
 
     (void)pConfig;
     return MT_SUCCESS;
