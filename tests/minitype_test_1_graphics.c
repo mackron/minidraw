@@ -9,8 +9,8 @@
 
 #define WINDOW_SIZE_X   1280
 #define WINDOW_SIZE_Y   720
-#define LOGO_SIZE_X     1280
-#define LOGO_SIZE_Y     360
+#define LOGO_SIZE_X     880
+#define LOGO_SIZE_Y     260
 
 mt_font g_font;
 mt_color g_textBGColor;
@@ -145,7 +145,7 @@ mt_result on_init(mt_testapp* pApp)
 
     MT_ZERO_OBJECT(&fontConfig);
     fontConfig.family = "Liberation";
-    fontConfig.sizeInPixels = 160;
+    fontConfig.sizeInPixels = 120;
     fontConfig.weight = mt_font_weight_bold;
     fontConfig.slant = mt_font_slant_none;
     fontConfig.noClearType = MT_FALSE;
