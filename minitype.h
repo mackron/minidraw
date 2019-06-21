@@ -522,6 +522,11 @@ struct mt_api
 
         /* usp10.dll */
         mt_handle hUsp10DLL;
+        mt_proc ScriptItemize;
+        mt_proc ScriptShape;
+        mt_proc ScriptPlace;
+        mt_proc ScriptTextOut;
+        mt_proc ScriptFreeCache;
 
         /* gdi32.dll */
         mt_handle hGdi32DLL;
@@ -4483,6 +4488,13 @@ mt_result mt_utf32_to_utf16(mt_utf16* pUTF16, size_t utf16Cap, size_t* pUTF16Len
 #include <usp10.h>  /* TODO: Get rid of this dependency. */
 #include <math.h>   /* For cosf() and sinf(). May want to move this out of here and into the general implementation section. */
 
+/* usp10.dll */
+typedef HRESULT (WINAPI * MT_PFN_ScriptItemize)  (const WCHAR *pwcInChars, int cInChars, int cMaxItems, const SCRIPT_CONTROL* psControl, const SCRIPT_STATE* psState, SCRIPT_ITEM* pItems, int* pcItems);
+typedef HRESULT (WINAPI * MT_PFN_ScriptShape)    (HDC hdc, SCRIPT_CACHE* psc, const WCHAR* pwcChars, int cChars, int cMaxGlyphs, SCRIPT_ANALYSIS* psa, WORD* pwOutGlyphs, WORD* pwLogClust, SCRIPT_VISATTR* psva, int* pcGlyphs);
+typedef HRESULT (WINAPI * MT_PFN_ScriptPlace)    (HDC hdc, SCRIPT_CACHE* psc, const WORD* pwGlyphs, int cGlyphs, const SCRIPT_VISATTR* psva, SCRIPT_ANALYSIS* psa, int* piAdvance, GOFFSET* pGoffset, ABC* pABC);
+typedef HRESULT (WINAPI * MT_PFN_ScriptTextOut)  (const HDC hdc, SCRIPT_CACHE* psc, int x, int y, UINT fuOptions, const RECT* lprc, const SCRIPT_ANALYSIS* psa, const WCHAR* pwcReserved, int iReserved, const WORD* pwGlyphs, int cGlyphs, const int* piAdvance, const int* piJustify, const GOFFSET* pGoffset);
+typedef HRESULT (WINAPI * MT_PFN_ScriptFreeCache)(SCRIPT_CACHE* psc);
+
 /* msimg32.dll */
 typedef BOOL (WINAPI * MT_PFN_AlphaBlend)(HDC hdcDest, int xoriginDest, int yoriginDest, int wDest, int hDest, HDC hdcSrc, int xoriginSrc, int yoriginSrc, int wSrc, int hSrc, BLENDFUNCTION ftn);
 
@@ -4555,7 +4567,7 @@ void mt_font_uninit__gdi(mt_font* pFont)
     MT_ASSERT(pFont != NULL);
 
     /* Free the script cache. */
-    ScriptFreeCache((SCRIPT_CACHE*)&pFont->gdi.sc);
+    ((MT_PFN_ScriptFreeCache)pFont->pAPI->gdi.ScriptFreeCache)((SCRIPT_CACHE*)&pFont->gdi.sc);
     pFont->gdi.sc = NULL;   /* Safety. */
 
     DeleteObject((HGDIOBJ)pFont->gdi.hFont);
@@ -5544,8 +5556,6 @@ void mt_gc_draw_gc__gdi(mt_gc* pGC, mt_gc* pSrcGC, mt_int32 srcX, mt_int32 srcY)
     }
 }
 
-#pragma comment(lib, "usp10.lib")  /* TODO: Remove this and replace with runtime linking. */
-
 /* API */
 mt_result mt_itemize_utf16__gdi(mt_api* pAPI, const mt_utf16* pTextUTF16, size_t textLength, mt_item* pItems, mt_uint32* pItemCount)
 {
@@ -5580,7 +5590,7 @@ mt_result mt_itemize_utf16__gdi(mt_api* pAPI, const mt_utf16* pTextUTF16, size_t
     */
 
     /* Try itemizing into the stack first. If this fails we fall back to the heap. */
-    hResult = ScriptItemize((const wchar_t*)pTextUTF16, (int)textLength, MT_COUNTOF(pScriptItemsStack)-1, NULL, NULL, (SCRIPT_ITEM*)pScriptItemsStack, &scriptItemCount);   /* Subtract 1 from item capacity because the last item is always used as a null terminator. */
+    hResult = ((MT_PFN_ScriptItemize)pAPI->gdi.ScriptItemize)((const wchar_t*)pTextUTF16, (int)textLength, MT_COUNTOF(pScriptItemsStack)-1, NULL, NULL, (SCRIPT_ITEM*)pScriptItemsStack, &scriptItemCount);   /* Subtract 1 from item capacity because the last item is always used as a null terminator. */
     if (hResult == S_OK) {
         pScriptItems = &pScriptItemsStack[0];
     } else {
@@ -5604,7 +5614,7 @@ mt_result mt_itemize_utf16__gdi(mt_api* pAPI, const mt_utf16* pTextUTF16, size_t
 
                 pScriptItemsHeap = pNewScriptItemsHeap;
 
-                hResult = ScriptItemize((const wchar_t*)pTextUTF16, (int)textLength, heapCap-1, NULL, NULL, (SCRIPT_ITEM*)pScriptItemsHeap, &scriptItemCount);   /* Subtract 1 from item capacity because the last item is always used as a null terminator. */
+                hResult = ((MT_PFN_ScriptItemize)pAPI->gdi.ScriptItemize)((const wchar_t*)pTextUTF16, (int)textLength, heapCap-1, NULL, NULL, (SCRIPT_ITEM*)pScriptItemsHeap, &scriptItemCount);   /* Subtract 1 from item capacity because the last item is always used as a null terminator. */
             }
 
             pScriptItems = pScriptItemsHeap;
@@ -5664,7 +5674,7 @@ mt_result mt_shape_utf16__gdi(mt_font* pFont, mt_item* pItem, const mt_utf16* pT
     MT_ASSERT(pTextUTF16 != NULL);
     MT_ASSERT(pGlyphCount != NULL);
 
-    /* ScriptItemize() uses an integer for the text length, so keep it simple and return an error if we're asking for more. */
+    /* ScriptShape() uses an integer for the text length, so keep it simple and return an error if we're asking for more. */
     if (textLength > 0x7FFFFFFF) {
         return MT_INVALID_ARGS;
     }
@@ -5687,12 +5697,12 @@ mt_result mt_shape_utf16__gdi(mt_font* pFont, mt_item* pItem, const mt_utf16* pT
     }
 
     /* We first try with a NULL DC. If this fails we need to select the font into the global DC and try again. */
-    hResult = ScriptShape(NULL, (SCRIPT_CACHE*)&pFont->gdi.sc, (const WCHAR*)pTextUTF16, (int)textLength, MT_COUNTOF(pUniscribeGlyphsStack), (SCRIPT_ANALYSIS*)&pItem->backend.gdi.sa, pUniscribeGlyphsStack, pUniscribeClusters, (SCRIPT_VISATTR*)pUniscribeSVAStack, &glyphCount);
+    hResult = ((MT_PFN_ScriptShape)pFont->pAPI->gdi.ScriptShape)(NULL, (SCRIPT_CACHE*)&pFont->gdi.sc, (const WCHAR*)pTextUTF16, (int)textLength, MT_COUNTOF(pUniscribeGlyphsStack), (SCRIPT_ANALYSIS*)&pItem->backend.gdi.sa, pUniscribeGlyphsStack, pUniscribeClusters, (SCRIPT_VISATTR*)pUniscribeSVAStack, &glyphCount);
     if (hResult == E_PENDING) {
         /* Select the font into the global DC and try again, this time with the DC set to the global DC. */
         hDC = (HDC)pFont->pAPI->gdi.hGlobalDC;
         SelectObject(hDC, (HGDIOBJ)pFont->gdi.hFont);
-        hResult = ScriptShape(hDC, (SCRIPT_CACHE*)&pFont->gdi.sc, (const WCHAR*)pTextUTF16, (int)textLength, MT_COUNTOF(pUniscribeGlyphsStack), (SCRIPT_ANALYSIS*)&pItem->backend.gdi.sa, pUniscribeGlyphsStack, pUniscribeClusters, (SCRIPT_VISATTR*)pUniscribeSVAStack, &glyphCount);
+        hResult = ((MT_PFN_ScriptShape)pFont->pAPI->gdi.ScriptShape)(hDC, (SCRIPT_CACHE*)&pFont->gdi.sc, (const WCHAR*)pTextUTF16, (int)textLength, MT_COUNTOF(pUniscribeGlyphsStack), (SCRIPT_ANALYSIS*)&pItem->backend.gdi.sa, pUniscribeGlyphsStack, pUniscribeClusters, (SCRIPT_VISATTR*)pUniscribeSVAStack, &glyphCount);
     }
 
     if (hResult == S_OK) {
@@ -5724,7 +5734,7 @@ mt_result mt_shape_utf16__gdi(mt_font* pFont, mt_item* pItem, const mt_utf16* pT
                 pUniscribeGlyphsHeap = (WORD*)pGlyphsAndSVAHeap;
                 pUniscribeSVAHeap = (MT_SCRIPT_VISATTR*)MT_OFFSET_PTR(pGlyphsAndSVAHeap, sizeof(*pUniscribeGlyphsHeap) * heapCap);
 
-                hResult = ScriptShape(hDC, (SCRIPT_CACHE*)&pFont->gdi.sc, (const WCHAR*)pTextUTF16, (int)textLength, (int)heapCap, (SCRIPT_ANALYSIS*)&pItem->backend.gdi.sa, pUniscribeGlyphsHeap, pUniscribeClusters, (SCRIPT_VISATTR*)pUniscribeSVAHeap, &glyphCount);
+                hResult = ((MT_PFN_ScriptShape)pFont->pAPI->gdi.ScriptShape)(hDC, (SCRIPT_CACHE*)&pFont->gdi.sc, (const WCHAR*)pTextUTF16, (int)textLength, (int)heapCap, (SCRIPT_ANALYSIS*)&pItem->backend.gdi.sa, pUniscribeGlyphsHeap, pUniscribeClusters, (SCRIPT_VISATTR*)pUniscribeSVAHeap, &glyphCount);
             }
 
             pUniscribeGlyphs = pUniscribeGlyphsHeap;
@@ -5786,7 +5796,7 @@ mt_result mt_place__gdi(mt_font* pFont, mt_item* pItem, mt_glyph* pGlyphs, size_
     GOFFSET* pUniscribeOffsetsHeap = NULL;          /* Offset of pHeap. */
     GOFFSET* pUniscribeOffsets = NULL;
 
-    /* ScriptItemize() uses an integer for the glyph count, so keep it simple and return an error if we're asking for more. */
+    /* ScriptPlace() uses an integer for the glyph count, so keep it simple and return an error if we're asking for more. */
     if (glyphCount > 0x7FFFFFFF) {
         return MT_INVALID_ARGS;
     }
@@ -5815,11 +5825,11 @@ mt_result mt_place__gdi(mt_font* pFont, mt_item* pItem, mt_glyph* pGlyphs, size_
         pUniscribeSVA[iGlyph] = pGlyphs[iGlyph].backend.gdi.sv;
     }
 
-    hResult = ScriptPlace(NULL, (SCRIPT_CACHE*)&pFont->gdi.sc, pUniscribeGlyphs, (int)glyphCount, (const SCRIPT_VISATTR*)pUniscribeSVA, (SCRIPT_ANALYSIS*)&pItem->backend.gdi.sa, pUniscribeAdvances, pUniscribeOffsets, &abc);
+    hResult = ((MT_PFN_ScriptPlace)pFont->pAPI->gdi.ScriptPlace)(NULL, (SCRIPT_CACHE*)&pFont->gdi.sc, pUniscribeGlyphs, (int)glyphCount, (const SCRIPT_VISATTR*)pUniscribeSVA, (SCRIPT_ANALYSIS*)&pItem->backend.gdi.sa, pUniscribeAdvances, pUniscribeOffsets, &abc);
     if (hResult == E_PENDING) {
         /* Select the font into the global DC and try again, this time with the DC set to the global DC. */
         SelectObject((HDC)pFont->pAPI->gdi.hGlobalDC, (HGDIOBJ)pFont->gdi.hFont);
-        hResult = ScriptPlace((HDC)pFont->pAPI->gdi.hGlobalDC, (SCRIPT_CACHE*)&pFont->gdi.sc, pUniscribeGlyphs, (int)glyphCount, (const SCRIPT_VISATTR*)pUniscribeSVA, (SCRIPT_ANALYSIS*)&pItem->backend.gdi.sa, pUniscribeAdvances, pUniscribeOffsets, &abc);
+        hResult = ((MT_PFN_ScriptPlace)pFont->pAPI->gdi.ScriptPlace)((HDC)pFont->pAPI->gdi.hGlobalDC, (SCRIPT_CACHE*)&pFont->gdi.sc, pUniscribeGlyphs, (int)glyphCount, (const SCRIPT_VISATTR*)pUniscribeSVA, (SCRIPT_ANALYSIS*)&pItem->backend.gdi.sa, pUniscribeAdvances, pUniscribeOffsets, &abc);
     }
 
     if (hResult != S_OK) {
@@ -5863,7 +5873,7 @@ void mt_gc_draw_glyphs__gdi(mt_gc* pGC, const mt_item* pItem, const mt_glyph* pG
     GOFFSET* pUniscribeOffsetsHeap = NULL;          /* Offset of pHeap. */
     GOFFSET* pUniscribeOffsets = NULL;
 
-    /* ScriptItemize() uses an integer for the glyph count, so keep it simple and return an error if we're asking for more. */
+    /* ScriptTextOut() uses an integer for the glyph count, so keep it simple and return an error if we're asking for more. */
     if (glyphCount > 0x7FFFFFFF) {
         return; /* MT_INVALID_ARGS */
     }
@@ -5897,7 +5907,7 @@ void mt_gc_draw_glyphs__gdi(mt_gc* pGC, const mt_item* pItem, const mt_glyph* pG
         pUniscribeOffsets[iGlyph].dv = pGlyphs[iGlyph].backend.gdi.offsetY;
     }
 
-    hResult = ScriptTextOut((HDC)pGC->gdi.hDC, &pFont->gdi.sc, x, y, /* fuOptions */ETO_OPAQUE, NULL, (SCRIPT_ANALYSIS*)&pItem->backend.gdi.sa, NULL, 0, pUniscribeGlyphs, (int)glyphCount, pUniscribeAdvances, NULL, pUniscribeOffsets);
+    hResult = ((MT_PFN_ScriptTextOut)pGC->pAPI->gdi.ScriptTextOut)((HDC)pGC->gdi.hDC, &pFont->gdi.sc, x, y, /* fuOptions */ETO_OPAQUE, NULL, (SCRIPT_ANALYSIS*)&pItem->backend.gdi.sa, NULL, 0, pUniscribeGlyphs, (int)glyphCount, pUniscribeAdvances, NULL, pUniscribeOffsets);
     if (hResult != S_OK) {
         return; /* Error occurred. */
     }
@@ -5927,6 +5937,12 @@ mt_result mt_init__gdi(const mt_api_config* pConfig, mt_api* pAPI)
     if (pAPI->gdi.hUsp10DLL == NULL) {
         return MT_ERROR;    /* Failed to load usp10.dll. */
     }
+
+    pAPI->gdi.ScriptItemize   = mt_dlsym(pAPI->gdi.hUsp10DLL, "ScriptItemize");
+    pAPI->gdi.ScriptShape     = mt_dlsym(pAPI->gdi.hUsp10DLL, "ScriptShape");
+    pAPI->gdi.ScriptPlace     = mt_dlsym(pAPI->gdi.hUsp10DLL, "ScriptPlace");
+    pAPI->gdi.ScriptTextOut   = mt_dlsym(pAPI->gdi.hUsp10DLL, "ScriptTextOut");
+    pAPI->gdi.ScriptFreeCache = mt_dlsym(pAPI->gdi.hUsp10DLL, "ScriptFreeCache");
 
 
     /* gdi32.dll */
