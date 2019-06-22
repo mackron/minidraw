@@ -1,0 +1,8 @@
+@echo off
+SET c_compiler=clang
+SET cpp_compiler=clang++
+SET options=-Wall -Wpedantic -std=c89 -ansi -pedantic -lgdi32 -luser32
+@echo on
+
+%c_compiler% minitype_test_0_automated.c -o ./bin/minitype_test_0_automated.exe %options%
+%c_compiler% minitype_test_1_graphics.c  -o ./bin/minitype_test_0_graphics.exe  %options%
