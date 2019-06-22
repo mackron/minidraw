@@ -106,13 +106,13 @@ void draw_logo(mt_gc* pGC)
                             mt_gc_stroke(pGC);
 
                             /* Ascender line. */
-                            mt_gc_set_line_dash(pGC, MT_COUNTOF(dashes), dashes);
+                            mt_gc_set_line_dash(pGC, dashes, MT_COUNTOF(dashes));
                             mt_gc_move_to(pGC, 0,       textPosY);
                             mt_gc_line_to(pGC, gcSizeX, textPosY);
                             mt_gc_stroke(pGC);
 
                             /* Decender line. */
-                            mt_gc_set_line_dash(pGC, MT_COUNTOF(dashes), dashes);
+                            mt_gc_set_line_dash(pGC, dashes, MT_COUNTOF(dashes));
                             mt_gc_move_to(pGC, 0,       textPosY + g_font.metrics.lineHeight);
                             mt_gc_line_to(pGC, gcSizeX, textPosY + g_font.metrics.lineHeight);
                             mt_gc_move_to(pGC, 0,       textPosY + g_font.metrics.ascent + g_font.metrics.descent);

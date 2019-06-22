@@ -481,7 +481,7 @@ struct mt_api
     void      (* gcSetLineCap)              (mt_gc* pGC, mt_line_cap cap);
     void      (* gcSetLineJoin)             (mt_gc* pGC, mt_line_join join);
     void      (* gcSetMiterLimit)           (mt_gc* pGC, float limit);
-    void      (* gcSetLineDash)             (mt_gc* pGC, mt_uint32 count, float* dashes);  /* TODO: Swap the order of these parameters for conistency. */
+    void      (* gcSetLineDash)             (mt_gc* pGC, float* dashes, mt_uint32 count);
     void      (* gcSetLineBrush)            (mt_gc* pGC, mt_brush* pBrush);
     void      (* gcSetLineBrushSolid)       (mt_gc* pGC, mt_color color);
     void      (* gcSetLineBrushGC)          (mt_gc* pGC, mt_gc* pSrcGC);
@@ -1270,7 +1270,7 @@ void mt_gc_set_miter_limit(mt_gc* pGC, float limit);
 void mt_gc_set_line_width(mt_gc* pGC, mt_int32 width);
 void mt_gc_set_line_cap(mt_gc* pGC, mt_line_cap cap);
 void mt_gc_set_line_join(mt_gc* pGC, mt_line_join join);
-void mt_gc_set_line_dash(mt_gc* pGC, mt_uint32 count, float* dashes);  /* Max value for <count> is 16. */
+void mt_gc_set_line_dash(mt_gc* pGC, float* dashes, mt_uint32 count);  /* Max value for <count> is 16. */
 void mt_gc_set_line_brush(mt_gc* pGC, mt_brush* pBrush);
 void mt_gc_set_line_brush_solid(mt_gc* pGC, mt_color color);
 void mt_gc_set_line_brush_gc(mt_gc* pGC, mt_gc* pSrcGC);
@@ -5193,7 +5193,7 @@ void mt_gc_set_line_join__gdi(mt_gc* pGC, mt_line_join join)
     mt_gc_delete_current_pen__gdi(pGC);
 }
 
-void mt_gc_set_line_dash__gdi(mt_gc* pGC, mt_uint32 count, float* dashes)
+void mt_gc_set_line_dash__gdi(mt_gc* pGC, float* dashes, mt_uint32 count)
 {
     MT_ASSERT(pGC != NULL);
 
@@ -6957,7 +6957,7 @@ void mt_gc_set_line_join(mt_gc* pGC, mt_line_join join)
     }
 }
 
-void mt_gc_set_line_dash(mt_gc* pGC, mt_uint32 count, float* dashes)
+void mt_gc_set_line_dash(mt_gc* pGC, float* dashes, mt_uint32 count)
 {
     if (pGC == NULL) {
         return;
@@ -6970,7 +6970,7 @@ void mt_gc_set_line_dash(mt_gc* pGC, mt_uint32 count, float* dashes)
     }
 
     if (pGC->pAPI->gcSetLineDash) {
-        pGC->pAPI->gcSetLineDash(pGC, count, dashes);
+        pGC->pAPI->gcSetLineDash(pGC, dashes, count);
     }
 }
 
