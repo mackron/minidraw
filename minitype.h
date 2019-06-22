@@ -53,6 +53,7 @@ extern "C" {
         #pragma GCC diagnostic push
         #pragma GCC diagnostic ignored "-Wlanguage-extension-token"
         #pragma GCC diagnostic ignored "-Wc++11-long-long"
+        #pragma GCC diagnostic ignored "-Wlong-long"
     #endif
     typedef   signed __int8  mt_int8;
     typedef unsigned __int8  mt_uint8;
@@ -138,9 +139,9 @@ typedef mt_uint32 mt_utf32;
 #define MT_INLINE __forceinline
 #else
 #ifdef __GNUC__
-#define MT_INLINE inline __attribute__((always_inline))
+#define MT_INLINE __inline__ __attribute__((always_inline))
 #else
-#define MT_INLINE inline
+#define MT_INLINE
 #endif
 #endif
 
@@ -227,7 +228,7 @@ typedef enum
     mt_backend_gdi,            /* Typography via Uniscribe */
     /*mt_backend_direct2d,*/       /* Typography via DirectWrite */
     /*mt_backend_coregraphics,*/   /* Typography via Core Text */
-    mt_backend_cairo,          /* Typography via Pango */
+    mt_backend_cairo          /* Typography via Pango */
     /*mt_backend_xft*/             /* Typography via minitype */
 } mt_backend;
 
@@ -306,6 +307,10 @@ typedef enum
 
 /* Structures */
 #if defined(MT_SUPPORT_GDI)
+#if defined(__GNUC__)
+    #pragma GCC diagnostic push
+    #pragma GCC diagnostic ignored "-Wpedantic" /* type of bit-field is a GCC extension */
+#endif
 typedef struct 
 {
     mt_uint16 uJustification : 4;
@@ -342,6 +347,9 @@ typedef struct
     mt_uint16 fNoGlyphIndex : 1;
     MT_SCRIPT_STATE s;
 } MT_SCRIPT_ANALYSIS;
+#if defined(__GNUC__)
+    #pragma GCC diagnostic pop
+#endif
 
 typedef struct
 {
@@ -1425,6 +1433,7 @@ mt_bool32 mt_is_null_or_whitespace(const mt_utf8* pUTF8) { return mt_is_null_or_
  **************************************************************************************************************************************************************
  **************************************************************************************************************************************************************/
 #if defined(MINITYPE_IMPLEMENTATION)
+#include <errno.h>
 
 /* CPU Architecture */
 #if defined(__x86_64__) || defined(_M_X64)
@@ -1735,7 +1744,6 @@ static MT_INLINE mt_uint32 mt_host2le_32(mt_uint32 n)
     return n;
 }
 
-
 mt_result mt_result_from_errno(errno_t e)
 {
     switch (e) {
@@ -1806,18 +1814,18 @@ MT_INLINE int mt_strncpy_s(char* dst, size_t dstSizeInBytes, const char* src, si
     size_t i;
 
     if (dst == 0) {
-        return EINVAL;
+        return 22;  /* EINVAL */
     }
     if (dstSizeInBytes == 0) {
-        return EINVAL;
+        return 34;  /* ERANGE */
     }
     if (src == 0) {
         dst[0] = '\0';
-        return EINVAL;
+        return 22;  /* EINVAL */
     }
 
     maxcount = count;
-    if (count == ((size_t)-1) || count >= dstSizeInBytes) {        // -1 = _TRUNCATE
+    if (count == ((size_t)-1) || count >= dstSizeInBytes) {        /* -1 = _TRUNCATE */
         maxcount = dstSizeInBytes - 1;
     }
 
@@ -1831,7 +1839,7 @@ MT_INLINE int mt_strncpy_s(char* dst, size_t dstSizeInBytes, const char* src, si
     }
 
     dst[0] = '\0';
-    return ERANGE;
+    return 34;  /* ERANGE */
 #endif
 }
 
@@ -1845,7 +1853,7 @@ Unicode
 MT_INLINE mt_bool32 mt_is_invalid_utf8_octet(mt_utf8 utf8)
 {
     /* RFC 3629 - Section 1: The octet values C0, C1, F5 to FF never appear. */
-    return utf8 == 0xC0 || utf8 == 0xC1 || utf8 == 0xF5 || utf8 == 0xFF;
+    return (mt_uint8)utf8 == 0xC0 || (mt_uint8)utf8 == 0xC1 || (mt_uint8)utf8 == 0xF5 || (mt_uint8)utf8 == 0xFF;
 }
 
 MT_INLINE void mt_utf32_cp_to_utf16_pair(mt_utf32 utf32cp, mt_utf16* pUTF16)
@@ -2083,12 +2091,13 @@ mt_result mt_utf8_to_utf16_length(size_t* pUTF16Len, const mt_utf8* pUTF8, size_
                         utf16Len += 1;  /* Can be at most 1 UTF-16.*/
                         pUTF8    += 3;
                     } else if ((pUTF8[0] & 0xF8) == 0xF0) {
+                        mt_uint32 cp;
                         if (pUTF8[1] == 0 || pUTF8[2] == 0 || pUTF8[3] == 0) {
                             result = MT_INVALID_ARGS; /* Input string is too short. */
                             break;
                         }
 
-                        mt_uint32 cp = ((mt_utf32)(pUTF8[0] & 0x07) << 18) | ((mt_utf32)(pUTF8[1] & 0x3F) << 12) | ((mt_utf32)(pUTF8[2] & 0x3F) << 6) | (pUTF8[3] & 0x3F);
+                        cp = ((mt_utf32)(pUTF8[0] & 0x07) << 18) | ((mt_utf32)(pUTF8[1] & 0x3F) << 12) | ((mt_utf32)(pUTF8[2] & 0x3F) << 6) | (pUTF8[3] & 0x3F);
                         if (!mt_is_valid_code_point(cp)) {
                             if ((flags & MT_ERROR_ON_INVALID_CODE_POINT) != 0) {
                                 result = MT_INVALID_CODE_POINT;
@@ -2150,11 +2159,12 @@ mt_result mt_utf8_to_utf16_length(size_t* pUTF16Len, const mt_utf8* pUTF8, size_
                         utf16Len += 1;  /* Can be at most 1 UTF-16.*/
                         iUTF8    += 3;
                     } else if ((pUTF8[iUTF8+0] & 0xF8) == 0xF0) {
+                        mt_uint32 cp;
                         if (iUTF8+3 > utf8Len) {
                             return MT_INVALID_ARGS;
                         }
 
-                        mt_uint32 cp = ((mt_utf32)(pUTF8[0] & 0x07) << 18) | ((mt_utf32)(pUTF8[1] & 0x3F) << 12) | ((mt_utf32)(pUTF8[2] & 0x3F) << 6) | (pUTF8[3] & 0x3F);
+                        cp = ((mt_utf32)(pUTF8[0] & 0x07) << 18) | ((mt_utf32)(pUTF8[1] & 0x3F) << 12) | ((mt_utf32)(pUTF8[2] & 0x3F) << 6) | (pUTF8[3] & 0x3F);
                         if (!mt_is_valid_code_point(cp)) {
                             if ((flags & MT_ERROR_ON_INVALID_CODE_POINT) != 0) {
                                 result = MT_INVALID_CODE_POINT;
@@ -2270,12 +2280,13 @@ mt_result mt_utf8_to_utf16ne(mt_utf16* pUTF16, size_t utf16Cap, size_t* pUTF16Le
                         if (utf16Cap < 2) {
                             break;  /* No enough room. */
                         } else {
+                            mt_uint32 cp;
                             if (pUTF8[1] == 0 || pUTF8[2] == 0 || pUTF8[3] == 0) {
                                 result = MT_INVALID_ARGS; /* Input string is too short. */
                                 break;
                             }
 
-                            mt_uint32 cp = ((mt_utf32)(pUTF8[0] & 0x07) << 18) | ((mt_utf32)(pUTF8[1] & 0x3F) << 12) | ((mt_utf32)(pUTF8[2] & 0x3F) << 6) | (pUTF8[3] & 0x3F);
+                            cp = ((mt_utf32)(pUTF8[0] & 0x07) << 18) | ((mt_utf32)(pUTF8[1] & 0x3F) << 12) | ((mt_utf32)(pUTF8[2] & 0x3F) << 6) | (pUTF8[3] & 0x3F);
                             if (!mt_is_valid_code_point(cp)) {
                                 if ((flags & MT_ERROR_ON_INVALID_CODE_POINT) != 0) {
                                     result = MT_INVALID_CODE_POINT;
@@ -2364,12 +2375,13 @@ mt_result mt_utf8_to_utf16ne(mt_utf16* pUTF16, size_t utf16Cap, size_t* pUTF16Le
                         if (utf16Cap < 2) {
                             break;  /* No enough room. */
                         } else {
+                            mt_uint32 cp;
                             if (iUTF8+3 > utf8Len) {
                                 result = MT_INVALID_ARGS;
                                 break;
                             }
 
-                            mt_uint32 cp = ((mt_utf32)(pUTF8[iUTF8+0] & 0x07) << 18) | ((mt_utf32)(pUTF8[iUTF8+1] & 0x3F) << 12) | ((mt_utf32)(pUTF8[iUTF8+2] & 0x3F) << 6) | (pUTF8[iUTF8+3] & 0x3F);
+                            cp = ((mt_utf32)(pUTF8[iUTF8+0] & 0x07) << 18) | ((mt_utf32)(pUTF8[iUTF8+1] & 0x3F) << 12) | ((mt_utf32)(pUTF8[iUTF8+2] & 0x3F) << 6) | (pUTF8[iUTF8+3] & 0x3F);
                             if (!mt_is_valid_code_point(cp)) {
                                 if ((flags & MT_ERROR_ON_INVALID_CODE_POINT) != 0) {
                                     result = MT_INVALID_CODE_POINT;
@@ -2529,11 +2541,12 @@ mt_result mt_utf8_to_utf32_length(size_t* pUTF32Len, const mt_utf8* pUTF8, size_
                         }
                         pUTF8 += 3;
                     } else if ((pUTF8[0] & 0xF8) == 0xF0) {
+                        mt_uint32 cp;
                         if (pUTF8[1] == 0 || pUTF8[2] == 0 || pUTF8[3] == 0) {
                             result = MT_INVALID_ARGS; /* Input string is too short. */
                             break;
                         }
-                        mt_uint32 cp = ((mt_utf32)(pUTF8[0] & 0x07) << 18) | ((mt_utf32)(pUTF8[1] & 0x3F) << 12) | ((mt_utf32)(pUTF8[2] & 0x3F) << 6) | (pUTF8[3] & 0x3F);
+                        cp = ((mt_utf32)(pUTF8[0] & 0x07) << 18) | ((mt_utf32)(pUTF8[1] & 0x3F) << 12) | ((mt_utf32)(pUTF8[2] & 0x3F) << 6) | (pUTF8[3] & 0x3F);
                         if (!mt_is_valid_code_point(cp)) {
                             if ((flags & MT_ERROR_ON_INVALID_CODE_POINT) != 0) {
                                 result = MT_INVALID_CODE_POINT;
@@ -2585,11 +2598,12 @@ mt_result mt_utf8_to_utf32_length(size_t* pUTF32Len, const mt_utf8* pUTF8, size_
                         }
                         iUTF8 += 3;
                     } else if ((pUTF8[iUTF8+0] & 0xF8) == 0xF0) {
+                        mt_uint32 cp;
                         if (iUTF8+3 >= utf8Len) {
                             result = MT_INVALID_ARGS;
                             break;
                         }
-                        mt_uint32 cp = ((mt_utf32)(pUTF8[0] & 0x07) << 18) | ((mt_utf32)(pUTF8[1] & 0x3F) << 12) | ((mt_utf32)(pUTF8[2] & 0x3F) << 6) | (pUTF8[3] & 0x3F);
+                        cp = ((mt_utf32)(pUTF8[0] & 0x07) << 18) | ((mt_utf32)(pUTF8[1] & 0x3F) << 12) | ((mt_utf32)(pUTF8[2] & 0x3F) << 6) | (pUTF8[3] & 0x3F);
                         if (!mt_is_valid_code_point(cp)) {
                             if ((flags & MT_ERROR_ON_INVALID_CODE_POINT) != 0) {
                                 result = MT_INVALID_CODE_POINT;
@@ -4960,8 +4974,8 @@ void mt_gc_translate__gdi(mt_gc* pGC, mt_int32 offsetX, mt_int32 offsetY)
 void mt_gc_rotate__gdi(mt_gc* pGC, float rotationInRadians)
 {
     XFORM transform = {0};
-    float c = cosf(rotationInRadians);
-    float s = sinf(rotationInRadians);
+    float c = (float)cos(rotationInRadians);
+    float s = (float)sin(rotationInRadians);
 
     MT_ASSERT(pGC != NULL);
 
@@ -5518,8 +5532,8 @@ void mt_gc_draw_gc__gdi(mt_gc* pGC, mt_gc* pSrcGC, mt_int32 srcX, mt_int32 srcY)
 {
     HDC hDstDC;
     HDC hSrcDC;
-    int srcSizeX;
-    int srcSizeY;
+    mt_uint32 srcSizeX;
+    mt_uint32 srcSizeY;
 
     hDstDC = (HDC)pGC->gdi.hDC;
     hSrcDC = (HDC)pSrcGC->gdi.hDC;
@@ -5529,9 +5543,9 @@ void mt_gc_draw_gc__gdi(mt_gc* pGC, mt_gc* pSrcGC, mt_int32 srcX, mt_int32 srcY)
     /* If the image has an alpha channel we need to use AlphaBlend(). */
     if (pSrcGC->gdi.hBitmap != NULL && mt_format_has_alpha(pSrcGC->format)) {
         BLENDFUNCTION blend = {AC_SRC_OVER, 0, 255, AC_SRC_ALPHA};
-        ((MT_PFN_AlphaBlend)pGC->pAPI->gdi.AlphaBlend)(hDstDC, 0, 0, srcSizeX, srcSizeY, hSrcDC, srcX, srcY, srcSizeX, srcSizeY, blend);
+        ((MT_PFN_AlphaBlend)pGC->pAPI->gdi.AlphaBlend)(hDstDC, 0, 0, (int)srcSizeX, (int)srcSizeY, hSrcDC, srcX, srcY, (int)srcSizeX, (int)srcSizeY, blend);
     } else {
-        StretchBlt(hDstDC, 0, 0, srcSizeX, srcSizeY, hSrcDC, srcX, srcX, srcSizeX, srcSizeY, SRCCOPY);
+        StretchBlt(hDstDC, 0, 0, (int)srcSizeX, (int)srcSizeY, hSrcDC, srcX, srcX, (int)srcSizeX, (int)srcSizeY, SRCCOPY);
     }
 }
 
@@ -5593,7 +5607,7 @@ mt_result mt_itemize_utf16__gdi(mt_api* pAPI, const mt_utf16* pTextUTF16, size_t
 
                 pScriptItemsHeap = pNewScriptItemsHeap;
 
-                hResult = ((MT_PFN_ScriptItemize)pAPI->gdi.ScriptItemize)((const wchar_t*)pTextUTF16, (int)textLength, heapCap-1, NULL, NULL, (SCRIPT_ITEM*)pScriptItemsHeap, &scriptItemCount);   /* Subtract 1 from item capacity because the last item is always used as a null terminator. */
+                hResult = ((MT_PFN_ScriptItemize)pAPI->gdi.ScriptItemize)((const wchar_t*)pTextUTF16, (int)textLength, (int)(heapCap-1), NULL, NULL, (SCRIPT_ITEM*)pScriptItemsHeap, &scriptItemCount);   /* Subtract 1 from item capacity because the last item is always used as a null terminator. */
             }
 
             pScriptItems = pScriptItemsHeap;
@@ -6366,6 +6380,10 @@ mt_result mt_x_to_index(mt_api* pAPI, mt_item* pItem, mt_int32 x, size_t textLen
                         
                     found = MT_TRUE;
                 }
+            }
+
+            if (!found) {
+                return MT_INVALID_ARGS; /* Couldn't find the cluster for this glyph. */
             }
 
             if (pOffsetToEdge != NULL) {

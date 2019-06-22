@@ -3,8 +3,15 @@
 #include <stdio.h>
 #include <assert.h>
 
+#if defined(__clang__)
+    #pragma GCC diagnostic push
+    #pragma GCC diagnostic ignored "-Wcomment"  /* // comments are not allowed in this language [-Wcomment] */
+#endif
 #define STB_IMAGE_IMPLEMENTATION
 #include "../external/stb/stb_image.h"
+#if defined(__clang__)
+    #pragma GCC diagnostic pop
+#endif
 
 mt_result mt_fopen(FILE** ppFile, const char* filePath, const char* openMode)
 {
@@ -311,7 +318,7 @@ int mt_testapp_run(mt_testapp* pApp)
         MSG msg;
         BOOL result = GetMessageA(&msg, NULL, 0, 0);
         if (result == -1) {
-            exitCode = -1;   // Unknown error.
+            exitCode = -1;   /* Unknown error. */
             break;
         }
         if (result == 0) {

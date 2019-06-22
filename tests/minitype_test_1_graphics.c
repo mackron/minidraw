@@ -2,8 +2,16 @@
 #include "../minitype.h"
 #include "../tests/minitype_testcommon.c"
 
+#if defined(__clang__)
+    #pragma GCC diagnostic push
+    #pragma GCC diagnostic ignored "-Wcomment"          /* // comments are not allowed in this language [-Wcomment] */
+    #pragma GCC diagnostic ignored "-Wc99-extensions"   /* initializer for aggregate is not a compile-time constant */
+#endif
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "../external/stb/stb_image_write.h"
+#if defined(__clang__)
+    #pragma GCC diagnostic pop
+#endif
 
 #include <stdio.h>
 
