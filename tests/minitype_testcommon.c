@@ -1,5 +1,4 @@
 /* Include this file after minitype.h */
-
 #include <stdio.h>
 #include <assert.h>
 
@@ -36,7 +35,11 @@ mt_result mt_fopen(FILE** ppFile, const char* filePath, const char* openMode)
 #if defined(_WIN32) || defined(__APPLE__)
     *ppFile = fopen(filePath, openMode);
 #else
-    *ppFile = fopen64(filePath, openMode);
+    #if defined(_FILE_OFFSET_BITS) && _FILE_OFFSET_BITS == 64 && defined(_LARGEFILE64_SOURCE)
+        *ppFile = fopen64(filePath, openMode);
+    #else
+        *ppFile = fopen(filePath, openMode);
+    #endif
 #endif
     if (*ppFile == NULL) {
         mt_result result = mt_result_from_errno(errno);
@@ -239,6 +242,10 @@ HWND mt_testapp_create_HWND(mt_testapp_config* pConfig, mt_testapp* pApp)
 
     return hWnd;
 }
+#elif defined(MT_APPLE)
+/* Implement me. */
+#else
+
 #endif
 
 mt_result mt_testapp_init(mt_testapp_config* pConfig, mt_testapp* pApp)
@@ -261,6 +268,8 @@ mt_result mt_testapp_init(mt_testapp_config* pConfig, mt_testapp* pApp)
     MT_ZERO_OBJECT(&apiConfig);
 #if defined(MT_WIN32)
     apiConfig.backend = mt_backend_gdi;
+#elif defined(MT_APPLE)
+    apiConfig.backend = mt_backend_coregraphics;
 #else
     apiConfig.backend = mt_backend_cairo;
 #endif
@@ -276,6 +285,10 @@ mt_result mt_testapp_init(mt_testapp_config* pConfig, mt_testapp* pApp)
         mt_uninit(&pApp->mt);
         return MT_ERROR;
     }
+#elif defined(MT_APPLE)
+    /* Implement me. */
+#else
+    
 #endif
 
     if (pApp->onInit) {
@@ -283,6 +296,9 @@ mt_result mt_testapp_init(mt_testapp_config* pConfig, mt_testapp* pApp)
         if (result != MT_SUCCESS) {
         #if defined(MT_WIN32)
             DestroyWindow(pApp->hWnd);
+        #elif defined(MT_APPLE)
+        #else
+
         #endif
             mt_uninit(&pApp->mt);
             return result;
@@ -304,6 +320,9 @@ void mt_testapp_uninit(mt_testapp* pApp)
 
 #if defined(MT_WIN32)
     DestroyWindow(pApp->hWnd);
+#elif defined(MT_APPLE)
+#else
+
 #endif
 
     mt_uninit(&pApp->mt);
@@ -329,6 +348,9 @@ int mt_testapp_run(mt_testapp* pApp)
         TranslateMessage(&msg);
         DispatchMessageA(&msg);
     }
+#elif defined(MT_APPLE)
+#else
+
 #endif
 
     return exitCode;
@@ -349,6 +371,8 @@ void mt_testapp_get_size(mt_testapp* pApp, mt_uint32* pSizeX, mt_uint32* pSizeY)
     GetClientRect(pApp->hWnd, &rect);
     if (pSizeX) *pSizeX = (mt_uint32)(rect.right  - rect.left);
     if (pSizeY) *pSizeY = (mt_uint32)(rect.bottom - rect.top);
+#elif defined(MT_APPLE)
+    /* Implement me. */
 #else
     /* Implement me. */
 #endif
@@ -368,6 +392,8 @@ void mt_testapp_scheduled_redraw(mt_testapp* pApp, mt_int32 left, mt_int32 top, 
     rect.right  = right;
     rect.bottom = bottom;
     RedrawWindow(pApp->hWnd, &rect, NULL, RDW_INVALIDATE);
+#elif defined(MT_APPLE)
+    /* Implement me. */
 #else
     /* Implement me. */
 #endif

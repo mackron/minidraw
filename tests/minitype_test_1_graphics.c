@@ -1,3 +1,12 @@
+#if 0   /* Enable fopen64(). */
+#ifndef _FILE_OFFSET_BITS
+#define _FILE_OFFSET_BITS 64
+#endif
+#ifndef _LARGEFILE64_SOURCE
+#define _LARGEFILE64_SOURCE
+#endif
+#endif
+
 #define MINITYPE_IMPLEMENTATION
 #include "../minitype.h"
 #include "../tests/minitype_testcommon.c"

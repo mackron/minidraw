@@ -654,6 +654,13 @@ struct mt_brush
         mt_bool32 ownsBitmap : 1;       /* When set to true, hBitmap will be destroyed in mt_brush_uninit(). */
     } gdi;
 #endif
+#if defined(MT_SUPPORT_CAIRO)
+    struct
+    {
+        /*cairo_pattern_t**/ mt_ptr pCairoPattern;
+        /*cairo_surface_t**/ mt_ptr pCairoSurface;  /* Only used when the source is a cairo surface of a transient GC. */
+    } cairo;
+#endif
 };
 
 struct mt_gc_config
@@ -669,6 +676,12 @@ struct mt_gc_config
     {
         /*HDC*/ mt_handle hDC;          /* Existing HDC to use as the rendering target. Set this for transient context's such as those used in BeginPaint()/EndPaint() pairs. */
     } gdi;
+#endif
+#if defined(MT_SUPPORT_CAIRO)
+    struct
+    {
+        /*cairo_t**/ mt_ptr pCairoContext;
+    } cairo;
 #endif
 };
 
@@ -726,7 +739,11 @@ struct mt_gc
 #if defined(MT_SUPPORT_CAIRO)
     struct
     {
-        int _unused;
+        /*cairo_t**/ mt_ptr pCairoContext;
+        /*cairo_surface_t**/ mt_ptr pCairoSurface;
+        void* pCairoSurfaceData;
+        mt_uint32 cairoSurfaceSizeX;
+        mt_uint32 cairoSurfaceSizeY;
     } cairo;
 #endif
 #if defined(MT_SUPPORT_XFT)
@@ -1445,7 +1462,13 @@ mt_bool32 mt_is_null_or_whitespace(const mt_utf8* pUTF8) { return mt_is_null_or_
  **************************************************************************************************************************************************************
  **************************************************************************************************************************************************************/
 #if defined(MINITYPE_IMPLEMENTATION)
+#include <stdlib.h>
+#include <string.h>
 #include <errno.h>
+
+#if !defined(MT_WIN32)
+#include <dlfcn.h>
+#endif
 
 /* CPU Architecture */
 #if defined(__x86_64__) || defined(_M_X64)
@@ -1582,7 +1605,7 @@ mt_bool32 mt_is_null_or_whitespace(const mt_utf8* pUTF8) { return mt_is_null_or_
 #if defined(MT_ENABLE_XFT)
     #define MT_HAS_XFT          /* Some headers are required for XFT. */
     #if defined(__has_include)
-        #if !__has_include(<X11/Xft/Xft.h>) || !__has_include(<harfbuzz/hb-ft.h>)
+        #if !__has_include(<ft2build.h>) || !__has_include(<X11/Xft/Xft.h>) || !__has_include(<harfbuzz/hb-ft.h>)
             #undef MT_HAS_XFT
         #endif
     #endif
@@ -1756,7 +1779,7 @@ static MT_INLINE mt_uint32 mt_host2le_32(mt_uint32 n)
     return n;
 }
 
-mt_result mt_result_from_errno(errno_t e)
+mt_result mt_result_from_errno(int e)
 {
     switch (e) {
         case EACCES: return MT_ACCESS_DENIED;
@@ -6120,10 +6143,810 @@ mt_result mt_init__gdi(const mt_api_config* pConfig, mt_api* pAPI)
 #include <pango/pangocairo.h>
 
 /* Font */
+mt_result mt_font_init__cairo(mt_api* pAPI, const mt_font_config* pConfig, mt_font* pFont)
+{
+    MT_ASSERT(pAPI != NULL);
+    MT_ASSERT(pConfig != NULL);
+    MT_ASSERT(pFont != NULL);
+
+    (void)pAPI;
+    (void)pConfig;
+    (void)pFont;
+
+    return MT_SUCCESS;
+}
+
+void mt_font_uninit__cairo(mt_font* pFont)
+{
+    MT_ASSERT(pFont != NULL);
+
+    (void)pFont;
+}
+
+mt_result mt_font_get_glyph_metrics__cairo(mt_font* pFont, const mt_glyph* pGlyphs, size_t glyphCount, mt_glyph_metrics* pGlyphMetrics)
+{
+    MT_ASSERT(pFont         != NULL);
+    MT_ASSERT(pGlyphs       != NULL);
+    MT_ASSERT(pGlyphMetrics != NULL);
+
+    (void)pFont;
+    (void)pGlyphs;
+    (void)glyphCount;
+    (void)pGlyphMetrics;
+
+    return MT_SUCCESS;
+}
+
+mt_result mt_font_get_glyph_metrics_by_index__cairo(mt_font* pFont, const mt_uint32* pGlyphIndices, size_t glyphCount, mt_glyph_metrics* pGlyphMetrics)
+{
+    MT_ASSERT(pFont         != NULL);
+    MT_ASSERT(pGlyphIndices != NULL);
+    MT_ASSERT(pGlyphMetrics != NULL);
+
+    (void)pFont;
+    (void)pGlyphIndices;
+    (void)glyphCount;
+    (void)pGlyphMetrics;
+
+    return MT_SUCCESS;
+}
+
+
+/* Brush */
+mt_result mt_brush_init__cairo(mt_api* pAPI, const mt_brush_config* pConfig, mt_brush* pBrush)
+{
+    cairo_pattern_t* pCairoPattern = NULL;
+
+    MT_ASSERT(pAPI    != NULL);
+    MT_ASSERT(pConfig != NULL);
+    MT_ASSERT(pBrush  != NULL);
+
+    (void)pAPI;
+
+    switch (pConfig->type)
+    {
+        case mt_brush_type_solid:
+        {
+            pCairoPattern = cairo_pattern_create_rgba(pConfig->solid.color.r, pConfig->solid.color.g, pConfig->solid.color.b, pConfig->solid.color.a);
+            if (pCairoPattern == NULL) {
+                return MT_ERROR;    /* Failed to create the pattern. */
+            }
+        } break;
+
+        case mt_brush_type_gc:
+        {
+            if (pConfig->gc.pGC == NULL) {
+                return MT_INVALID_ARGS;
+            }
+
+            if (pConfig->gc.pGC->isTransient) {
+                /* TODO: Implement me. Need to create a temporary surface for the brush. */
+            } else {
+                if (pConfig->gc.pGC->cairo.pCairoSurface == NULL) {
+                    return MT_INVALID_ARGS; /* Source GC is not in a valid state. */
+                }
+
+                pCairoPattern = cairo_pattern_create_for_surface(pConfig->gc.pGC->cairo.pCairoSurface);
+            }
+        } break;
+    }
+
+    if (pCairoPattern == NULL) {
+        return MT_ERROR;
+    }
+
+    /* We need to check the status of the surface. */
+    if (cairo_pattern_status(pCairoPattern) != CAIRO_STATUS_SUCCESS) {
+        cairo_pattern_destroy(pCairoPattern);
+        return MT_ERROR;    /* An error occurred when creating the pattern. */
+    }
+
+    pBrush->cairo.pCairoPattern = pCairoPattern;
+
+    return MT_SUCCESS;
+}
+
+void mt_brush_uninit__cairo(mt_brush* pBrush)
+{
+    MT_ASSERT(pBrush != NULL);
+
+    cairo_pattern_destroy((cairo_pattern_t*)pBrush->cairo.pCairoPattern);
+
+    if (pBrush->cairo.pCairoSurface != NULL) {
+        cairo_surface_destroy(pBrush->cairo.pCairoSurface);
+    }
+
+    MT_ZERO_OBJECT(pBrush); /* Safety. */
+}
+
+void mt_brush_set_origin__cairo(mt_brush* pBrush, mt_int32 x, mt_int32 y)
+{
+    cairo_matrix_t m;
+
+    MT_ASSERT(pBrush != NULL);
+
+    cairo_matrix_init_translate(&m, (double)x, (double)y);
+    cairo_pattern_set_matrix((cairo_pattern_t*)pBrush->cairo.pCairoPattern, &m);
+}
+
 
 /* Graphics */
+mt_result mt_gc_init__cairo(mt_api* pAPI, const mt_gc_config* pConfig, mt_gc* pGC)
+{
+    MT_ASSERT(pAPI    != NULL);
+    MT_ASSERT(pConfig != NULL);
+    MT_ASSERT(pGC     != NULL);
+
+    (void)pAPI;
+
+    /* For accurate size retrieval, the size needs to be set in the config, even for transient GC's. */
+    pGC->cairo.cairoSurfaceSizeX = pConfig->sizeX;
+    pGC->cairo.cairoSurfaceSizeY = pConfig->sizeY;
+
+    if (pConfig->cairo.pCairoContext != NULL) {
+        pGC->isTransient = MT_TRUE;
+        pGC->format = mt_format_unknown;
+        pGC->cairo.pCairoContext = pConfig->cairo.pCairoContext;
+    } else {
+        cairo_surface_t* pCairoSurface;
+
+        pGC->isTransient = MT_FALSE;
+        pGC->format = pConfig->format;
+
+        /* We need a surface before we can create the Cairo context. */
+        pGC->cairo.pCairoSurfaceData = MT_MALLOC(pConfig->sizeX * pConfig->sizeY * mt_get_bytes_per_pixel(mt_format_argb));
+        if (pGC->cairo.pCairoSurfaceData == NULL) {
+            return MT_OUT_OF_MEMORY;
+        }
+
+        if (pConfig->pInitialImageData != NULL) {
+            /* Image data needs to be converted. */
+            mt_copy_image_data(pGC->cairo.pCairoSurfaceData, pConfig->pInitialImageData, pConfig->sizeX, pConfig->sizeY, 0, mt_format_argb, pConfig->stride, pConfig->format);
+        } else {
+            /* Clear to zero initially. */
+            MT_ZERO_MEMORY(pGC->cairo.pCairoSurfaceData, pConfig->sizeX * pConfig->sizeY * mt_get_bytes_per_pixel(mt_format_argb));
+        }
+
+        pCairoSurface = cairo_image_surface_create_for_data((unsigned char*)pGC->cairo.pCairoSurfaceData, CAIRO_FORMAT_ARGB32, (int)pConfig->sizeX, (int)pConfig->sizeY, (int)pConfig->sizeX*4);
+        if (pCairoSurface == NULL) {
+            MT_FREE(pGC->cairo.pCairoSurfaceData);
+            pGC->cairo.pCairoSurfaceData = NULL;
+            return MT_ERROR;    /* Failed to create cairo_surface_t object. */
+        }
+
+        pGC->cairo.pCairoContext = (mt_ptr)cairo_create(pCairoSurface);
+        if (pGC->cairo.pCairoContext == NULL) {
+            cairo_surface_destroy(pCairoSurface);
+            MT_FREE(pGC->cairo.pCairoSurfaceData);
+            pGC->cairo.pCairoSurfaceData = NULL;
+            return MT_ERROR;    /* Failed to create cairo_t object. */
+        }
+
+        pGC->cairo.pCairoSurface = pCairoSurface;
+
+        /* Set defaults here. */
+        cairo_set_operator((cairo_t*)pGC->cairo.pCairoContext, CAIRO_OPERATOR_SOURCE);
+    }
+
+    return MT_SUCCESS;
+}
+
+void mt_gc_uninit__cairo(mt_gc* pGC)
+{
+    MT_ASSERT(pGC != NULL);
+
+    if (!pGC->isTransient) {
+        cairo_destroy((cairo_t*)pGC->cairo.pCairoContext);
+        pGC->cairo.pCairoContext = NULL;
+    }
+
+    if (pGC->cairo.pCairoSurface != NULL) {
+        cairo_surface_destroy((cairo_surface_t*)pGC->cairo.pCairoSurface);
+        pGC->cairo.pCairoSurface = NULL;
+    }
+
+    MT_FREE(pGC->cairo.pCairoSurfaceData);
+    pGC->cairo.pCairoSurfaceData = NULL;
+}
+
+mt_result mt_gc_get_size__cairo(mt_gc* pGC, mt_uint32* pSizeX, mt_uint32* pSizeY)
+{
+    MT_ASSERT(pGC    != NULL);
+    MT_ASSERT(pSizeX != NULL);
+    MT_ASSERT(pSizeY != NULL);
+
+    *pSizeX = pGC->cairo.cairoSurfaceSizeX;
+    *pSizeY = pGC->cairo.cairoSurfaceSizeY;
+
+    return MT_SUCCESS;
+}
+
+mt_result mt_gc_get_image_data__cairo(mt_gc* pGC, mt_format outputFormat, void* pImageData)
+{
+    MT_ASSERT(pGC != NULL);
+
+    /* Cannot currently do this on transient GC's. */
+    if (pGC->isTransient || pGC->cairo.pCairoSurface == NULL) {
+        return MT_INVALID_OPERATION;
+    }
+
+    cairo_surface_flush((cairo_surface_t*)pGC->cairo.pCairoSurface);
+    mt_copy_image_data(pImageData, pGC->cairo.pCairoSurfaceData, pGC->cairo.cairoSurfaceSizeX, pGC->cairo.cairoSurfaceSizeY, 0, outputFormat, 0, mt_format_bgra);
+
+    return MT_SUCCESS;
+}
+
+mt_result mt_gc_save__cairo(mt_gc* pGC)
+{
+    MT_ASSERT(pGC != NULL);
+
+    cairo_save((cairo_t*)pGC->cairo.pCairoContext);
+
+    return MT_SUCCESS;
+}
+
+mt_result mt_gc_restore__cairo(mt_gc* pGC)
+{
+    MT_ASSERT(pGC != NULL);
+
+    cairo_restore((cairo_t*)pGC->cairo.pCairoContext);
+
+    return MT_SUCCESS;
+}
+
+void mt_gc_set_matrix__cairo(mt_gc* pGC, const mt_matrix* pMatrix)
+{
+    cairo_matrix_t m;
+
+    MT_ASSERT(pGC != NULL);
+    MT_ASSERT(pMatrix != NULL);
+
+    cairo_matrix_init(
+        &m,
+        pMatrix->m00, pMatrix->m01,
+        pMatrix->m10, pMatrix->m11,
+        pMatrix->dx,  pMatrix->dy
+    );
+
+    cairo_set_matrix((cairo_t*)pGC->cairo.pCairoContext, &m);
+}
+
+void mt_gc_get_matrix__cairo(mt_gc* pGC, mt_matrix* pMatrix)
+{
+    cairo_matrix_t m;
+
+    MT_ASSERT(pGC != NULL);
+    MT_ASSERT(pMatrix != NULL);
+
+    cairo_get_matrix((cairo_t*)pGC->cairo.pCairoContext, &m);
+
+    pMatrix->m00 = m.xx;
+    pMatrix->m01 = m.xy;
+    pMatrix->m10 = m.yx;
+    pMatrix->m11 = m.yy;
+    pMatrix->dx  = m.x0;
+    pMatrix->dy  = m.y0;
+}
+
+void mt_gc_set_matrix_identity__cairo(mt_gc* pGC)
+{
+    MT_ASSERT(pGC != NULL);
+
+    cairo_identity_matrix((cairo_t*)pGC->cairo.pCairoContext);
+}
+
+void mt_gc_transform__cairo(mt_gc* pGC, const mt_matrix* pMatrix)
+{
+    cairo_matrix_t m;
+
+    MT_ASSERT(pGC != NULL);
+    MT_ASSERT(pMatrix != NULL);
+
+    cairo_matrix_init(
+        &m,
+        pMatrix->m00, pMatrix->m01,
+        pMatrix->m10, pMatrix->m11,
+        pMatrix->dx,  pMatrix->dy
+    );
+
+    cairo_transform((cairo_t*)pGC->cairo.pCairoContext, &m);
+}
+
+void mt_gc_translate__cairo(mt_gc* pGC, mt_int32 offsetX, mt_int32 offsetY)
+{
+    MT_ASSERT(pGC != NULL);
+
+    cairo_translate((cairo_t*)pGC->cairo.pCairoContext, (double)offsetX, (double)offsetY);
+}
+
+void mt_gc_rotate__cairo(mt_gc* pGC, float rotationInRadians)
+{
+    MT_ASSERT(pGC != NULL);
+
+    cairo_rotate((cairo_t*)pGC->cairo.pCairoContext, (double)rotationInRadians);
+}
+
+void mt_gc_scale__cairo(mt_gc* pGC, float scaleX, float scaleY)
+{
+    MT_ASSERT(pGC != NULL);
+
+    cairo_scale((cairo_t*)pGC->cairo.pCairoContext, (double)scaleX, (double)scaleY);
+}
+
+void mt_gc_set_miter_limit__cairo(mt_gc* pGC, float limit)
+{
+    MT_ASSERT(pGC != NULL);
+
+    cairo_set_miter_limit((cairo_t*)pGC->cairo.pCairoContext, (double)limit);
+}
+
+void mt_gc_set_line_width__cairo(mt_gc* pGC, mt_int32 width)
+{
+    MT_ASSERT(pGC != NULL);
+
+    cairo_set_line_width((cairo_t*)pGC->cairo.pCairoContext, (double)width);
+}
+
+void mt_gc_set_line_cap__cairo(mt_gc* pGC, mt_line_cap cap)
+{
+    cairo_line_cap_t capCairo;
+
+    MT_ASSERT(pGC != NULL);
+    
+    switch (cap)
+    {
+        case mt_line_cap_square:
+        {
+            capCairo = CAIRO_LINE_CAP_SQUARE;
+        } break;
+        case mt_line_cap_round:
+        {
+            capCairo = CAIRO_LINE_CAP_ROUND;
+        } break;
+        case mt_line_cap_flat:
+        default:
+        {
+            capCairo = CAIRO_LINE_CAP_BUTT;
+        } break;
+    }
+
+    cairo_set_line_cap((cairo_t*)pGC->cairo.pCairoContext, capCairo);
+}
+
+void mt_gc_set_line_join__cairo(mt_gc* pGC, mt_line_join join)
+{
+    cairo_line_join_t joinCairo;
+
+    MT_ASSERT(pGC != NULL);
+
+    switch (join)
+    {
+        case mt_line_join_bevel:
+        {
+            joinCairo = CAIRO_LINE_JOIN_BEVEL;
+        } break;
+        case mt_line_join_round:
+        {
+            joinCairo = CAIRO_LINE_JOIN_ROUND;
+        } break;
+        case mt_line_join_miter:
+        default:
+        {
+            joinCairo = CAIRO_LINE_JOIN_MITER;
+        } break;
+    }
+
+    cairo_set_line_join((cairo_t*)pGC->cairo.pCairoContext, joinCairo);
+}
+
+void mt_gc_set_line_dash__cairo(mt_gc* pGC, float* dashes, mt_uint32 count)
+{
+    double dashesD[16]; /* Max of 16. */
+    mt_uint32 iDash;
+
+    MT_ASSERT(pGC != NULL);
+    MT_ASSERT(count < 16);
+
+    for (iDash = 0; iDash < count; ++iDash) {
+        dashesD[iDash] = (double)dashes[iDash];
+    }
+
+    cairo_set_dash((cairo_t*)pGC->cairo.pCairoContext, dashesD, count, 0);
+}
+
+void mt_gc_set_line_brush__cairo(mt_gc* pGC, mt_brush* pBrush)
+{
+    MT_ASSERT(pGC != NULL);
+
+    /* TODO: Implement me. */
+
+    (void)pGC;
+    (void)pBrush;
+}
+
+void mt_gc_set_line_brush_solid__cairo(mt_gc* pGC, mt_color color)
+{
+    MT_ASSERT(pGC != NULL);
+
+    /* TODO: Implement me. */
+
+    (void)pGC;
+    (void)color;
+}
+
+void mt_gc_set_line_brush_gc__cairo(mt_gc* pGC, mt_gc* pSrcGC)
+{
+    MT_ASSERT(pGC != NULL);
+
+    /* TODO: Implement me. */
+
+    (void)pGC;
+    (void)pSrcGC;
+}
+
+void mt_gc_set_fill_brush__cairo(mt_gc* pGC, mt_brush* pBrush)
+{
+    MT_ASSERT(pGC != NULL);
+
+    /* TODO: Implement me. */
+
+    (void)pGC;
+    (void)pBrush;
+}
+
+void mt_gc_set_fill_brush_solid__cairo(mt_gc* pGC, mt_color color)
+{
+    MT_ASSERT(pGC != NULL);
+
+    /* TODO: Implement me. */
+
+    (void)pGC;
+    (void)color;
+}
+
+void mt_gc_set_fill_brush_gc__cairo(mt_gc* pGC, mt_gc* pSrcGC)
+{
+    MT_ASSERT(pGC != NULL);
+
+    /* TODO: Implement me. */
+
+    (void)pGC;
+    (void)pSrcGC;
+}
+
+void mt_gc_set_font__cairo(mt_gc* pGC, mt_font* pFont)
+{
+    MT_ASSERT(pGC != NULL);
+
+    /* TODO: Implement me. */
+
+    (void)pGC;
+    (void)pFont;
+}
+
+void mt_gc_set_text_fg_color__cairo(mt_gc* pGC, mt_color fgColor)
+{
+    MT_ASSERT(pGC != NULL);
+
+    /* TODO: Implement me. */
+
+    (void)pGC;
+    (void)fgColor;
+}
+
+void mt_gc_set_text_bg_color__cairo(mt_gc* pGC, mt_color bgColor)
+{
+    MT_ASSERT(pGC != NULL);
+
+    /* TODO: Implement me. */
+
+    (void)pGC;
+    (void)bgColor;
+}
+
+void mt_gc_set_blend_op__cairo(mt_gc* pGC, mt_blend_op op)
+{
+    cairo_operator_t opCairo;
+
+    MT_ASSERT(pGC != NULL);
+
+    switch (op)
+    {
+        case mt_blend_op_src:
+        {
+            opCairo = CAIRO_OPERATOR_SOURCE;
+        } break;
+        case mt_blend_op_src_over:
+        {
+            opCairo = CAIRO_OPERATOR_OVER;
+        } break;
+        default:
+        {
+            opCairo = CAIRO_OPERATOR_SOURCE;
+        } break;
+    }
+
+    cairo_set_operator((cairo_t*)pGC->cairo.pCairoContext, opCairo);
+}
+
+void mt_gc_set_antialias_mode__cairo(mt_gc* pGC, mt_antialias_mode mode)
+{
+    cairo_antialias_t modeCairo;
+
+    MT_ASSERT(pGC != NULL);
+
+    switch (mode)
+    {
+        case mt_antialias_mode_none:
+        {
+            modeCairo = CAIRO_ANTIALIAS_NONE;
+        } break;
+        case mt_antialias_mode_default:
+        default:
+        {
+            modeCairo = CAIRO_ANTIALIAS_DEFAULT;
+        } break;
+    }
+
+    cairo_set_antialias((cairo_t*)pGC->cairo.pCairoContext, modeCairo);
+}
+
+void mt_gc_set_stretch_filter__cairo(mt_gc* pGC, mt_stretch_filter filter)
+{
+    MT_ASSERT(pGC != NULL);
+
+    /* TODO: Implement me. */
+
+    /* This state is set on a per-pattern basis in Cairo so we'll need to track some state. */
+
+    (void)pGC;
+    (void)filter;
+}
+
+void mt_gc_move_to__cairo(mt_gc* pGC, mt_int32 x, mt_int32 y)
+{
+    MT_ASSERT(pGC != NULL);
+
+    cairo_move_to((cairo_t*)pGC->cairo.pCairoContext, (double)x, (double)y);
+}
+
+void mt_gc_line_to__cairo(mt_gc* pGC, mt_int32 x, mt_int32 y)
+{
+    MT_ASSERT(pGC != NULL);
+
+    cairo_line_to((cairo_t*)pGC->cairo.pCairoContext, (double)x, (double)y);
+}
+
+void mt_gc_rectangle__cairo(mt_gc* pGC, mt_int32 left, mt_int32 top, mt_int32 right, mt_int32 bottom)
+{
+    MT_ASSERT(pGC != NULL);
+
+    cairo_rectangle((cairo_t*)pGC->cairo.pCairoContext, (double)left, (double)top, (double)(right - left), (double)(bottom - top));
+}
+
+void mt_gc_arc__cairo(mt_gc* pGC, mt_int32 x, mt_int32 y, mt_int32 radius, float angle1InRadians, float angle2InRadians)
+{
+    MT_ASSERT(pGC != NULL);
+
+    cairo_arc((cairo_t*)pGC->cairo.pCairoContext, (double)x, (double)y, (double)radius, (double)angle1InRadians, (double)angle2InRadians);
+}
+
+void mt_gc_curve_to__cairo(mt_gc* pGC, mt_int32 x1, mt_int32 y1, mt_int32 x2, mt_int32 y2, mt_int32 x3, mt_int32 y3)
+{
+    MT_ASSERT(pGC != NULL);
+
+    cairo_curve_to((cairo_t*)pGC->cairo.pCairoContext, (double)x1, (double)x2, (double)y1, (double)y2, (double)x3, (double)y3);
+}
+
+void mt_gc_close_path__cairo(mt_gc* pGC)
+{
+    MT_ASSERT(pGC != NULL);
+
+    cairo_close_path((cairo_t*)pGC->cairo.pCairoContext);
+}
+
+void mt_gc_clip__cairo(mt_gc* pGC)
+{
+    MT_ASSERT(pGC != NULL);
+
+    cairo_clip((cairo_t*)pGC->cairo.pCairoContext);
+}
+
+void mt_gc_reset_clip__cairo(mt_gc* pGC)
+{
+    MT_ASSERT(pGC != NULL);
+
+    cairo_reset_clip((cairo_t*)pGC->cairo.pCairoContext);
+}
+
+mt_bool32 mt_gc_is_point_inside_clip__cairo(mt_gc* pGC, mt_int32 x, mt_int32 y)
+{
+    MT_ASSERT(pGC != NULL);
+
+    return (mt_bool32)cairo_in_clip((cairo_t*)pGC->cairo.pCairoContext, (double)x, (double)y);
+}
+
+void mt_gc_fill__cairo(mt_gc* pGC)
+{
+    MT_ASSERT(pGC != NULL);
+
+    /* TODO: Set the source to the fill brush. If it's a GC brush, make sure the filter is set properly. */
+    cairo_fill((cairo_t*)pGC->cairo.pCairoContext);
+}
+
+void mt_gc_stroke__cairo(mt_gc* pGC)
+{
+    MT_ASSERT(pGC != NULL);
+
+    /* TODO: Set the source ot the line brush. If it's a GC brush, make sure the filter is set properly. */
+    cairo_stroke((cairo_t*)pGC->cairo.pCairoContext);
+}
+
+void mt_gc_fill_and_stroke__cairo(mt_gc* pGC)
+{
+    MT_ASSERT(pGC != NULL);
+
+    /* TODO: Set the source to the fill brush. If it's a GC brush, make sure the filter is set properly. */
+    cairo_fill((cairo_t*)pGC->cairo.pCairoContext);
+
+    /* TODO: Set the source ot the line brush. If it's a GC brush, make sure the filter is set properly. */
+    cairo_stroke((cairo_t*)pGC->cairo.pCairoContext);
+}
+
+void mt_gc_draw_gc__cairo(mt_gc* pGC, mt_gc* pSrcGC, mt_int32 srcX, mt_int32 srcY)
+{
+    MT_ASSERT(pGC != NULL);
+    MT_ASSERT(pSrcGC != NULL);
+
+    /* This cannot be done using a transient GC. */
+    if (pSrcGC->isTransient || pSrcGC->cairo.pCairoSurface == NULL) {
+        return;
+    }
+
+    cairo_save((cairo_t*)pGC->cairo.pCairoContext);
+    {
+        cairo_set_source_surface((cairo_t*)pGC->cairo.pCairoContext, (cairo_surface_t*)pSrcGC->cairo.pCairoSurface, srcX, srcY);
+        cairo_pattern_set_filter(cairo_get_source((cairo_t*)pGC->cairo.pCairoContext), CAIRO_FILTER_NEAREST);
+        cairo_paint((cairo_t*)pGC->cairo.pCairoContext);
+    }
+    cairo_restore((cairo_t*)pGC->cairo.pCairoContext);
+}
 
 /* API */
+mt_result mt_itemize_utf8__cairo(mt_api* pAPI, const mt_utf8* pTextUTF8, size_t textLength, mt_item* pItems, mt_uint32* pItemCount)
+{
+    MT_ASSERT(pAPI != NULL);
+    MT_ASSERT(textLength > 0);
+    MT_ASSERT(pTextUTF8 != NULL);
+    MT_ASSERT(pTextUTF8[0] != '\0');
+    MT_ASSERT(pItems != NULL);
+    MT_ASSERT(pItemCount != NULL);
+
+    (void)pAPI;
+    (void)pTextUTF8;
+    (void)textLength;
+    (void)pItems;
+    (void)pItemCount;
+
+    return MT_SUCCESS;
+}
+
+mt_result mt_shape_utf8__cairo(mt_font* pFont, mt_item* pItem, const mt_utf8* pTextUTF8, size_t textLength, mt_glyph* pGlyphs, size_t* pGlyphCount, size_t* pClusters, mt_text_metrics* pRunMetrics)
+{
+    MT_ASSERT(pItem != NULL);
+    MT_ASSERT(pFont != NULL);
+    MT_ASSERT(pTextUTF8 != NULL);
+    MT_ASSERT(pGlyphCount != NULL);
+
+    (void)pFont;
+    (void)pItem;
+    (void)pTextUTF8;
+    (void)textLength;
+    (void)pGlyphs;
+    (void)pGlyphCount;
+    (void)pClusters;
+    (void)pRunMetrics;
+
+    return MT_SUCCESS;
+}
+
+void mt_gc_draw_glyphs__cairo(mt_gc* pGC, const mt_item* pItem, const mt_glyph* pGlyphs, size_t glyphCount, mt_int32 x, mt_int32 y)
+{
+    MT_ASSERT(pGC     != NULL);
+    MT_ASSERT(pItem   != NULL);
+    MT_ASSERT(pGlyphs != NULL);
+
+    (void)pGC;
+    (void)pItem;
+    (void)pGlyphs;
+    (void)glyphCount;
+    (void)x;
+    (void)y;
+}
+
+void mt_gc_clear__cairo(mt_gc* pGC, mt_color color)
+{
+    MT_ASSERT(pGC != NULL);
+
+    cairo_set_source_rgba((cairo_t*)pGC->cairo.pCairoContext, color.r/255.0, color.g/255.0, color.b/255.0, color.a/255.0);
+    cairo_paint((cairo_t*)pGC->cairo.pCairoContext);
+}
+
+
+void mt_uninit__cairo(mt_api* pAPI)
+{
+    MT_ASSERT(pAPI != NULL);
+
+    (void)pAPI;
+}
+
+mt_result mt_init__cairo(const mt_api_config* pConfig, mt_api* pAPI)
+{
+    MT_ASSERT(pConfig != NULL);
+    MT_ASSERT(pAPI != NULL);
+
+    pAPI->uninit                     = mt_uninit__cairo;
+    pAPI->itemizeUTF8                = mt_itemize_utf8__cairo;
+    pAPI->itemizeUTF16               = NULL;    /* No native support for UTF-16 with Pango. */
+    pAPI->itemizeUTF32               = NULL;    /* No native support for UTF-32 with Pango. */
+    pAPI->shapeUTF8                  = mt_shape_utf8__cairo;
+    pAPI->shapeUTF16                 = NULL;    /* No native support for UTF-16 with Pango. */
+    pAPI->shapeUTF32                 = NULL;    /* No native support for UTF-32 with Pango. */
+    pAPI->fontInit                   = mt_font_init__cairo;
+    pAPI->fontUninit                 = mt_font_uninit__cairo;
+    pAPI->fontGetGlyphMetrics        = mt_font_get_glyph_metrics__cairo;
+    pAPI->fontGetGlyphMetricsByIndex = mt_font_get_glyph_metrics_by_index__cairo;
+    pAPI->brushInit                  = mt_brush_init__cairo;
+    pAPI->brushUninit                = mt_brush_uninit__cairo;
+    pAPI->brushSetOrigin             = mt_brush_set_origin__cairo;
+    pAPI->gcInit                     = mt_gc_init__cairo;
+    pAPI->gcUninit                   = mt_gc_uninit__cairo;
+    pAPI->gcGetImageData             = mt_gc_get_image_data__cairo;
+    pAPI->gcGetSize                  = mt_gc_get_size__cairo;
+    pAPI->gcSave                     = mt_gc_save__cairo;
+    pAPI->gcRestore                  = mt_gc_restore__cairo;
+    pAPI->gcSetMatrix                = mt_gc_set_matrix__cairo;
+    pAPI->gcGetMatrix                = mt_gc_get_matrix__cairo;
+    pAPI->gcSetMatrixIdentity        = mt_gc_set_matrix_identity__cairo;
+    pAPI->gcTransform                = mt_gc_transform__cairo;
+    pAPI->gcTranslate                = mt_gc_translate__cairo;
+    pAPI->gcRotate                   = mt_gc_rotate__cairo;
+    pAPI->gcScale                    = mt_gc_scale__cairo;
+    pAPI->gcSetLineWidth             = mt_gc_set_line_width__cairo;
+    pAPI->gcSetLineCap               = mt_gc_set_line_cap__cairo;
+    pAPI->gcSetLineJoin              = mt_gc_set_line_join__cairo;
+    pAPI->gcSetMiterLimit            = mt_gc_set_miter_limit__cairo;
+    pAPI->gcSetLineDash              = mt_gc_set_line_dash__cairo;
+    pAPI->gcSetLineBrush             = mt_gc_set_line_brush__cairo;
+    pAPI->gcSetLineBrushSolid        = mt_gc_set_line_brush_solid__cairo;
+    pAPI->gcSetLineBrushGC           = mt_gc_set_line_brush_gc__cairo;
+    pAPI->gcSetFillBrush             = mt_gc_set_fill_brush__cairo;
+    pAPI->gcSetFillBrushSolid        = mt_gc_set_fill_brush_solid__cairo;
+    pAPI->gcSetFillBrushGC           = mt_gc_set_fill_brush_gc__cairo;
+    pAPI->gcSetFont                  = mt_gc_set_font__cairo;
+    pAPI->gcSetTextFGColor           = mt_gc_set_text_fg_color__cairo;
+    pAPI->gcSetTextBGColor           = mt_gc_set_text_bg_color__cairo;
+    pAPI->gcSetBlendOp               = mt_gc_set_blend_op__cairo;
+    pAPI->gcSetAntialiasMode         = mt_gc_set_antialias_mode__cairo;
+    pAPI->gcSetStretchFilter         = mt_gc_set_stretch_filter__cairo;
+    pAPI->gcMoveTo                   = mt_gc_move_to__cairo;
+    pAPI->gcLineTo                   = mt_gc_line_to__cairo;
+    pAPI->gcRectangle                = mt_gc_rectangle__cairo;
+    pAPI->gcArc                      = mt_gc_arc__cairo;
+    pAPI->gcCurveTo                  = mt_gc_curve_to__cairo;
+    pAPI->gcClosePath                = mt_gc_close_path__cairo;
+    pAPI->gcClip                     = mt_gc_clip__cairo;
+    pAPI->gcResetClip                = mt_gc_reset_clip__cairo;
+    pAPI->gcIsPointInsideClip        = mt_gc_is_point_inside_clip__cairo;
+    pAPI->gcFill                     = mt_gc_fill__cairo;
+    pAPI->gcStroke                   = mt_gc_stroke__cairo;
+    pAPI->gcFillAndStroke            = mt_gc_fill_and_stroke__cairo;
+    pAPI->gcDrawGC                   = mt_gc_draw_gc__cairo;
+    pAPI->gcDrawGlyphs               = mt_gc_draw_glyphs__cairo;
+    pAPI->gcClear                    = mt_gc_clear__cairo;
+
+    return MT_SUCCESS;
+}
 
 #endif
 
@@ -6134,6 +6957,7 @@ mt_result mt_init__gdi(const mt_api_config* pConfig, mt_api* pAPI)
  **************************************************************************************************************************************************************/
 #if defined(MT_HAS_XFT)
 #include <X11/Xft/Xft.h>
+#include <harfbuzz/hb-ft.h>
 
 /* Font */
 
@@ -6169,6 +6993,12 @@ mt_result mt_init(const mt_api_config* pConfig, mt_api* pAPI)
         case mt_backend_gdi:
         {
             result = mt_init__gdi(pConfig, pAPI);
+        } break;
+#endif
+#if defined(MT_HAS_CAIRO)
+        case mt_backend_cairo:
+        {
+            result = mt_init__cairo(pConfig, pAPI);
         } break;
 #endif
 
