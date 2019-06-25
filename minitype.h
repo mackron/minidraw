@@ -704,6 +704,21 @@ typedef struct
     mt_bool32 hasPathBegun : 1;         /* Determines whether or not BeginPath has been called. */
 } mt_gc_state_gdi;
 #endif
+#if defined(MT_SUPPORT_CAIRO)
+typedef struct
+{
+    mt_stretch_filter stretchFilter;
+    mt_font* pFont;
+    mt_color textFGColor;
+    mt_color textBGColor;
+    mt_brush* pFillBrush;
+    mt_brush* pLineBrush;
+    mt_brush_config transientFillBrush;
+    mt_brush_config transientLineBrush;
+    mt_bool32 hasTransientFillBrush : 1;
+    mt_bool32 hasTransientLineBrush : 1;
+} mt_gc_state_cairo;
+#endif
 
 struct mt_gc
 {
@@ -744,6 +759,9 @@ struct mt_gc
         void* pCairoSurfaceData;
         mt_uint32 cairoSurfaceSizeX;
         mt_uint32 cairoSurfaceSizeY;
+        mt_gc_state_cairo* pState;      /* Heap allocated via realloc() for now. May change to a per-API allocation scheme. */
+        mt_uint32 stateCap;             /* The capacity of pState. */
+        mt_uint32 stateCount;           /* The number of valid items in pState. */
     } cairo;
 #endif
 #if defined(MT_SUPPORT_XFT)
@@ -6328,6 +6346,24 @@ mt_result mt_gc_init__cairo(mt_api* pAPI, const mt_gc_config* pConfig, mt_gc* pG
         cairo_set_operator((cairo_t*)pGC->cairo.pCairoContext, CAIRO_OPERATOR_SOURCE);
     }
 
+    /* We need at least one item in the state stack. Unfortunate malloc() here - may want to think about optimizing this. Perhaps some optimized per-API scheme? */
+    pGC->cairo.stateCount = 1;
+    pGC->cairo.stateCap   = 1;
+    pGC->cairo.pState = (mt_gc_state_cairo*)MT_CALLOC(pGC->cairo.stateCap, sizeof(*pGC->cairo.pState));
+    if (pGC->cairo.pState == NULL) {
+        if (!pGC->isTransient) {
+            cairo_destroy((cairo_t*)pGC->cairo.pCairoContext);
+            pGC->cairo.pCairoContext = NULL;
+
+            cairo_surface_destroy((cairo_surface_t*)pGC->cairo.pCairoSurface);
+            pGC->cairo.pCairoSurface = NULL;
+
+            MT_FREE(pGC->cairo.pCairoSurfaceData);
+            pGC->cairo.pCairoSurfaceData = NULL;
+        }
+        return MT_OUT_OF_MEMORY;
+    }
+
     return MT_SUCCESS;
 }
 
@@ -6379,8 +6415,25 @@ mt_result mt_gc_get_image_data__cairo(mt_gc* pGC, mt_format outputFormat, void* 
 mt_result mt_gc_save__cairo(mt_gc* pGC)
 {
     MT_ASSERT(pGC != NULL);
+    MT_ASSERT(pGC->cairo.stateCount > 0);
 
     cairo_save((cairo_t*)pGC->cairo.pCairoContext);
+
+    if (pGC->cairo.stateCount == pGC->cairo.stateCap) {
+        mt_uint32 newCap = MT_MAX(1, pGC->cairo.stateCap * 2);
+        mt_gc_state_cairo* pNewState = (mt_gc_state_cairo*)MT_REALLOC(pGC->cairo.pState, newCap * sizeof(*pNewState));
+        if (pNewState == NULL) {
+            return MT_OUT_OF_MEMORY;
+        }
+
+        pGC->cairo.pState   = pNewState;
+        pGC->cairo.stateCap = newCap;
+    }
+
+    MT_ASSERT(pGC->cairo.stateCount < pGC->cairo.stateCap);
+
+    pGC->cairo.pState[pGC->cairo.stateCount] = pGC->cairo.pState[pGC->cairo.stateCount-1];
+    pGC->cairo.stateCount += 1;
 
     return MT_SUCCESS;
 }
@@ -6388,6 +6441,13 @@ mt_result mt_gc_save__cairo(mt_gc* pGC)
 mt_result mt_gc_restore__cairo(mt_gc* pGC)
 {
     MT_ASSERT(pGC != NULL);
+    MT_ASSERT(pGC->cairo.stateCount > 0);
+
+    if (pGC->cairo.stateCount == 1) {
+        return MT_INVALID_OPERATION;    /* Nothing to restore. */
+    }
+
+    pGC->cairo.stateCount -= 1;
 
     cairo_restore((cairo_t*)pGC->cairo.pCairoContext);
 
@@ -6556,92 +6616,106 @@ void mt_gc_set_line_dash__cairo(mt_gc* pGC, float* dashes, mt_uint32 count)
 
 void mt_gc_set_line_brush__cairo(mt_gc* pGC, mt_brush* pBrush)
 {
+    mt_uint32 iState;
+
     MT_ASSERT(pGC != NULL);
 
-    /* TODO: Implement me. */
-
-    (void)pGC;
-    (void)pBrush;
+    iState = pGC->cairo.stateCount-1;
+    pGC->cairo.pState[iState].pLineBrush = pBrush;
+    pGC->cairo.pState[iState].hasTransientLineBrush = MT_FALSE;
 }
 
 void mt_gc_set_line_brush_solid__cairo(mt_gc* pGC, mt_color color)
 {
+    mt_uint32 iState;
+
     MT_ASSERT(pGC != NULL);
 
-    /* TODO: Implement me. */
-
-    (void)pGC;
-    (void)color;
+    iState = pGC->cairo.stateCount-1;
+    pGC->cairo.pState[iState].transientLineBrush.type = mt_brush_type_solid;
+    pGC->cairo.pState[iState].transientLineBrush.solid.color = color;
+    pGC->cairo.pState[iState].pLineBrush = NULL;
+    pGC->cairo.pState[iState].hasTransientLineBrush = MT_TRUE;
 }
 
 void mt_gc_set_line_brush_gc__cairo(mt_gc* pGC, mt_gc* pSrcGC)
 {
+    mt_uint32 iState;
+
     MT_ASSERT(pGC != NULL);
 
-    /* TODO: Implement me. */
-
-    (void)pGC;
-    (void)pSrcGC;
+    iState = pGC->cairo.stateCount-1;
+    pGC->cairo.pState[iState].transientLineBrush.type = mt_brush_type_gc;
+    pGC->cairo.pState[iState].transientLineBrush.gc.pGC = pSrcGC;
+    pGC->cairo.pState[iState].pLineBrush = NULL;
+    pGC->cairo.pState[iState].hasTransientLineBrush = MT_TRUE;
 }
 
 void mt_gc_set_fill_brush__cairo(mt_gc* pGC, mt_brush* pBrush)
 {
+    mt_uint32 iState;
+
     MT_ASSERT(pGC != NULL);
 
-    /* TODO: Implement me. */
-
-    (void)pGC;
-    (void)pBrush;
+    iState = pGC->cairo.stateCount-1;
+    pGC->cairo.pState[iState].pFillBrush = pBrush;
+    pGC->cairo.pState[iState].hasTransientFillBrush = MT_FALSE;
 }
 
 void mt_gc_set_fill_brush_solid__cairo(mt_gc* pGC, mt_color color)
 {
+    mt_uint32 iState;
+
     MT_ASSERT(pGC != NULL);
 
-    /* TODO: Implement me. */
-
-    (void)pGC;
-    (void)color;
+    iState = pGC->cairo.stateCount-1;
+    pGC->cairo.pState[iState].transientFillBrush.type = mt_brush_type_solid;
+    pGC->cairo.pState[iState].transientFillBrush.solid.color = color;
+    pGC->cairo.pState[iState].pFillBrush = NULL;
+    pGC->cairo.pState[iState].hasTransientFillBrush = MT_TRUE;
 }
 
 void mt_gc_set_fill_brush_gc__cairo(mt_gc* pGC, mt_gc* pSrcGC)
 {
+    mt_uint32 iState;
+
     MT_ASSERT(pGC != NULL);
 
-    /* TODO: Implement me. */
-
-    (void)pGC;
-    (void)pSrcGC;
+    iState = pGC->cairo.stateCount-1;
+    pGC->cairo.pState[iState].transientFillBrush.type = mt_brush_type_gc;
+    pGC->cairo.pState[iState].transientFillBrush.gc.pGC = pSrcGC;
+    pGC->cairo.pState[iState].pFillBrush = NULL;
+    pGC->cairo.pState[iState].hasTransientFillBrush = MT_TRUE;
 }
 
 void mt_gc_set_font__cairo(mt_gc* pGC, mt_font* pFont)
 {
+    mt_uint32 iState;
+
     MT_ASSERT(pGC != NULL);
 
-    /* TODO: Implement me. */
-
-    (void)pGC;
-    (void)pFont;
+    iState = pGC->cairo.stateCount-1;
+    pGC->cairo.pState[iState].pFont = pFont;
 }
 
 void mt_gc_set_text_fg_color__cairo(mt_gc* pGC, mt_color fgColor)
 {
+    mt_uint32 iState;
+
     MT_ASSERT(pGC != NULL);
 
-    /* TODO: Implement me. */
-
-    (void)pGC;
-    (void)fgColor;
+    iState = pGC->cairo.stateCount-1;
+    pGC->cairo.pState[iState].textFGColor = fgColor;
 }
 
 void mt_gc_set_text_bg_color__cairo(mt_gc* pGC, mt_color bgColor)
 {
+    mt_uint32 iState;
+
     MT_ASSERT(pGC != NULL);
 
-    /* TODO: Implement me. */
-
-    (void)pGC;
-    (void)bgColor;
+    iState = pGC->cairo.stateCount-1;
+    pGC->cairo.pState[iState].textBGColor = bgColor;
 }
 
 void mt_gc_set_blend_op__cairo(mt_gc* pGC, mt_blend_op op)
@@ -6693,14 +6767,12 @@ void mt_gc_set_antialias_mode__cairo(mt_gc* pGC, mt_antialias_mode mode)
 
 void mt_gc_set_stretch_filter__cairo(mt_gc* pGC, mt_stretch_filter filter)
 {
+    mt_uint32 iState;
+
     MT_ASSERT(pGC != NULL);
 
-    /* TODO: Implement me. */
-
-    /* This state is set on a per-pattern basis in Cairo so we'll need to track some state. */
-
-    (void)pGC;
-    (void)filter;
+    iState = pGC->cairo.stateCount-1;
+    pGC->cairo.pState[iState].stretchFilter = filter;
 }
 
 void mt_gc_move_to__cairo(mt_gc* pGC, mt_int32 x, mt_int32 y)
@@ -6766,31 +6838,134 @@ mt_bool32 mt_gc_is_point_inside_clip__cairo(mt_gc* pGC, mt_int32 x, mt_int32 y)
     return (mt_bool32)cairo_in_clip((cairo_t*)pGC->cairo.pCairoContext, (double)x, (double)y);
 }
 
+
+MT_PRIVATE cairo_filter_t mt_to_cairo_filter(mt_stretch_filter filter)
+{
+    cairo_filter_t filterCairo;
+    if (filter == mt_stretch_filter_nearest) {
+        filterCairo = CAIRO_FILTER_NEAREST;
+    } else {
+        filterCairo = CAIRO_FILTER_BILINEAR;
+    }
+
+    return filterCairo;
+}
+
+MT_PRIVATE void mt_gc_set_source_from_brush_config__cairo(mt_gc* pGC, const mt_brush_config* pConfig)
+{
+    mt_uint32 iState;
+
+    MT_ASSERT(pGC != NULL);
+    MT_ASSERT(pConfig != NULL);
+
+    iState = pGC->cairo.stateCount-1;
+
+    switch (pConfig->type)
+    {
+        case mt_brush_type_solid:
+        {
+            cairo_set_source_rgba((cairo_t*)pGC->cairo.pCairoContext, pConfig->solid.color.r, pConfig->solid.color.g, pConfig->solid.color.b, pConfig->solid.color.a);
+        } break;
+        /*case mt_brush_type_linear:
+        {
+        } break;*/
+        case mt_brush_type_gc:
+        {
+            cairo_set_source_surface((cairo_t*)pGC->cairo.pCairoContext, (cairo_surface_t*)pConfig->gc.pGC->cairo.pCairoSurface, 0, 0);
+            cairo_pattern_set_filter(cairo_get_source((cairo_t*)pGC->cairo.pCairoContext), mt_to_cairo_filter(pGC->cairo.pState[iState].stretchFilter));
+        } break;
+        default:
+        {
+        } break;
+    }
+}
+
+MT_PRIVATE void mt_gc_set_source_from_brush__cairo(mt_gc* pGC, mt_brush* pBrush)
+{
+    mt_uint32 iState;
+
+    MT_ASSERT(pGC != NULL);
+    MT_ASSERT(pBrush != NULL);
+
+    iState = pGC->cairo.stateCount-1;
+
+    if (pBrush != NULL) {
+        cairo_set_source((cairo_t*)pGC->cairo.pCairoContext, (cairo_pattern_t*)pBrush->cairo.pCairoPattern);
+        if (pBrush->config.type == mt_brush_type_gc) {
+            cairo_pattern_set_filter(cairo_get_source((cairo_t*)pGC->cairo.pCairoContext), mt_to_cairo_filter(pGC->cairo.pState[iState].stretchFilter));
+        }
+    } else {
+        cairo_set_source((cairo_t*)pGC->cairo.pCairoContext, NULL);
+    }
+}
+
+MT_PRIVATE void mt_gc_set_source_from_fill_brush__cairo(mt_gc* pGC)
+{
+    mt_uint32 iState;
+
+    MT_ASSERT(pGC != NULL);
+
+    iState = pGC->cairo.stateCount-1;
+
+    if (pGC->cairo.pState[iState].hasTransientFillBrush) {
+        mt_gc_set_source_from_brush_config__cairo(pGC, &pGC->cairo.pState[iState].transientFillBrush);
+    } else {
+        mt_gc_set_source_from_brush__cairo(pGC, pGC->cairo.pState[iState].pFillBrush);
+    }
+}
+
+MT_PRIVATE void mt_gc_set_source_from_line_brush__cairo(mt_gc* pGC)
+{
+    mt_uint32 iState;
+
+    MT_ASSERT(pGC != NULL);
+
+    iState = pGC->cairo.stateCount-1;
+
+    if (pGC->cairo.pState[iState].hasTransientLineBrush) {
+        mt_gc_set_source_from_brush_config__cairo(pGC, &pGC->cairo.pState[iState].transientLineBrush);
+    } else {
+        mt_gc_set_source_from_brush__cairo(pGC, pGC->cairo.pState[iState].pLineBrush);
+    }
+}
+
 void mt_gc_fill__cairo(mt_gc* pGC)
 {
     MT_ASSERT(pGC != NULL);
 
-    /* TODO: Set the source to the fill brush. If it's a GC brush, make sure the filter is set properly. */
-    cairo_fill((cairo_t*)pGC->cairo.pCairoContext);
+    cairo_save((cairo_t*)pGC->cairo.pCairoContext);
+    {
+        mt_gc_set_source_from_fill_brush__cairo(pGC);
+        cairo_fill((cairo_t*)pGC->cairo.pCairoContext);
+    }
+    cairo_restore((cairo_t*)pGC->cairo.pCairoContext);
 }
 
 void mt_gc_stroke__cairo(mt_gc* pGC)
 {
     MT_ASSERT(pGC != NULL);
 
-    /* TODO: Set the source ot the line brush. If it's a GC brush, make sure the filter is set properly. */
-    cairo_stroke((cairo_t*)pGC->cairo.pCairoContext);
+    cairo_save((cairo_t*)pGC->cairo.pCairoContext);
+    {
+        mt_gc_set_source_from_line_brush__cairo(pGC);
+        cairo_stroke((cairo_t*)pGC->cairo.pCairoContext);
+    }
+    cairo_restore((cairo_t*)pGC->cairo.pCairoContext);
 }
 
 void mt_gc_fill_and_stroke__cairo(mt_gc* pGC)
 {
     MT_ASSERT(pGC != NULL);
 
-    /* TODO: Set the source to the fill brush. If it's a GC brush, make sure the filter is set properly. */
-    cairo_fill((cairo_t*)pGC->cairo.pCairoContext);
+    cairo_save((cairo_t*)pGC->cairo.pCairoContext);
+    {
+        mt_gc_set_source_from_fill_brush__cairo(pGC);
+        cairo_fill((cairo_t*)pGC->cairo.pCairoContext);
 
-    /* TODO: Set the source ot the line brush. If it's a GC brush, make sure the filter is set properly. */
-    cairo_stroke((cairo_t*)pGC->cairo.pCairoContext);
+        mt_gc_set_source_from_line_brush__cairo(pGC);
+        cairo_stroke((cairo_t*)pGC->cairo.pCairoContext);
+    }
+    cairo_restore((cairo_t*)pGC->cairo.pCairoContext);
 }
 
 void mt_gc_draw_gc__cairo(mt_gc* pGC, mt_gc* pSrcGC, mt_int32 srcX, mt_int32 srcY)
