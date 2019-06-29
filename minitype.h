@@ -406,15 +406,14 @@ typedef struct
 {
     mt_int32 ascent;
     mt_int32 descent;
-    mt_int32 lineHeight;
 } mt_font_metrics;
 
 typedef struct
 {
-    mt_int32 width;
-    mt_int32 height;
-    mt_int32 originX;
-    mt_int32 originY;
+    mt_int32 sizeX;
+    mt_int32 sizeY;
+    mt_int32 bearingX;
+    mt_int32 bearingY;
     mt_int32 advanceX;
     mt_int32 advanceY;
 } mt_glyph_metrics;
@@ -445,6 +444,10 @@ struct mt_api_config
     {
         /*HDC*/ mt_handle hDC;  /* Optional pre-created global device context. */
     } gdi;
+    struct
+    {
+        /*PangoContext**/ mt_ptr pPangoContext; /* Optional application-defined PangoContext. When set to null, the pango context is set to pango_font_map_create_context(pango_cairo_font_map_get_default()) */
+    } cairo;
 };
 
 struct mt_api
@@ -562,7 +565,7 @@ struct mt_api
 #if defined(MT_SUPPORT_CAIRO)
     struct
     {
-        int _unused;
+        /*PangoContext**/ mt_ptr pPangoContext; /* Created with the PangoFontMap retrieved with pango_cairo_font_map_get_default(). */
     } cairo;
 #endif
 #if defined(MT_SUPPORT_XFT)
@@ -576,10 +579,16 @@ struct mt_api
 struct mt_font_config
 {
     const char* family;
-    mt_uint32 sizeInPixels;
+    mt_uint32 sizeInPixels; /* If set to 0, sizeInPoints will be used instead. */
+    mt_uint32 sizeInPoints; /* If set to 0, sizeInPixels will be used instead. */
     mt_font_weight weight;
     mt_font_slant slant;
-    mt_bool32 noClearType;
+    mt_bool32 noClearType;  /* TODO: Change this to an enum: mt_text_antialias_mode or just reuse mt_antialias_mode. */
+    struct
+    {
+        /*PangoFontMap**/ mt_ptr pPangoFontMap; /* Custom application-defined PangoFontMap to use when creating the font. */
+        /*PangoContext**/ mt_ptr pPangoContext; /* Custom application-defined PangoContext to use when creating the font. */
+    } cairo;
 };
 
 struct mt_font
@@ -609,7 +618,7 @@ struct mt_font
 #if defined(MT_SUPPORT_CAIRO)
     struct
     {
-        int _unused;
+        /*PangoFont**/ mt_ptr pPangoFont;
     } cairo;
 #endif
 #if defined(MT_SUPPORT_XFT)
@@ -4552,6 +4561,7 @@ mt_result mt_font_init__gdi(mt_api* pAPI, const mt_font_config* pConfig, mt_font
     LONG weightGDI;
     LOGFONTA logfont;
     HFONT hFont;
+    LONG fontSize;
 
     MT_ASSERT(pAPI != NULL);
     MT_ASSERT(pConfig != NULL);
@@ -4570,16 +4580,22 @@ mt_result mt_font_init__gdi(mt_api* pAPI, const mt_font_config* pConfig, mt_font
     default:                         weightGDI = FW_REGULAR;    break;
     }
 
-	slantGDI = FALSE;
+    slantGDI = FALSE;
     if (pConfig->slant == mt_font_slant_italic || pConfig->slant == mt_font_slant_oblique) {
         slantGDI = TRUE;
     }
 
-	MT_ZERO_OBJECT(&logfont);
-    logfont.lfHeight      = -(LONG)(pConfig->sizeInPixels);
-	logfont.lfWeight      = weightGDI;
-	logfont.lfItalic      = slantGDI;
-	logfont.lfCharSet     = DEFAULT_CHARSET;
+    if (pConfig->sizeInPixels > 0) {
+        fontSize = -(LONG)pConfig->sizeInPixels;
+    } else {
+        fontSize = pConfig->sizeInPoints;
+    }
+
+    MT_ZERO_OBJECT(&logfont);
+    logfont.lfHeight      = fontSize;
+    logfont.lfWeight      = weightGDI;
+    logfont.lfItalic      = slantGDI;
+    logfont.lfCharSet     = DEFAULT_CHARSET;
     logfont.lfQuality     = (pConfig->noClearType) ? ANTIALIASED_QUALITY : CLEARTYPE_QUALITY;
     logfont.lfEscapement  = 0;
     logfont.lfOrientation = 0;
@@ -4597,9 +4613,8 @@ mt_result mt_font_init__gdi(mt_api* pAPI, const mt_font_config* pConfig, mt_font
 
         SelectObject((HDC)pAPI->gdi.hGlobalDC, hFont);
         GetTextMetricsW((HDC)pAPI->gdi.hGlobalDC, &metrics);
-        pFont->metrics.ascent     = metrics.tmAscent;
-        pFont->metrics.descent    = metrics.tmDescent;
-        pFont->metrics.lineHeight = metrics.tmHeight;
+        pFont->metrics.ascent  =  metrics.tmAscent;
+        pFont->metrics.descent = -metrics.tmDescent;
     }
     RestoreDC((HDC)pAPI->gdi.hGlobalDC, -1);
 
@@ -4631,10 +4646,10 @@ mt_result mt_font_get_glyph_metrics__gdi(mt_font* pFont, const mt_glyph* pGlyphs
             GLYPHMETRICS metrics;
             DWORD bitmapBufferSize = GetGlyphOutlineW((HDC)pFont->pAPI->gdi.hGlobalDC, pGlyphs[iGlyph].index, GGO_NATIVE | GGO_GLYPH_INDEX, &metrics, 0, NULL, &transform);
             if (bitmapBufferSize != GDI_ERROR) {
-                pGlyphMetrics[iGlyph].width    = metrics.gmBlackBoxX;
-                pGlyphMetrics[iGlyph].height   = metrics.gmBlackBoxY;
-                pGlyphMetrics[iGlyph].originX  = metrics.gmptGlyphOrigin.x;
-                pGlyphMetrics[iGlyph].originY  = metrics.gmptGlyphOrigin.y;
+                pGlyphMetrics[iGlyph].sizeX    = metrics.gmBlackBoxX;
+                pGlyphMetrics[iGlyph].sizeY    = metrics.gmBlackBoxY;
+                pGlyphMetrics[iGlyph].bearingX = metrics.gmptGlyphOrigin.x;
+                pGlyphMetrics[iGlyph].bearingY = metrics.gmptGlyphOrigin.y;
                 pGlyphMetrics[iGlyph].advanceX = metrics.gmCellIncX;
                 pGlyphMetrics[iGlyph].advanceY = metrics.gmCellIncY;
                 result = MT_SUCCESS;
@@ -4658,10 +4673,10 @@ mt_result mt_font_get_glyph_metrics_by_index__gdi(mt_font* pFont, const mt_uint3
             GLYPHMETRICS metrics;
             DWORD bitmapBufferSize = GetGlyphOutlineW((HDC)pFont->pAPI->gdi.hGlobalDC, pGlyphIndices[iGlyph], GGO_NATIVE | GGO_GLYPH_INDEX, &metrics, 0, NULL, &transform);
             if (bitmapBufferSize != GDI_ERROR) {
-                pGlyphMetrics[iGlyph].width    = metrics.gmBlackBoxX;
-                pGlyphMetrics[iGlyph].height   = metrics.gmBlackBoxY;
-                pGlyphMetrics[iGlyph].originX  = metrics.gmptGlyphOrigin.x;
-                pGlyphMetrics[iGlyph].originY  = metrics.gmptGlyphOrigin.y;
+                pGlyphMetrics[iGlyph].sizeX    = metrics.gmBlackBoxX;
+                pGlyphMetrics[iGlyph].sizeY    = metrics.gmBlackBoxY;
+                pGlyphMetrics[iGlyph].bearingX = metrics.gmptGlyphOrigin.x;
+                pGlyphMetrics[iGlyph].bearingY = metrics.gmptGlyphOrigin.y;
                 pGlyphMetrics[iGlyph].advanceX = metrics.gmCellIncX;
                 pGlyphMetrics[iGlyph].advanceY = metrics.gmCellIncY;
                 result = MT_SUCCESS;
@@ -5893,7 +5908,7 @@ mt_result mt_shape_utf16__gdi(mt_font* pFont, mt_item* pItem, const mt_utf16* pT
         pRunMetrics->lPadding = abc.abcA;
         pRunMetrics->rPadding = abc.abcC;
         pRunMetrics->sizeX    = abc.abcA + abc.abcB + abc.abcC;
-        pRunMetrics->sizeY    = pFont->metrics.lineHeight;
+        pRunMetrics->sizeY    = (pFont->metrics.ascent - pFont->metrics.descent);
     }
 
 
@@ -6160,16 +6175,89 @@ mt_result mt_init__gdi(const mt_api_config* pConfig, mt_api* pAPI)
 #if defined(MT_HAS_CAIRO)
 #include <pango/pangocairo.h>
 
+PangoStyle mt_PangoStyle_from_slant__pango(mt_font_slant slant)
+{
+    switch (slant)
+    {
+        case mt_font_slant_none:    return PANGO_STYLE_NORMAL;
+        case mt_font_slant_oblique: return PANGO_STYLE_OBLIQUE;
+        case mt_font_slant_italic:  return PANGO_STYLE_ITALIC;
+        default:                    return PANGO_STYLE_NORMAL;
+    }
+}
+
+PangoWeight mt_PangoWeight_from_weight__pango(mt_font_weight weight)
+{
+    switch (weight)
+    {
+        case mt_font_weight_medium:      return PANGO_WEIGHT_NORMAL;    /* There is actually a PANGO_WEIGHT_MEDIUM, which is different to PANGO_WEIGHT_NORMAL, however in minitype, normal and medium are the same. */
+        case mt_font_weight_thin:        return PANGO_WEIGHT_THIN;
+        case mt_font_weight_extra_light: return PANGO_WEIGHT_ULTRALIGHT;
+        case mt_font_weight_light:       return PANGO_WEIGHT_LIGHT;
+        case mt_font_weight_semi_light:  return PANGO_WEIGHT_SEMILIGHT;
+        case mt_font_weight_book:        return PANGO_WEIGHT_BOOK;
+        case mt_font_weight_semi_bold:   return PANGO_WEIGHT_SEMIBOLD;
+        case mt_font_weight_bold:        return PANGO_WEIGHT_BOLD;
+        case mt_font_weight_extra_bold:  return PANGO_WEIGHT_ULTRABOLD;
+        case mt_font_weight_heavy:       return PANGO_WEIGHT_HEAVY;
+        case mt_font_weight_extra_heavy: return PANGO_WEIGHT_ULTRAHEAVY;
+        default:                         return PANGO_WEIGHT_NORMAL;
+    }
+}
+
 /* Font */
 mt_result mt_font_init__cairo(mt_api* pAPI, const mt_font_config* pConfig, mt_font* pFont)
 {
+    PangoFontMap* pPangoFontMap;
+    PangoContext* pPangoContext;
+    PangoFontDescription* pPangoFontDesc;
+    PangoFont* pPangoFont;
+    PangoFontMetrics* pPangoFontMetrics;
+
     MT_ASSERT(pAPI != NULL);
     MT_ASSERT(pConfig != NULL);
     MT_ASSERT(pFont != NULL);
 
-    (void)pAPI;
-    (void)pConfig;
-    (void)pFont;
+    pPangoFontMap = pConfig->cairo.pPangoFontMap;
+    if (pPangoFontMap == NULL) {
+        pPangoFontMap = pango_cairo_font_map_get_default();
+    }
+
+    pPangoContext = pConfig->cairo.pPangoContext;
+    if (pPangoContext == NULL) {
+        pPangoContext = (PangoContext*)pAPI->cairo.pPangoContext;
+    }
+
+    pPangoFontDesc = pango_font_description_new();
+    if (pPangoFontDesc == NULL) {
+        return MT_OUT_OF_MEMORY;    /* Cannot think of a reason why this would fail other than out-of-memory. */
+    }
+
+    pango_font_description_set_family_static(pPangoFontDesc, pConfig->family);
+    pango_font_description_set_style(pPangoFontDesc, mt_PangoStyle_from_slant__pango(pConfig->slant));
+    pango_font_description_set_weight(pPangoFontDesc, mt_PangoWeight_from_weight__pango(pConfig->weight));
+    if (pConfig->sizeInPixels > 0) {
+        pango_font_description_set_absolute_size(pPangoFontDesc, pConfig->sizeInPixels*PANGO_SCALE);
+    } else {
+        pango_font_description_set_size(pPangoFontDesc, pConfig->sizeInPoints*PANGO_SCALE);
+    }
+
+    pPangoFont = pango_font_map_load_font(pPangoFontMap, pPangoContext, pPangoFontDesc);
+    if (pPangoFont == NULL) {
+        pango_font_description_free(pPangoFontDesc);
+        return MT_ERROR;    /* Failed to load the requested font. */
+    }
+
+    pango_font_description_free(pPangoFontDesc);
+    pPangoFontDesc = NULL;
+
+    /* We should have the font at this point, so now we need to retrieve the metrics. */
+    pPangoFontMetrics = pango_font_get_metrics(pPangoFont, NULL);
+    pFont->metrics.ascent = pango_font_metrics_get_ascent(pPangoFontMetrics);
+    pFont->metrics.descent = pango_font_metrics_get_descent(pPangoFontMetrics);
+    pango_font_metrics_unref(pPangoFontMetrics);
+
+    pFont->cairo.pPangoFont = pPangoFont;
 
     return MT_SUCCESS;
 }
@@ -6178,33 +6266,68 @@ void mt_font_uninit__cairo(mt_font* pFont)
 {
     MT_ASSERT(pFont != NULL);
 
-    (void)pFont;
+    g_object_unref((PangoFont*)pFont->cairo.pPangoFont);
+}
+
+MT_PRIVATE void mt_font_get_glyph_metrics_single__cairo(cairo_scaled_font_t* pCairoFont, mt_uint32 glyphIndex, mt_glyph_metrics* pGlyphMetrics)
+{
+    cairo_text_extents_t cairoMetrics;
+    cairo_glyph_t cairoGlyph;
+
+    cairoGlyph.index = glyphIndex;
+    cairoGlyph.x = 0;
+    cairoGlyph.y = 0;
+
+    cairo_scaled_font_glyph_extents(pCairoFont, &cairoGlyph, 1, &cairoMetrics);
+
+    pGlyphMetrics->sizeX    = cairoMetrics.width;
+    pGlyphMetrics->sizeY    = cairoMetrics.height;
+    pGlyphMetrics->bearingX = cairoMetrics.x_bearing;
+    pGlyphMetrics->bearingY = cairoMetrics.y_bearing;
+    pGlyphMetrics->advanceX = cairoMetrics.x_advance;
+    pGlyphMetrics->advanceY = cairoMetrics.y_advance;
 }
 
 mt_result mt_font_get_glyph_metrics__cairo(mt_font* pFont, const mt_glyph* pGlyphs, size_t glyphCount, mt_glyph_metrics* pGlyphMetrics)
 {
+    size_t iGlyph;
+    cairo_scaled_font_t* pCairoFont;
+
     MT_ASSERT(pFont         != NULL);
     MT_ASSERT(pGlyphs       != NULL);
     MT_ASSERT(pGlyphMetrics != NULL);
 
-    (void)pFont;
-    (void)pGlyphs;
-    (void)glyphCount;
-    (void)pGlyphMetrics;
+    pCairoFont = pango_cairo_font_get_scaled_font((PangoCairoFont*)pFont->cairo.pPangoFont);
+    if (pCairoFont == NULL) {
+        return MT_ERROR;    /* Failed to retrieve the cairo_scaled_font_t* object from the PangoFont. */
+    }
+
+    /* TODO: I think this can be optimized by doing it in batches, since cairo_scaled_font_glyph_extents() takes an array of glyphs as input. */
+    for (iGlyph = 0; iGlyph < glyphCount; ++iGlyph) {
+        mt_font_get_glyph_metrics_single__cairo(pCairoFont, pGlyphs[iGlyph].index, &pGlyphMetrics[iGlyph]);
+    }
 
     return MT_SUCCESS;
 }
 
 mt_result mt_font_get_glyph_metrics_by_index__cairo(mt_font* pFont, const mt_uint32* pGlyphIndices, size_t glyphCount, mt_glyph_metrics* pGlyphMetrics)
 {
+    size_t iGlyph;
+    cairo_scaled_font_t* pCairoFont;
+
     MT_ASSERT(pFont         != NULL);
     MT_ASSERT(pGlyphIndices != NULL);
     MT_ASSERT(pGlyphMetrics != NULL);
 
-    (void)pFont;
-    (void)pGlyphIndices;
-    (void)glyphCount;
-    (void)pGlyphMetrics;
+    pCairoFont = pango_cairo_font_get_scaled_font((PangoCairoFont*)pFont->cairo.pPangoFont);
+    if (pCairoFont == NULL) {
+        return MT_ERROR;    /* Failed to retrieve the cairo_scaled_font_t* object from the PangoFont. */
+    }
+
+    /* TODO: I think this can be optimized by doing it in batches, since cairo_scaled_font_glyph_extents() takes an array of glyphs as input. */
+    for (iGlyph = 0; iGlyph < glyphCount; ++iGlyph) {
+        mt_font_get_glyph_metrics_single__cairo(pCairoFont, pGlyphIndices[iGlyph], &pGlyphMetrics[iGlyph]);
+    }
 
     return MT_SUCCESS;
 }
@@ -6238,7 +6361,7 @@ mt_result mt_brush_init__cairo(mt_api* pAPI, const mt_brush_config* pConfig, mt_
             }
 
             if (pConfig->gc.pGC->isTransient) {
-                /* TODO: Implement me. Need to create a temporary surface for the brush. */
+                return MT_INVALID_ARGS; /* Creating a GC brush from a transient Cairo context is not supported. */
             } else {
                 if (pConfig->gc.pGC->cairo.pCairoSurface == NULL) {
                     return MT_INVALID_ARGS; /* Source GC is not in a valid state. */
@@ -7119,6 +7242,16 @@ mt_result mt_init__cairo(const mt_api_config* pConfig, mt_api* pAPI)
     pAPI->gcDrawGC                   = mt_gc_draw_gc__cairo;
     pAPI->gcDrawGlyphs               = mt_gc_draw_glyphs__cairo;
     pAPI->gcClear                    = mt_gc_clear__cairo;
+
+    /* We need to a PangoContext before we'll be able to create fonts. */
+    if (pConfig->cairo.pPangoContext != NULL) {
+        pAPI->cairo.pPangoContext = pConfig->cairo.pPangoContext;
+    } else {
+        pAPI->cairo.pPangoContext = pango_font_map_create_context(pango_cairo_font_map_get_default());
+        if (pAPI->cairo.pPangoContext == NULL) {
+            return MT_ERROR;    /* Should never happen. */
+        }
+    }
 
     return MT_SUCCESS;
 }
