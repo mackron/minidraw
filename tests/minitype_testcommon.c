@@ -1,4 +1,4 @@
-/* Include this file after minitype.h */
+/* Include this file after the implementation of minitype.h */
 #include <stdio.h>
 #include <assert.h>
 
@@ -10,6 +10,11 @@
 #include "../external/stb/stb_image.h"
 #if defined(__clang__)
     #pragma GCC diagnostic pop
+#endif
+
+#if defined(MT_HAS_CAIRO)
+#include <gdk/gdk.h>
+#include <gtk/gtk.h>
 #endif
 
 mt_result mt_fopen(FILE** ppFile, const char* filePath, const char* openMode)
@@ -161,6 +166,15 @@ struct mt_testapp
     void* pUserData;
 #if defined(MT_WIN32)
     HWND hWnd;  /* Main window handle. */
+#elif defined(MT_APPLE)
+#else
+    #if defined(MT_HAS_CAIRO)
+        GtkWidget* pWindowWidget;
+        mt_int32 posXGTK;
+        mt_int32 posYGTK;
+        mt_int32 sizeXGTK;
+        mt_int32 sizeYGTK;
+    #endif
 #endif
 };
 
@@ -197,7 +211,7 @@ LRESULT mt_testapp_MainWindowProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPa
                 MT_ZERO_OBJECT(&gcConfig);
                 gcConfig.gdi.hDC = hDC;
 
-                result = mt_gc_init(&pApp->mt, &gcConfig, &gc); /* <-- Make this transient! */
+                result = mt_gc_init(&pApp->mt, &gcConfig, &gc);
                 if (result == MT_SUCCESS) {
                     if (pApp->onPaint) {
                         pApp->onPaint(pApp, &gc);
@@ -245,7 +259,111 @@ HWND mt_testapp_create_HWND(mt_testapp_config* pConfig, mt_testapp* pApp)
 #elif defined(MT_APPLE)
 /* Implement me. */
 #else
+#define MT_TESTAPP_GTK_PROPERTY_NAME_USERDATA   "mt.testapp.userdata"
 
+static gboolean mt_window__on_close__gtk(GtkWidget* pWidget, GdkEvent* pEvent, gpointer pUserData)
+{
+    (void)pWidget;
+    (void)pEvent;
+
+    mt_testapp* pApp = (mt_testapp*)pUserData;
+    if (pApp == NULL) {
+        return MT_TRUE;
+    }
+
+    gtk_main_quit();
+    
+    return MT_TRUE;
+}
+
+static gboolean mt_window__on_configure__gtk(GtkWidget* pWidget, GdkEventConfigure* pEvent, gpointer pUserData)
+{
+    mt_testapp* pApp = (mt_testapp*)pUserData;
+    if (pApp == NULL) {
+        return MT_FALSE;
+    }
+
+    if (pEvent->x != pApp->posXGTK || pEvent->y != pApp->posYGTK) {    
+        /* Position has changed. */
+        pApp->posXGTK = pEvent->x;
+        pApp->posYGTK = pEvent->y;
+    }
+
+    if (pEvent->width != pApp->sizeXGTK || pEvent->height != pApp->sizeYGTK) {    
+        /* Size has changed. */
+        pApp->sizeXGTK = pEvent->width;
+        pApp->sizeYGTK = pEvent->height;
+        if (pApp->onSize) {
+            pApp->onSize(pApp, (mt_uint32)pEvent->width, (mt_uint32)pEvent->height);
+        }
+    }
+
+    return MT_FALSE;
+}
+
+static gboolean mt_window__on_draw__gtk(GtkWidget* pWidget, cairo_t* cr, gpointer pUserData)
+{
+    mt_result result;
+    mt_gc_config gcConfig;
+    mt_gc gc;
+
+    mt_testapp* pApp = (mt_testapp*)pUserData;
+    if (pApp == NULL) {
+        return MT_FALSE;
+    }
+
+#if 0
+    double clipLeft;
+    double clipTop;
+    double clipRight;
+    double clipBottom;
+    cairo_clip_extents(cr, &clipLeft, &clipTop, &clipRight, &clipBottom);
+    printf("on_draw: %f %f %f %f\n", clipLeft, clipTop, clipRight, clipBottom);
+#endif
+
+    MT_ZERO_OBJECT(&gcConfig);
+    gcConfig.sizeX = pApp->sizeXGTK;
+    gcConfig.sizeY = pApp->sizeYGTK;
+    gcConfig.cairo.pCairoContext = cr;
+
+    result = mt_gc_init(&pApp->mt, &gcConfig, &gc);
+    if (result == MT_SUCCESS) {
+        if (pApp->onPaint) {
+            pApp->onPaint(pApp, &gc);
+        }
+        mt_gc_uninit(&gc);
+    }
+
+    return MT_TRUE;
+}
+
+GtkWidget* mt_testapp_create_window__gtk(mt_testapp_config* pConfig, mt_testapp* pApp)
+{
+    GtkWidget* pWindowWidget;
+
+    pWindowWidget = gtk_window_new(GTK_WINDOW_TOPLEVEL);
+    if (pWindowWidget == NULL) {
+        mt_uninit(&pApp->mt);
+        return NULL;
+    }
+
+    g_object_set_data(G_OBJECT(pWindowWidget), MT_TESTAPP_GTK_PROPERTY_NAME_USERDATA, pApp);
+
+    gtk_window_set_title(GTK_WINDOW(pWindowWidget), (pConfig->pWindowTitle != NULL) ? pConfig->pWindowTitle : "Test App");
+    gtk_window_set_resizable(GTK_WINDOW(pWindowWidget), TRUE);
+    gtk_window_set_default_size(GTK_WINDOW(pWindowWidget), (gint)pConfig->windowWidth, (gint)pConfig->windowHeight);
+    gtk_window_resize(GTK_WINDOW(pWindowWidget), (gint)pConfig->windowWidth, (gint)pConfig->windowHeight);
+
+    g_signal_connect(pWindowWidget, "delete-event",    G_CALLBACK(mt_window__on_close__gtk),     pApp); /* Close */
+    g_signal_connect(pWindowWidget, "configure-event", G_CALLBACK(mt_window__on_configure__gtk), pApp); /* Size/Move */
+    g_signal_connect(pWindowWidget, "draw",            G_CALLBACK(mt_window__on_draw__gtk),      pApp); /* Paint */
+
+    /* Show the window. */
+    gtk_widget_realize(pWindowWidget);
+    gtk_window_present(GTK_WINDOW(pWindowWidget));
+
+    return pWindowWidget;
+}
 #endif
 
 mt_result mt_testapp_init(mt_testapp_config* pConfig, mt_testapp* pApp)
@@ -288,7 +406,30 @@ mt_result mt_testapp_init(mt_testapp_config* pConfig, mt_testapp* pApp)
 #elif defined(MT_APPLE)
     /* Implement me. */
 #else
-    
+    #if defined(MT_SUPPORT_CAIRO)
+        if (apiConfig.backend == mt_backend_cairo) {
+            /* GTK */
+            if (!gtk_init_check(0, NULL)) {
+                mt_uninit(&pApp->mt);
+                return MT_ERROR;
+            }
+
+            pApp->pWindowWidget = mt_testapp_create_window__gtk(pConfig, pApp);
+            if (pApp->pWindowWidget == NULL) {
+                mt_uninit(&pApp->mt);
+                return MT_ERROR;
+            }
+        }
+    #endif
+    #if defined(MT_HAS_XFT)
+        #if 0
+        if (apiConfig.backend == mt_backend_xft) {
+            /* X */
+            mt_uninit(&pApp->mt);
+            return MT_ERROR;    /* Not yet implemented. */
+        }
+        #endif
+    #endif
 #endif
 
     if (pApp->onInit) {
@@ -297,8 +438,9 @@ mt_result mt_testapp_init(mt_testapp_config* pConfig, mt_testapp* pApp)
         #if defined(MT_WIN32)
             DestroyWindow(pApp->hWnd);
         #elif defined(MT_APPLE)
+            /* TODO: Implement me. */
         #else
-
+            gtk_widget_destroy(GTK_WIDGET(pApp->pWindowWidget));
         #endif
             mt_uninit(&pApp->mt);
             return result;
@@ -321,8 +463,11 @@ void mt_testapp_uninit(mt_testapp* pApp)
 #if defined(MT_WIN32)
     DestroyWindow(pApp->hWnd);
 #elif defined(MT_APPLE)
+    /* TODO: Implement me. */
 #else
-
+    if (pApp->mt.backend == mt_backend_cairo) {
+        gtk_widget_destroy(GTK_WIDGET(pApp->pWindowWidget));
+    }
 #endif
 
     mt_uninit(&pApp->mt);
@@ -349,8 +494,10 @@ int mt_testapp_run(mt_testapp* pApp)
         DispatchMessageA(&msg);
     }
 #elif defined(MT_APPLE)
+    /* TODO: Implement me. */
 #else
-
+    gtk_main();
+    exitCode = 0;
 #endif
 
     return exitCode;
@@ -374,7 +521,8 @@ void mt_testapp_get_size(mt_testapp* pApp, mt_uint32* pSizeX, mt_uint32* pSizeY)
 #elif defined(MT_APPLE)
     /* Implement me. */
 #else
-    /* Implement me. */
+    if (pSizeX) *pSizeX = (mt_uint32)pApp->sizeXGTK;
+    if (pSizeY) *pSizeY = (mt_uint32)pApp->sizeYGTK;
 #endif
 }
 
@@ -395,6 +543,6 @@ void mt_testapp_scheduled_redraw(mt_testapp* pApp, mt_int32 left, mt_int32 top, 
 #elif defined(MT_APPLE)
     /* Implement me. */
 #else
-    /* Implement me. */
+    gtk_widget_queue_draw_area(GTK_WIDGET(pApp->pWindowWidget), left, top, (right - left), (bottom - top));
 #endif
 }

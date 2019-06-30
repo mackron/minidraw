@@ -33,7 +33,7 @@ mt_font g_font;
 mt_color g_textBGColor;
 mt_color g_textFGColor;
 mt_color g_midLineColor;
-const char* g_text = "MINITYPE";
+const char* g_text = "minitype";
 
 void draw_logo(mt_gc* pGC)
 {
@@ -57,6 +57,8 @@ void draw_logo(mt_gc* pGC)
         /* Origin lines. */
         {
     #if 0
+            printf("midX = %d, midY = %d\n", midX, midY);
+
             mt_gc_set_line_brush_solid(pGC, g_midLineColor);
             mt_gc_set_line_width(pGC, 2);
 
@@ -75,8 +77,10 @@ void draw_logo(mt_gc* pGC)
 
         /* Text output. This is centered on the screen. */
         {
+            mt_gc_set_blend_op(pGC, mt_blend_op_src_over);
+            mt_gc_set_antialias_mode(pGC, mt_antialias_mode_none);  /* Results in thick lines is AA is enabled. */
             mt_gc_set_line_width(pGC, 1);
-            mt_gc_set_text_bg_color(pGC, mt_rgba(0, 0, 0, 0));  /* Foreground color is controlled by the clear color. */
+            mt_gc_set_text_bg_color(pGC, mt_rgba(0, 0, 0, 0));      /* Foreground color is controlled by the clear color. */
             mt_gc_set_text_fg_color(pGC, g_textFGColor);
             mt_gc_set_font(pGC, &g_font);
 
@@ -134,6 +138,7 @@ void draw_logo(mt_gc* pGC)
                             mt_gc_stroke(pGC);
 
                             /* Corder dots. */
+                            mt_gc_set_antialias_mode(pGC, mt_antialias_mode_default);
                             mt_gc_set_fill_brush_solid(pGC, mt_rgba(92, 92, 92, 255));
                             mt_gc_move_to(pGC, textPosX + cornerRadius,                    textPosY + (g_font.metrics.ascent - g_font.metrics.descent));
                             mt_gc_arc(    pGC, textPosX,                                   textPosY + (g_font.metrics.ascent - g_font.metrics.descent), cornerRadius, 0, MT_RADIANSF(360));
@@ -165,9 +170,9 @@ mt_result on_init(mt_testapp* pApp)
     mt_font_config fontConfig;
 
     MT_ZERO_OBJECT(&fontConfig);
-    fontConfig.family = "Liberation";
+    fontConfig.family = "Liberation Serif";
     fontConfig.sizeInPixels = 120;
-    fontConfig.weight = mt_font_weight_bold;
+    fontConfig.weight = mt_font_weight_normal;
     fontConfig.slant = mt_font_slant_none;
     fontConfig.noClearType = MT_FALSE;
     result = mt_font_init(&pApp->mt, &fontConfig, &g_font);
