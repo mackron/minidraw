@@ -80,11 +80,11 @@ void draw_logo(mt_gc* pGC)
             mt_gc_set_text_fg_color(pGC, g_textFGColor);
             mt_gc_set_font(pGC, &g_font);
 
-            /* TODO: This needs to be implemented as part of a helper API. */
             {
+                mt_itemize_state itemizeState;
                 mt_item items[128];
                 mt_uint32 itemCount = MT_COUNTOF(items);
-                result = mt_itemize_utf8(pGC->pAPI, g_text, strlen(g_text), items, &itemCount);
+                result = mt_itemize_utf8(pGC->pAPI, g_text, strlen(g_text), items, &itemCount, &itemizeState);
                 if (result == MT_SUCCESS) {
                     mt_uint32 iItem;
                     for (iItem = 0; iItem < itemCount; ++iItem) {
@@ -150,6 +150,8 @@ void draw_logo(mt_gc* pGC)
                             mt_gc_fill(pGC);
                         }
                     }
+
+                    mt_free_itemize_state(pGC->pAPI, &itemizeState);
                 }
             }
         }

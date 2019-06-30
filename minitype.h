@@ -219,8 +219,6 @@ typedef struct mt_brush mt_brush;
 typedef struct mt_brush_config mt_brush_config;
 typedef struct mt_gc mt_gc;
 typedef struct mt_gc_config mt_gc_config;
-typedef struct mt_item mt_item;
-typedef struct mt_script_state mt_script_state;
 
 /* Enumerators */
 typedef enum
@@ -390,6 +388,15 @@ typedef struct
             long offsetY;           /* ^^^ */
         } gdi;
     #endif
+    #if defined(MT_SUPPORT_CAIRO)
+        struct
+        {
+            mt_int32  width;                /* From PangoGlyphGeometry. */
+            mt_int32  offsetX;              /* From PangoGlyphGeometry. */
+            mt_int32  offsetY;              /* From PangoGlyphGeometry. */
+            mt_uint32 isClusterStart : 1;   /* From PangoGlyphVisAttr */
+        } cairo;
+    #endif
         mt_uint32 _unused;
     } backend;
 } mt_glyph;
@@ -418,7 +425,7 @@ typedef struct
     mt_int32 advanceY;
 } mt_glyph_metrics;
 
-struct mt_item
+typedef struct
 {
     size_t offset;  /* Offset in code units (bytes for UTF-8, shorts for UTF-16, integers for UTF-32. */
     size_t length;  /* Length in code units. */
@@ -432,9 +439,29 @@ struct mt_item
             MT_SCRIPT_ANALYSIS sa;   /* Passed around to Script*() APIs. */
         } gdi;
     #endif
+    #if defined(MT_SUPPORT_CAIRO)
+        struct
+        {
+            /*PangoItem**/ mt_ptr pPangoItem;
+        } cairo;
+    #endif
         mt_uint32 _unused;
     } backend;
-};
+} mt_item;
+
+typedef struct
+{
+    union
+    {
+    #if defined(MT_SUPPORT_CAIRO)
+        struct
+        {
+            /*GList**/ mt_ptr pPangoItems;
+        } cairo;
+    #endif
+        int _unused;
+    } backend;
+} mt_itemize_state;
 
 
 struct mt_api_config
@@ -454,9 +481,10 @@ struct mt_api
 {
     mt_backend backend;
     void      (* uninit)                    (mt_api* pAPI);
-    mt_result (* itemizeUTF8)               (mt_api* pAPI, const mt_utf8* pTextUTF8, size_t textLength, mt_item* pItems, mt_uint32* pItemCount);
-    mt_result (* itemizeUTF16)              (mt_api* pAPI, const mt_utf16* pTextUTF16, size_t textLength, mt_item* pItems, mt_uint32* pItemCount);
-    mt_result (* itemizeUTF32)              (mt_api* pAPI, const mt_utf32* pTextUTF32, size_t textLength, mt_item* pItems, mt_uint32* pItemCount);
+    mt_result (* itemizeUTF8)               (mt_api* pAPI, const mt_utf8* pTextUTF8, size_t textLength, mt_item* pItems, mt_uint32* pItemCount, mt_itemize_state* pItemizeState);
+    mt_result (* itemizeUTF16)              (mt_api* pAPI, const mt_utf16* pTextUTF16, size_t textLength, mt_item* pItems, mt_uint32* pItemCount, mt_itemize_state* pItemizeState);
+    mt_result (* itemizeUTF32)              (mt_api* pAPI, const mt_utf32* pTextUTF32, size_t textLength, mt_item* pItems, mt_uint32* pItemCount, mt_itemize_state* pItemizeState);
+    void      (* freeItemizeState)          (mt_api* pAPI, mt_itemize_state* pItemizeState);
     mt_result (* shapeUTF8)                 (mt_font* pFont, mt_item* pItem, const mt_utf8* pTextUTF8, size_t textLength, mt_glyph* pGlyphs, size_t* pGlyphCount, size_t* pClusters, mt_text_metrics* pRunMetrics);
     mt_result (* shapeUTF16)                (mt_font* pFont, mt_item* pItem, const mt_utf16* pTextUTF16, size_t textLength, mt_glyph* pGlyphs, size_t* pGlyphCount, size_t* pClusters, mt_text_metrics* pRunMetrics);
     mt_result (* shapeUTF32)                (mt_font* pFont, mt_item* pItem, const mt_utf32* pTextUTF32, size_t textLength, mt_glyph* pGlyphs, size_t* pGlyphCount, size_t* pClusters, mt_text_metrics* pRunMetrics);
@@ -566,6 +594,7 @@ struct mt_api
     struct
     {
         /*PangoContext**/ mt_ptr pPangoContext; /* Created with the PangoFontMap retrieved with pango_cairo_font_map_get_default(). */
+        mt_bool32 ownsPangoContext : 1;
     } cairo;
 #endif
 #if defined(MT_SUPPORT_XFT)
@@ -1159,7 +1188,12 @@ Remarks
 -------
 This is the first function you should call when preparing text for drawing.
 */
-mt_result mt_itemize_utf8(mt_api* pAPI, const mt_utf8* pTextUTF8, size_t textLength, mt_item* pItems, mt_uint32* pItemCount);
+mt_result mt_itemize_utf8(mt_api* pAPI, const mt_utf8* pTextUTF8, size_t textLength, mt_item* pItems, mt_uint32* pItemCount, mt_itemize_state* pItemizeState);
+
+/*
+Frees the itemization state returned from mt_itemize_*(). You should call this when you are finished with the items returned from mt_itemize_*().
+*/
+void mt_free_itemize_state(mt_api* pAPI, mt_itemize_state* pItemizeState);
 
 /*
 Performs text shaping and placement on the given text run. This function is used to convert text to glyphs and calculate their relative positions.
@@ -5672,7 +5706,7 @@ void mt_gc_draw_gc__gdi(mt_gc* pGC, mt_gc* pSrcGC, mt_int32 srcX, mt_int32 srcY)
 }
 
 /* API */
-mt_result mt_itemize_utf16__gdi(mt_api* pAPI, const mt_utf16* pTextUTF16, size_t textLength, mt_item* pItems, mt_uint32* pItemCount)
+mt_result mt_itemize_utf16__gdi(mt_api* pAPI, const mt_utf16* pTextUTF16, size_t textLength, mt_item* pItems, mt_uint32* pItemCount, mt_itemize_state* pItemizeState)
 {
     HRESULT hResult;
     mt_uint32 itemCapacity;
@@ -5685,8 +5719,10 @@ mt_result mt_itemize_utf16__gdi(mt_api* pAPI, const mt_utf16* pTextUTF16, size_t
     MT_ASSERT(pTextUTF16 != NULL);
     MT_ASSERT(pTextUTF16[0] != '\0');
     MT_ASSERT(textLength > 0);
-    MT_ASSERT(pItems != NULL);
     MT_ASSERT(pItemCount != NULL);
+    
+    /* Uniscribe doesn't need the itemization state so we just clear it to zero. */
+    MT_ZERO_OBJECT(pItemizeState);
 
     /* ScriptItemize() uses an integer for the text length, so keep it simple and return an error if we're asking for more. */
     if (textLength > 0x7FFFFFFF) {
@@ -5765,6 +5801,16 @@ mt_result mt_itemize_utf16__gdi(mt_api* pAPI, const mt_utf16* pTextUTF16, size_t
 
     MT_FREE(pScriptItemsHeap);
     return MT_SUCCESS;
+}
+
+void mt_free_itemize_state__gdi(mt_api* pAPI, mt_itemize_state* pItemizeState)
+{
+    MT_ASSERT(pAPI != NULL);
+    MT_ASSERT(pItemizeState != NULL);
+
+    /* Nothing to do here. */
+    (void)pAPI;
+    (void)pItemizeState;
 }
 
 mt_result mt_shape_utf16__gdi(mt_font* pFont, mt_item* pItem, const mt_utf16* pTextUTF16, size_t textLength, mt_glyph* pGlyphs, size_t* pGlyphCount, size_t* pClusters, mt_text_metrics* pRunMetrics)
@@ -5930,7 +5976,7 @@ void mt_gc_draw_glyphs__gdi(mt_gc* pGC, const mt_item* pItem, const mt_glyph* pG
     mt_font* pFont;
     void* pHeap = NULL;
     WORD  pUniscribeGlyphsStack[4096];
-    WORD* pUniscribeGlyphsHeap = NULL;              /* Offset of pHead. */
+    WORD* pUniscribeGlyphsHeap = NULL;              /* Offset of pHeap. */
     WORD* pUniscribeGlyphs;
     int  pUniscribeAdvancesStack[4096];
     int* pUniscribeAdvancesHeap = NULL;             /* Offset of pHeap. */
@@ -6069,6 +6115,7 @@ mt_result mt_init__gdi(const mt_api_config* pConfig, mt_api* pAPI)
     pAPI->itemizeUTF8                = NULL;   /* No native support for UTF-8 with Uniscribe. */
     pAPI->itemizeUTF16               = mt_itemize_utf16__gdi;
     pAPI->itemizeUTF32               = NULL;   /* No native support for UTF-32 with Uniscribe. */
+    pAPI->freeItemizeState           = mt_free_itemize_state__gdi;
     pAPI->shapeUTF8                  = NULL;   /* No native support for UTF-8 with Uniscribe. */
     pAPI->shapeUTF16                 = mt_shape_utf16__gdi;
     pAPI->shapeUTF32                 = NULL;   /* No native support for UTF-32 with Uniscribe. */
@@ -7111,55 +7158,199 @@ void mt_gc_draw_gc__cairo(mt_gc* pGC, mt_gc* pSrcGC, mt_int32 srcX, mt_int32 src
 }
 
 /* API */
-mt_result mt_itemize_utf8__cairo(mt_api* pAPI, const mt_utf8* pTextUTF8, size_t textLength, mt_item* pItems, mt_uint32* pItemCount)
+MT_PRIVATE void mt_free_pango_items__cairo(GList* pPangoItems)
 {
+    GList* pListItem;
+
+    for (pListItem = g_list_first(pPangoItems); pListItem != NULL; pListItem = g_list_next(pListItem)) {
+        pango_item_free((PangoItem*)pListItem->data);
+    }
+
+    g_list_free(pPangoItems);
+}
+
+mt_result mt_itemize_utf8__cairo(mt_api* pAPI, const mt_utf8* pTextUTF8, size_t textLength, mt_item* pItems, mt_uint32* pItemCount, mt_itemize_state* pItemizeState)
+{
+    GList* pPangoItems;
+    mt_uint32 itemCap;
+    mt_uint32 itemCount = 0;
+
     MT_ASSERT(pAPI != NULL);
     MT_ASSERT(textLength > 0);
     MT_ASSERT(pTextUTF8 != NULL);
     MT_ASSERT(pTextUTF8[0] != '\0');
-    MT_ASSERT(pItems != NULL);
     MT_ASSERT(pItemCount != NULL);
+    MT_ASSERT(pItemizeState != NULL);
 
-    (void)pAPI;
-    (void)pTextUTF8;
-    (void)textLength;
-    (void)pItems;
-    (void)pItemCount;
+    itemCap = *pItemCount;
+
+    pPangoItems = pango_itemize((PangoContext*)pAPI->cairo.pPangoContext, pTextUTF8, 0, (gint)textLength, NULL, NULL);
+    if (pPangoItems == NULL) {
+        return MT_ERROR;    /* An error occurred when itemizing. */
+    }
+
+    if (pItems != NULL) {
+        GList* pListItem;
+        for (pListItem = g_list_first(pPangoItems); pListItem != NULL; pListItem = g_list_next(pListItem)) {
+            mt_uint32 iItem = itemCount;
+            PangoItem* pPangoItem;
+
+            itemCount += 1;
+            if (itemCount > itemCap) {
+                break;  /* Not enough room in the output buffer. */
+            }
+
+            pPangoItem = (PangoItem*)pListItem->data;
+
+            pItems[iItem].offset = (size_t)pPangoItem->offset;
+            pItems[iItem].length = (size_t)pPangoItem->length;
+            pItems[iItem].backend.cairo.pPangoItem = pPangoItem;
+        }
+
+        pItemizeState->backend.cairo.pPangoItems = pPangoItems;
+    } else {
+        /* Just counting. */
+        itemCount = g_list_length(pPangoItems);
+
+        if (pItemizeState != NULL) {
+            pItemizeState->backend.cairo.pPangoItems = pPangoItems;
+        } else {
+            mt_free_pango_items__cairo(pPangoItems);
+            pPangoItems = NULL;
+        }
+    }
+
+    if (itemCount > itemCap) {
+        return MT_NO_SPACE;
+    }
+
+    *pItemCount = itemCount;
 
     return MT_SUCCESS;
 }
 
+void mt_free_itemize_state__cairo(mt_api* pAPI, mt_itemize_state* pItemizeState)
+{
+    MT_ASSERT(pAPI != NULL);
+    MT_ASSERT(pItemizeState != NULL);
+
+    mt_free_pango_items__cairo((GList*)pItemizeState->backend.cairo.pPangoItems);
+    pItemizeState->backend.cairo.pPangoItems = NULL;
+}
+
 mt_result mt_shape_utf8__cairo(mt_font* pFont, mt_item* pItem, const mt_utf8* pTextUTF8, size_t textLength, mt_glyph* pGlyphs, size_t* pGlyphCount, size_t* pClusters, mt_text_metrics* pRunMetrics)
 {
+    PangoGlyphString* pPangoGlyphString;
+    size_t glyphCap;
+    size_t glyphCount = 0;
+    mt_text_metrics metrics;
+
     MT_ASSERT(pItem != NULL);
     MT_ASSERT(pFont != NULL);
     MT_ASSERT(pTextUTF8 != NULL);
     MT_ASSERT(pGlyphCount != NULL);
 
-    (void)pFont;
-    (void)pItem;
-    (void)pTextUTF8;
-    (void)textLength;
-    (void)pGlyphs;
-    (void)pGlyphCount;
-    (void)pClusters;
-    (void)pRunMetrics;
+    glyphCap = *pGlyphCount;
+    MT_ZERO_OBJECT(&metrics);
+
+    pPangoGlyphString = pango_glyph_string_new();
+    if (pPangoGlyphString == NULL) {
+        return MT_OUT_OF_MEMORY;
+    }
+
+    pango_shape(pTextUTF8, (gint)textLength, &((PangoItem*)pItem->backend.cairo.pPangoItem)->analysis, pPangoGlyphString);
+
+    if (pGlyphs != NULL) {
+        size_t iGlyph;
+
+        glyphCount = (size_t)pPangoGlyphString->num_glyphs;
+        if (glyphCount > glyphCap) {
+            pango_glyph_string_free(pPangoGlyphString);
+            return MT_NO_SPACE; /* No room to store each glyph. */
+        }
+
+        for (iGlyph = 0; iGlyph < pPangoGlyphString->num_glyphs; ++iGlyph) {
+            pGlyphs[iGlyph].index                 = pPangoGlyphString->glyphs[iGlyph].glyph;
+            pGlyphs[iGlyph].advance               = pPangoGlyphString->glyphs[iGlyph].geometry.width * PANGO_SCALE;
+            pGlyphs[iGlyph].backend.cairo.width   = pPangoGlyphString->glyphs[iGlyph].geometry.width;
+            pGlyphs[iGlyph].backend.cairo.offsetX = pPangoGlyphString->glyphs[iGlyph].geometry.x_offset;
+            pGlyphs[iGlyph].backend.cairo.offsetY = pPangoGlyphString->glyphs[iGlyph].geometry.y_offset;
+            metrics.sizeX += pGlyphs[iGlyph].advance;
+        }
+        metrics.sizeY = pFont->metrics.ascent - pFont->metrics.descent;
+    }
+
+    if (pClusters != NULL) {
+        size_t iTextByte;
+        for (iTextByte = 0; iTextByte < textLength; ++iTextByte) {
+            pClusters[iTextByte] = (size_t)pPangoGlyphString->log_clusters[iTextByte];
+        }
+    }
+
+    pango_glyph_string_free(pPangoGlyphString);
+
+    *pGlyphCount = glyphCount;
 
     return MT_SUCCESS;
 }
 
 void mt_gc_draw_glyphs__cairo(mt_gc* pGC, const mt_item* pItem, const mt_glyph* pGlyphs, size_t glyphCount, mt_int32 x, mt_int32 y)
 {
+    mt_uint32 iState;
+    size_t iGlyph;
+    mt_font* pFont;
+    mt_color fgColor;
+    mt_color bgColor;
+    mt_uint32 textWidth;
+    PangoGlyphString glyphString;
+    PangoGlyphInfo* pGlyphInfoHeap = NULL;
+    PangoGlyphInfo* pGlyphInfo = NULL;
+
     MT_ASSERT(pGC     != NULL);
     MT_ASSERT(pItem   != NULL);
     MT_ASSERT(pGlyphs != NULL);
 
-    (void)pGC;
     (void)pItem;
-    (void)pGlyphs;
-    (void)glyphCount;
-    (void)x;
-    (void)y;
+
+    iState = pGC->cairo.stateCount-1;
+    pFont = pGC->cairo.pState[iState].pFont;
+    fgColor = pGC->cairo.pState[iState].textFGColor;
+    bgColor = pGC->cairo.pState[iState].textBGColor;
+
+    /* Unfortunately Pango's API doesn't map too well with minitype's. We need to build our own glyph string. */
+    {
+        /* Try a heap allocation. */
+        pGlyphInfoHeap = (PangoGlyphInfo*)MT_MALLOC(sizeof(*pGlyphInfoHeap) * glyphCount);
+        if (pGlyphInfoHeap == NULL) {
+            return; /* Out of memory. */
+        }
+
+        pGlyphInfo = pGlyphInfoHeap;
+    }
+
+    glyphString.num_glyphs = (gint)glyphCount;
+    for (iGlyph = 0; iGlyph < glyphCount; ++iGlyph) {
+        pGlyphInfo[iGlyph].glyph                 = pGlyphs[iGlyph].index;
+        pGlyphInfo[iGlyph].geometry.width        = pGlyphs[iGlyph].backend.cairo.width;
+        pGlyphInfo[iGlyph].geometry.x_offset     = pGlyphs[iGlyph].backend.cairo.offsetX;
+        pGlyphInfo[iGlyph].geometry.y_offset     = pGlyphs[iGlyph].backend.cairo.offsetY;
+        pGlyphInfo[iGlyph].attr.is_cluster_start = pGlyphs[iGlyph].backend.cairo.isClusterStart;
+
+        textWidth += pGlyphs[iGlyph].advance;
+    }
+    glyphString.log_clusters = NULL;
+
+    /* Background. */
+    cairo_set_source_rgba((cairo_t*)pGC->cairo.pCairoContext, bgColor.r/255.0, bgColor.g/255.0, bgColor.b/255.0, bgColor.a/255.0);
+    cairo_rectangle((cairo_t*)pGC->cairo.pCairoContext, x, y, textWidth, (pFont->metrics.ascent - pFont->metrics.descent));
+    cairo_fill((cairo_t*)pGC->cairo.pCairoContext);
+
+    /* Text. */
+    cairo_move_to((cairo_t*)pGC->cairo.pCairoContext, x, y + pFont->metrics.ascent);
+    cairo_set_source_rgba((cairo_t*)pGC->cairo.pCairoContext, fgColor.r/255.0, fgColor.g/255.0, fgColor.b/255.0, fgColor.a/255.0);
+    pango_cairo_show_glyph_string((cairo_t*)pGC->cairo.pCairoContext, (PangoFont*)pFont->cairo.pPangoFont, &glyphString);
+
+    MT_FREE(pGlyphInfoHeap);
 }
 
 void mt_gc_clear__cairo(mt_gc* pGC, mt_color color)
@@ -7175,7 +7366,9 @@ void mt_uninit__cairo(mt_api* pAPI)
 {
     MT_ASSERT(pAPI != NULL);
 
-    (void)pAPI;
+    if (pAPI->cairo.ownsPangoContext) {
+        g_object_unref((PangoContext*)pAPI->cairo.pPangoContext);
+    }
 }
 
 mt_result mt_init__cairo(const mt_api_config* pConfig, mt_api* pAPI)
@@ -7187,6 +7380,7 @@ mt_result mt_init__cairo(const mt_api_config* pConfig, mt_api* pAPI)
     pAPI->itemizeUTF8                = mt_itemize_utf8__cairo;
     pAPI->itemizeUTF16               = NULL;    /* No native support for UTF-16 with Pango. */
     pAPI->itemizeUTF32               = NULL;    /* No native support for UTF-32 with Pango. */
+    pAPI->freeItemizeState           = mt_free_itemize_state__cairo;
     pAPI->shapeUTF8                  = mt_shape_utf8__cairo;
     pAPI->shapeUTF16                 = NULL;    /* No native support for UTF-16 with Pango. */
     pAPI->shapeUTF32                 = NULL;    /* No native support for UTF-32 with Pango. */
@@ -7245,8 +7439,10 @@ mt_result mt_init__cairo(const mt_api_config* pConfig, mt_api* pAPI)
 
     /* We need to a PangoContext before we'll be able to create fonts. */
     if (pConfig->cairo.pPangoContext != NULL) {
+        pAPI->cairo.ownsPangoContext = MT_FALSE;
         pAPI->cairo.pPangoContext = pConfig->cairo.pPangoContext;
     } else {
+        pAPI->cairo.ownsPangoContext = MT_TRUE;
         pAPI->cairo.pPangoContext = pango_font_map_create_context(pango_cairo_font_map_get_default());
         if (pAPI->cairo.pPangoContext == NULL) {
             return MT_ERROR;    /* Should never happen. */
@@ -7332,7 +7528,7 @@ void mt_uninit(mt_api* pAPI)
     pAPI->uninit(pAPI);
 }
 
-mt_result mt_itemize_utf8(mt_api* pAPI, const mt_utf8* pTextUTF8, size_t textLength, mt_item* pItems, mt_uint32* pItemCount)
+mt_result mt_itemize_utf8(mt_api* pAPI, const mt_utf8* pTextUTF8, size_t textLength, mt_item* pItems, mt_uint32* pItemCount, mt_itemize_state* pItemizeState)
 {
     mt_result result;
     mt_uint32 itemCount;
@@ -7353,7 +7549,7 @@ mt_result mt_itemize_utf8(mt_api* pAPI, const mt_utf8* pTextUTF8, size_t textLen
     /* If the backend directly supports UTF-8, just pass it straight through. Otherwise we need to convert. */
     if (pAPI->itemizeUTF8) {
         /* UTF-8 natively supported. */
-        result = pAPI->itemizeUTF8(pAPI, pTextUTF8, textLength, pItems, &itemCount);
+        result = pAPI->itemizeUTF8(pAPI, pTextUTF8, textLength, pItems, &itemCount, pItemizeState);
     } else {
         /* UTF-8 not natively supported. Need to convert the string to another format. */
         if (pAPI->itemizeUTF16) {
@@ -7391,7 +7587,7 @@ mt_result mt_itemize_utf8(mt_api* pAPI, const mt_utf8* pTextUTF8, size_t textLen
             }
 
             /* We have the UTF-16 string, so now we need to itemize these. */
-            result = pAPI->itemizeUTF16(pAPI, pUTF16, utf16Len, pItems, &itemCount);
+            result = pAPI->itemizeUTF16(pAPI, pUTF16, utf16Len, pItems, &itemCount, pItemizeState);
             if (result == MT_SUCCESS) {
                 /* We have the items, so now we need to convert the offsets and lengths to the UTF-8 equivalents. */
                 if (pItems != NULL) {
@@ -7423,6 +7619,17 @@ mt_result mt_itemize_utf8(mt_api* pAPI, const mt_utf8* pTextUTF8, size_t textLen
 
     *pItemCount = itemCount;
     return result;
+}
+
+void mt_free_itemize_state(mt_api* pAPI, mt_itemize_state* pItemizeState)
+{
+    if (pAPI == NULL || pItemizeState == NULL) {
+        return;
+    }
+
+    if (pAPI->freeItemizeState) {
+        pAPI->freeItemizeState(pAPI, pItemizeState);
+    }
 }
 
 mt_result mt_shape_utf8(mt_font* pFont, mt_item* pItem, const mt_utf8* pTextUTF8, size_t textLength, mt_glyph* pGlyphs, size_t* pGlyphCount, size_t* pClusters, mt_text_metrics* pRunMetrics)
