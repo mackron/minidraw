@@ -703,8 +703,8 @@ struct mt_brush
 
 struct mt_gc_config
 {
-    mt_uint32 sizeX;                    /* Set this to 0 if you are passing in a pre-existing backend context or surface (such as a HDC or cairo_surface). */
-    mt_uint32 sizeY;                    /* Set this to 0 if you are passing in a pre-existing backend context or surface (such as a HDC or cairo_surface). */
+    mt_uint32 sizeX;                    /* You should set this for Cairo even when passing in a pre-existing cairo_t object. */
+    mt_uint32 sizeY;                    /* You should set this for Cairo even when passing in a pre-existing cairo_t object. */
     mt_uint32 stride;                   /* Stride in pixels. Only used when pInitialImageData is not null. */
     mt_format format;                   /* The format of the data contained in pInitialImageData (if any) and the preferred internal format. Cannot be mt_format_unkonwn if pInitialImageData is not null. */
     const void* pInitialImageData;      /* Can be null in which case the initial contents are undefined. */
@@ -4622,7 +4622,7 @@ mt_result mt_font_init__gdi(mt_api* pAPI, const mt_font_config* pConfig, mt_font
     if (pConfig->sizeInPixels > 0) {
         fontSize = -(LONG)pConfig->sizeInPixels;
     } else {
-        fontSize = pConfig->sizeInPoints;
+        fontSize = -MulDiv(pConfig->sizeInPoints, GetDeviceCaps(pAPI->gdi.hGlobalDC, LOGPIXELSY), 72);
     }
 
     MT_ZERO_OBJECT(&logfont);
@@ -6300,8 +6300,8 @@ mt_result mt_font_init__cairo(mt_api* pAPI, const mt_font_config* pConfig, mt_fo
 
     /* We should have the font at this point, so now we need to retrieve the metrics. */
     pPangoFontMetrics = pango_font_get_metrics(pPangoFont, NULL);
-    pFont->metrics.ascent = pango_font_metrics_get_ascent(pPangoFontMetrics);
-    pFont->metrics.descent = pango_font_metrics_get_descent(pPangoFontMetrics);
+    pFont->metrics.ascent  =  pango_font_metrics_get_ascent(pPangoFontMetrics)  / PANGO_SCALE;
+    pFont->metrics.descent = -pango_font_metrics_get_descent(pPangoFontMetrics) / PANGO_SCALE;
     pango_font_metrics_unref(pPangoFontMetrics);
 
     pFont->cairo.pPangoFont = pPangoFont;
@@ -6327,12 +6327,12 @@ MT_PRIVATE void mt_font_get_glyph_metrics_single__cairo(cairo_scaled_font_t* pCa
 
     cairo_scaled_font_glyph_extents(pCairoFont, &cairoGlyph, 1, &cairoMetrics);
 
-    pGlyphMetrics->sizeX    = cairoMetrics.width;
-    pGlyphMetrics->sizeY    = cairoMetrics.height;
-    pGlyphMetrics->bearingX = cairoMetrics.x_bearing;
-    pGlyphMetrics->bearingY = cairoMetrics.y_bearing;
-    pGlyphMetrics->advanceX = cairoMetrics.x_advance;
-    pGlyphMetrics->advanceY = cairoMetrics.y_advance;
+    pGlyphMetrics->sizeX    = cairoMetrics.width     / PANGO_SCALE;
+    pGlyphMetrics->sizeY    = cairoMetrics.height    / PANGO_SCALE;
+    pGlyphMetrics->bearingX = cairoMetrics.x_bearing / PANGO_SCALE;
+    pGlyphMetrics->bearingY = cairoMetrics.y_bearing / PANGO_SCALE;
+    pGlyphMetrics->advanceX = cairoMetrics.x_advance / PANGO_SCALE;
+    pGlyphMetrics->advanceY = cairoMetrics.y_advance / PANGO_SCALE;
 }
 
 mt_result mt_font_get_glyph_metrics__cairo(mt_font* pFont, const mt_glyph* pGlyphs, size_t glyphCount, mt_glyph_metrics* pGlyphMetrics)
@@ -6395,7 +6395,7 @@ mt_result mt_brush_init__cairo(mt_api* pAPI, const mt_brush_config* pConfig, mt_
     {
         case mt_brush_type_solid:
         {
-            pCairoPattern = cairo_pattern_create_rgba(pConfig->solid.color.r, pConfig->solid.color.g, pConfig->solid.color.b, pConfig->solid.color.a);
+            pCairoPattern = cairo_pattern_create_rgba(pConfig->solid.color.r/255.0, pConfig->solid.color.g/255.0, pConfig->solid.color.b/255.0, pConfig->solid.color.a/255.0);
             if (pCairoPattern == NULL) {
                 return MT_ERROR;    /* Failed to create the pattern. */
             }
@@ -7034,7 +7034,7 @@ MT_PRIVATE void mt_gc_set_source_from_brush_config__cairo(mt_gc* pGC, const mt_b
     {
         case mt_brush_type_solid:
         {
-            cairo_set_source_rgba((cairo_t*)pGC->cairo.pCairoContext, pConfig->solid.color.r, pConfig->solid.color.g, pConfig->solid.color.b, pConfig->solid.color.a);
+            cairo_set_source_rgba((cairo_t*)pGC->cairo.pCairoContext, pConfig->solid.color.r/255.0, pConfig->solid.color.g/255.0, pConfig->solid.color.b/255.0, pConfig->solid.color.a/255.0);
         } break;
         /*case mt_brush_type_linear:
         {
@@ -7244,6 +7244,7 @@ mt_result mt_shape_utf8__cairo(mt_font* pFont, mt_item* pItem, const mt_utf8* pT
     size_t glyphCap;
     size_t glyphCount = 0;
     mt_text_metrics metrics;
+    PangoFont* pPrevPangoFont; /* Temp. */
 
     MT_ASSERT(pItem != NULL);
     MT_ASSERT(pFont != NULL);
@@ -7258,7 +7259,13 @@ mt_result mt_shape_utf8__cairo(mt_font* pFont, mt_item* pItem, const mt_utf8* pT
         return MT_OUT_OF_MEMORY;
     }
 
-    pango_shape(pTextUTF8, (gint)textLength, &((PangoItem*)pItem->backend.cairo.pPangoItem)->analysis, pPangoGlyphString);
+    /* Temp hack. Will be replaced with a proper font cascading solution. */
+    pPrevPangoFont = ((PangoItem*)pItem->backend.cairo.pPangoItem)->analysis.font;
+    ((PangoItem*)pItem->backend.cairo.pPangoItem)->analysis.font = pFont->cairo.pPangoFont;
+    {
+        pango_shape(pTextUTF8, (gint)textLength, &((PangoItem*)pItem->backend.cairo.pPangoItem)->analysis, pPangoGlyphString);
+    }
+    ((PangoItem*)pItem->backend.cairo.pPangoItem)->analysis.font = pPrevPangoFont;
 
     if (pGlyphs != NULL) {
         size_t iGlyph;
@@ -7271,7 +7278,7 @@ mt_result mt_shape_utf8__cairo(mt_font* pFont, mt_item* pItem, const mt_utf8* pT
 
         for (iGlyph = 0; iGlyph < pPangoGlyphString->num_glyphs; ++iGlyph) {
             pGlyphs[iGlyph].index                 = pPangoGlyphString->glyphs[iGlyph].glyph;
-            pGlyphs[iGlyph].advance               = pPangoGlyphString->glyphs[iGlyph].geometry.width * PANGO_SCALE;
+            pGlyphs[iGlyph].advance               = pPangoGlyphString->glyphs[iGlyph].geometry.width / PANGO_SCALE;
             pGlyphs[iGlyph].backend.cairo.width   = pPangoGlyphString->glyphs[iGlyph].geometry.width;
             pGlyphs[iGlyph].backend.cairo.offsetX = pPangoGlyphString->glyphs[iGlyph].geometry.x_offset;
             pGlyphs[iGlyph].backend.cairo.offsetY = pPangoGlyphString->glyphs[iGlyph].geometry.y_offset;
@@ -7291,6 +7298,10 @@ mt_result mt_shape_utf8__cairo(mt_font* pFont, mt_item* pItem, const mt_utf8* pT
 
     *pGlyphCount = glyphCount;
 
+    if (pRunMetrics != NULL) {
+        *pRunMetrics = metrics;
+    }
+
     return MT_SUCCESS;
 }
 
@@ -7301,7 +7312,7 @@ void mt_gc_draw_glyphs__cairo(mt_gc* pGC, const mt_item* pItem, const mt_glyph* 
     mt_font* pFont;
     mt_color fgColor;
     mt_color bgColor;
-    mt_uint32 textWidth;
+    mt_uint32 textWidth = 0;
     PangoGlyphString glyphString;
     PangoGlyphInfo* pGlyphInfoHeap = NULL;
     PangoGlyphInfo* pGlyphInfo = NULL;
@@ -7312,8 +7323,8 @@ void mt_gc_draw_glyphs__cairo(mt_gc* pGC, const mt_item* pItem, const mt_glyph* 
 
     (void)pItem;
 
-    iState = pGC->cairo.stateCount-1;
-    pFont = pGC->cairo.pState[iState].pFont;
+    iState  = pGC->cairo.stateCount-1;
+    pFont   = pGC->cairo.pState[iState].pFont;
     fgColor = pGC->cairo.pState[iState].textFGColor;
     bgColor = pGC->cairo.pState[iState].textBGColor;
 
@@ -7338,6 +7349,7 @@ void mt_gc_draw_glyphs__cairo(mt_gc* pGC, const mt_item* pItem, const mt_glyph* 
 
         textWidth += pGlyphs[iGlyph].advance;
     }
+    glyphString.glyphs = pGlyphInfo;
     glyphString.log_clusters = NULL;
 
     /* Background. */
@@ -7357,8 +7369,13 @@ void mt_gc_clear__cairo(mt_gc* pGC, mt_color color)
 {
     MT_ASSERT(pGC != NULL);
 
-    cairo_set_source_rgba((cairo_t*)pGC->cairo.pCairoContext, color.r/255.0, color.g/255.0, color.b/255.0, color.a/255.0);
-    cairo_paint((cairo_t*)pGC->cairo.pCairoContext);
+    cairo_save((cairo_t*)pGC->cairo.pCairoContext);
+    {
+        cairo_set_operator((cairo_t*)pGC->cairo.pCairoContext, CAIRO_OPERATOR_OVER);
+        cairo_set_source_rgba((cairo_t*)pGC->cairo.pCairoContext, color.r/255.0, color.g/255.0, color.b/255.0, color.a/255.0);
+        cairo_paint((cairo_t*)pGC->cairo.pCairoContext);
+    }
+    cairo_restore((cairo_t*)pGC->cairo.pCairoContext);
 }
 
 
@@ -7533,13 +7550,16 @@ mt_result mt_itemize_utf8(mt_api* pAPI, const mt_utf8* pTextUTF8, size_t textLen
     mt_result result;
     mt_uint32 itemCount;
 
-    if (pItemCount != NULL) {
-        *pItemCount = 0;    /* Safety. */
-    }
-
-    if (pAPI == NULL || pTextUTF8 == NULL || textLength == 0 || pItemCount == NULL) {
+    if (pItemCount == NULL) {
         return MT_INVALID_ARGS;
     }
+
+    itemCount = *pItemCount;
+
+    if (pAPI == NULL || pTextUTF8 == NULL || textLength == 0) {
+        return MT_INVALID_ARGS;
+    }
+
 
     /*
     We could do some generic itemization here such as line breaks and tabs, however it makes things awkward with memory management. I'm therefore
