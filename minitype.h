@@ -481,9 +481,9 @@ struct mt_api
 {
     mt_backend backend;
     void      (* uninit)                    (mt_api* pAPI);
-    mt_result (* itemizeUTF8)               (mt_api* pAPI, const mt_utf8* pTextUTF8, size_t textLength, mt_item* pItems, mt_uint32* pItemCount, mt_itemize_state* pItemizeState);
-    mt_result (* itemizeUTF16)              (mt_api* pAPI, const mt_utf16* pTextUTF16, size_t textLength, mt_item* pItems, mt_uint32* pItemCount, mt_itemize_state* pItemizeState);
-    mt_result (* itemizeUTF32)              (mt_api* pAPI, const mt_utf32* pTextUTF32, size_t textLength, mt_item* pItems, mt_uint32* pItemCount, mt_itemize_state* pItemizeState);
+    mt_result (* itemizeUTF8)               (mt_api* pAPI, mt_font* pFont, const mt_utf8* pTextUTF8, size_t textLength, mt_item* pItems, mt_uint32* pItemCount, mt_itemize_state* pItemizeState);
+    mt_result (* itemizeUTF16)              (mt_api* pAPI, mt_font* pFont, const mt_utf16* pTextUTF16, size_t textLength, mt_item* pItems, mt_uint32* pItemCount, mt_itemize_state* pItemizeState);
+    mt_result (* itemizeUTF32)              (mt_api* pAPI, mt_font* pFont, const mt_utf32* pTextUTF32, size_t textLength, mt_item* pItems, mt_uint32* pItemCount, mt_itemize_state* pItemizeState);
     void      (* freeItemizeState)          (mt_api* pAPI, mt_itemize_state* pItemizeState);
     mt_result (* shapeUTF8)                 (mt_font* pFont, mt_item* pItem, const mt_utf8* pTextUTF8, size_t textLength, mt_glyph* pGlyphs, size_t* pGlyphCount, size_t* pClusters, mt_text_metrics* pRunMetrics);
     mt_result (* shapeUTF16)                (mt_font* pFont, mt_item* pItem, const mt_utf16* pTextUTF16, size_t textLength, mt_glyph* pGlyphs, size_t* pGlyphCount, size_t* pClusters, mt_text_metrics* pRunMetrics);
@@ -648,6 +648,8 @@ struct mt_font
     struct
     {
         /*PangoFont**/ mt_ptr pPangoFont;
+        /*PangoFontDescription**/ mt_ptr pPangoFontDesc;
+        /*PangoAttrList**/ mt_ptr pPangoAttrList;   /* Passed into pango_itemize(). */
     } cairo;
 #endif
 #if defined(MT_SUPPORT_XFT)
@@ -1188,7 +1190,7 @@ Remarks
 -------
 This is the first function you should call when preparing text for drawing.
 */
-mt_result mt_itemize_utf8(mt_api* pAPI, const mt_utf8* pTextUTF8, size_t textLength, mt_item* pItems, mt_uint32* pItemCount, mt_itemize_state* pItemizeState);
+mt_result mt_itemize_utf8(mt_api* pAPI, mt_font* pFont, const mt_utf8* pTextUTF8, size_t textLength, mt_item* pItems, mt_uint32* pItemCount, mt_itemize_state* pItemizeState);
 
 /*
 Frees the itemization state returned from mt_itemize_*(). You should call this when you are finished with the items returned from mt_itemize_*().
@@ -5706,7 +5708,7 @@ void mt_gc_draw_gc__gdi(mt_gc* pGC, mt_gc* pSrcGC, mt_int32 srcX, mt_int32 srcY)
 }
 
 /* API */
-mt_result mt_itemize_utf16__gdi(mt_api* pAPI, const mt_utf16* pTextUTF16, size_t textLength, mt_item* pItems, mt_uint32* pItemCount, mt_itemize_state* pItemizeState)
+mt_result mt_itemize_utf16__gdi(mt_api* pAPI, mt_font* pFont, const mt_utf16* pTextUTF16, size_t textLength, mt_item* pItems, mt_uint32* pItemCount, mt_itemize_state* pItemizeState)
 {
     HRESULT hResult;
     mt_uint32 itemCapacity;
@@ -6260,6 +6262,7 @@ mt_result mt_font_init__cairo(mt_api* pAPI, const mt_font_config* pConfig, mt_fo
     PangoFontDescription* pPangoFontDesc;
     PangoFont* pPangoFont;
     PangoFontMetrics* pPangoFontMetrics;
+    PangoAttrList* pPangoAttrList;
 
     MT_ASSERT(pAPI != NULL);
     MT_ASSERT(pConfig != NULL);
@@ -6295,8 +6298,17 @@ mt_result mt_font_init__cairo(mt_api* pAPI, const mt_font_config* pConfig, mt_fo
         return MT_ERROR;    /* Failed to load the requested font. */
     }
 
-    pango_font_description_free(pPangoFontDesc);
-    pPangoFontDesc = NULL;
+
+    /* Now that we have the font description we need to build a PangoAttrList with that description. The PangoAttrList object is passed to pango_itemize(). */
+    pPangoAttrList = pango_attr_list_new();
+    if (pPangoAttrList == NULL) {
+        g_object_unref((PangoFont*)pFont->cairo.pPangoFont);
+        pango_font_description_free(pPangoFontDesc);
+        return MT_OUT_OF_MEMORY;
+    }
+
+    pango_attr_list_insert(pPangoAttrList, pango_attr_font_desc_new(pPangoFontDesc));
+
 
     /* We should have the font at this point, so now we need to retrieve the metrics. */
     pPangoFontMetrics = pango_font_get_metrics(pPangoFont, NULL);
@@ -6305,6 +6317,8 @@ mt_result mt_font_init__cairo(mt_api* pAPI, const mt_font_config* pConfig, mt_fo
     pango_font_metrics_unref(pPangoFontMetrics);
 
     pFont->cairo.pPangoFont = pPangoFont;
+    pFont->cairo.pPangoFontDesc = pPangoFontDesc;
+    pFont->cairo.pPangoAttrList = pPangoAttrList;
 
     return MT_SUCCESS;
 }
@@ -6313,7 +6327,14 @@ void mt_font_uninit__cairo(mt_font* pFont)
 {
     MT_ASSERT(pFont != NULL);
 
+    pango_attr_list_unref((PangoAttrList*)pFont->cairo.pPangoAttrList);
+    pFont->cairo.pPangoAttrList = NULL;
+
     g_object_unref((PangoFont*)pFont->cairo.pPangoFont);
+    pFont->cairo.pPangoFont = NULL;
+
+    pango_font_description_free((PangoFontDescription*)pFont->cairo.pPangoFontDesc);
+    pFont->cairo.pPangoFontDesc = NULL;
 }
 
 MT_PRIVATE void mt_font_get_glyph_metrics_single__cairo(cairo_scaled_font_t* pCairoFont, mt_uint32 glyphIndex, mt_glyph_metrics* pGlyphMetrics)
@@ -7169,7 +7190,7 @@ MT_PRIVATE void mt_free_pango_items__cairo(GList* pPangoItems)
     g_list_free(pPangoItems);
 }
 
-mt_result mt_itemize_utf8__cairo(mt_api* pAPI, const mt_utf8* pTextUTF8, size_t textLength, mt_item* pItems, mt_uint32* pItemCount, mt_itemize_state* pItemizeState)
+mt_result mt_itemize_utf8__cairo(mt_api* pAPI, mt_font* pFont, const mt_utf8* pTextUTF8, size_t textLength, mt_item* pItems, mt_uint32* pItemCount, mt_itemize_state* pItemizeState)
 {
     GList* pPangoItems;
     mt_uint32 itemCap;
@@ -7184,7 +7205,7 @@ mt_result mt_itemize_utf8__cairo(mt_api* pAPI, const mt_utf8* pTextUTF8, size_t 
 
     itemCap = *pItemCount;
 
-    pPangoItems = pango_itemize((PangoContext*)pAPI->cairo.pPangoContext, pTextUTF8, 0, (gint)textLength, NULL, NULL);
+    pPangoItems = pango_itemize((PangoContext*)pAPI->cairo.pPangoContext, pTextUTF8, 0, (gint)textLength, (PangoAttrList*)pFont->cairo.pPangoAttrList, NULL);
     if (pPangoItems == NULL) {
         return MT_ERROR;    /* An error occurred when itemizing. */
     }
@@ -7244,7 +7265,6 @@ mt_result mt_shape_utf8__cairo(mt_font* pFont, mt_item* pItem, const mt_utf8* pT
     size_t glyphCap;
     size_t glyphCount = 0;
     mt_text_metrics metrics;
-    PangoFont* pPrevPangoFont; /* Temp. */
 
     MT_ASSERT(pItem != NULL);
     MT_ASSERT(pFont != NULL);
@@ -7259,13 +7279,7 @@ mt_result mt_shape_utf8__cairo(mt_font* pFont, mt_item* pItem, const mt_utf8* pT
         return MT_OUT_OF_MEMORY;
     }
 
-    /* Temp hack. Will be replaced with a proper font cascading solution. */
-    pPrevPangoFont = ((PangoItem*)pItem->backend.cairo.pPangoItem)->analysis.font;
-    ((PangoItem*)pItem->backend.cairo.pPangoItem)->analysis.font = pFont->cairo.pPangoFont;
-    {
-        pango_shape(pTextUTF8, (gint)textLength, &((PangoItem*)pItem->backend.cairo.pPangoItem)->analysis, pPangoGlyphString);
-    }
-    ((PangoItem*)pItem->backend.cairo.pPangoItem)->analysis.font = pPrevPangoFont;
+    pango_shape(pTextUTF8, (gint)textLength, &((PangoItem*)pItem->backend.cairo.pPangoItem)->analysis, pPangoGlyphString);
 
     if (pGlyphs != NULL) {
         size_t iGlyph;
@@ -7316,12 +7330,15 @@ void mt_gc_draw_glyphs__cairo(mt_gc* pGC, const mt_item* pItem, const mt_glyph* 
     PangoGlyphString glyphString;
     PangoGlyphInfo* pGlyphInfoHeap = NULL;
     PangoGlyphInfo* pGlyphInfo = NULL;
+    PangoFont* pPangoFont;
 
     MT_ASSERT(pGC     != NULL);
     MT_ASSERT(pItem   != NULL);
     MT_ASSERT(pGlyphs != NULL);
 
     (void)pItem;
+
+    pPangoFont = ((PangoItem*)pItem->backend.cairo.pPangoItem)->analysis.font;
 
     iState  = pGC->cairo.stateCount-1;
     pFont   = pGC->cairo.pState[iState].pFont;
@@ -7360,7 +7377,7 @@ void mt_gc_draw_glyphs__cairo(mt_gc* pGC, const mt_item* pItem, const mt_glyph* 
     /* Text. */
     cairo_move_to((cairo_t*)pGC->cairo.pCairoContext, x, y + pFont->metrics.ascent);
     cairo_set_source_rgba((cairo_t*)pGC->cairo.pCairoContext, fgColor.r/255.0, fgColor.g/255.0, fgColor.b/255.0, fgColor.a/255.0);
-    pango_cairo_show_glyph_string((cairo_t*)pGC->cairo.pCairoContext, (PangoFont*)pFont->cairo.pPangoFont, &glyphString);
+    pango_cairo_show_glyph_string((cairo_t*)pGC->cairo.pCairoContext, pPangoFont, &glyphString);
 
     MT_FREE(pGlyphInfoHeap);
 }
@@ -7545,7 +7562,7 @@ void mt_uninit(mt_api* pAPI)
     pAPI->uninit(pAPI);
 }
 
-mt_result mt_itemize_utf8(mt_api* pAPI, const mt_utf8* pTextUTF8, size_t textLength, mt_item* pItems, mt_uint32* pItemCount, mt_itemize_state* pItemizeState)
+mt_result mt_itemize_utf8(mt_api* pAPI, mt_font* pFont, const mt_utf8* pTextUTF8, size_t textLength, mt_item* pItems, mt_uint32* pItemCount, mt_itemize_state* pItemizeState)
 {
     mt_result result;
     mt_uint32 itemCount;
@@ -7569,7 +7586,7 @@ mt_result mt_itemize_utf8(mt_api* pAPI, const mt_utf8* pTextUTF8, size_t textLen
     /* If the backend directly supports UTF-8, just pass it straight through. Otherwise we need to convert. */
     if (pAPI->itemizeUTF8) {
         /* UTF-8 natively supported. */
-        result = pAPI->itemizeUTF8(pAPI, pTextUTF8, textLength, pItems, &itemCount, pItemizeState);
+        result = pAPI->itemizeUTF8(pAPI, pFont, pTextUTF8, textLength, pItems, &itemCount, pItemizeState);
     } else {
         /* UTF-8 not natively supported. Need to convert the string to another format. */
         if (pAPI->itemizeUTF16) {
@@ -7607,7 +7624,7 @@ mt_result mt_itemize_utf8(mt_api* pAPI, const mt_utf8* pTextUTF8, size_t textLen
             }
 
             /* We have the UTF-16 string, so now we need to itemize these. */
-            result = pAPI->itemizeUTF16(pAPI, pUTF16, utf16Len, pItems, &itemCount, pItemizeState);
+            result = pAPI->itemizeUTF16(pAPI, pFont, pUTF16, utf16Len, pItems, &itemCount, pItemizeState);
             if (result == MT_SUCCESS) {
                 /* We have the items, so now we need to convert the offsets and lengths to the UTF-8 equivalents. */
                 if (pItems != NULL) {
