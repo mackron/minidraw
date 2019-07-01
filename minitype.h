@@ -451,6 +451,7 @@ typedef struct
 
 typedef struct
 {
+    mt_api* pAPI;
     union
     {
     #if defined(MT_SUPPORT_CAIRO)
@@ -481,10 +482,10 @@ struct mt_api
 {
     mt_backend backend;
     void      (* uninit)                    (mt_api* pAPI);
-    mt_result (* itemizeUTF8)               (mt_api* pAPI, mt_font* pFont, const mt_utf8* pTextUTF8, size_t textLength, mt_item* pItems, mt_uint32* pItemCount, mt_itemize_state* pItemizeState);
-    mt_result (* itemizeUTF16)              (mt_api* pAPI, mt_font* pFont, const mt_utf16* pTextUTF16, size_t textLength, mt_item* pItems, mt_uint32* pItemCount, mt_itemize_state* pItemizeState);
-    mt_result (* itemizeUTF32)              (mt_api* pAPI, mt_font* pFont, const mt_utf32* pTextUTF32, size_t textLength, mt_item* pItems, mt_uint32* pItemCount, mt_itemize_state* pItemizeState);
-    void      (* freeItemizeState)          (mt_api* pAPI, mt_itemize_state* pItemizeState);
+    mt_result (* itemizeUTF8)               (mt_font* pFont, const mt_utf8* pTextUTF8, size_t textLength, mt_item* pItems, mt_uint32* pItemCount, mt_itemize_state* pItemizeState);
+    mt_result (* itemizeUTF16)              (mt_font* pFont, const mt_utf16* pTextUTF16, size_t textLength, mt_item* pItems, mt_uint32* pItemCount, mt_itemize_state* pItemizeState);
+    mt_result (* itemizeUTF32)              (mt_font* pFont, const mt_utf32* pTextUTF32, size_t textLength, mt_item* pItems, mt_uint32* pItemCount, mt_itemize_state* pItemizeState);
+    void      (* freeItemizeState)          (mt_itemize_state* pItemizeState);
     mt_result (* shapeUTF8)                 (mt_font* pFont, mt_item* pItem, const mt_utf8* pTextUTF8, size_t textLength, mt_glyph* pGlyphs, size_t* pGlyphCount, size_t* pClusters, mt_text_metrics* pRunMetrics);
     mt_result (* shapeUTF16)                (mt_font* pFont, mt_item* pItem, const mt_utf16* pTextUTF16, size_t textLength, mt_glyph* pGlyphs, size_t* pGlyphCount, size_t* pClusters, mt_text_metrics* pRunMetrics);
     mt_result (* shapeUTF32)                (mt_font* pFont, mt_item* pItem, const mt_utf32* pTextUTF32, size_t textLength, mt_glyph* pGlyphs, size_t* pGlyphCount, size_t* pClusters, mt_text_metrics* pRunMetrics);
@@ -1190,12 +1191,12 @@ Remarks
 -------
 This is the first function you should call when preparing text for drawing.
 */
-mt_result mt_itemize_utf8(mt_api* pAPI, mt_font* pFont, const mt_utf8* pTextUTF8, size_t textLength, mt_item* pItems, mt_uint32* pItemCount, mt_itemize_state* pItemizeState);
+mt_result mt_itemize_utf8(mt_font* pFont, const mt_utf8* pTextUTF8, size_t textLength, mt_item* pItems, mt_uint32* pItemCount, mt_itemize_state* pItemizeState);
 
 /*
 Frees the itemization state returned from mt_itemize_*(). You should call this when you are finished with the items returned from mt_itemize_*().
 */
-void mt_free_itemize_state(mt_api* pAPI, mt_itemize_state* pItemizeState);
+void mt_free_itemize_state(mt_itemize_state* pItemizeState);
 
 /*
 Performs text shaping and placement on the given text run. This function is used to convert text to glyphs and calculate their relative positions.
@@ -5708,7 +5709,7 @@ void mt_gc_draw_gc__gdi(mt_gc* pGC, mt_gc* pSrcGC, mt_int32 srcX, mt_int32 srcY)
 }
 
 /* API */
-mt_result mt_itemize_utf16__gdi(mt_api* pAPI, mt_font* pFont, const mt_utf16* pTextUTF16, size_t textLength, mt_item* pItems, mt_uint32* pItemCount, mt_itemize_state* pItemizeState)
+mt_result mt_itemize_utf16__gdi(mt_font* pFont, const mt_utf16* pTextUTF16, size_t textLength, mt_item* pItems, mt_uint32* pItemCount, mt_itemize_state* pItemizeState)
 {
     HRESULT hResult;
     mt_uint32 itemCapacity;
@@ -5717,7 +5718,7 @@ mt_result mt_itemize_utf16__gdi(mt_api* pAPI, mt_font* pFont, const mt_utf16* pT
     MT_SCRIPT_ITEM* pScriptItemsHeap = NULL;
     MT_SCRIPT_ITEM* pScriptItems = NULL;   /* Set to either pScriptItemsStack or pScriptItemsHeap. */
 
-    MT_ASSERT(pAPI != NULL);
+    MT_ASSERT(pFont != NULL);
     MT_ASSERT(pTextUTF16 != NULL);
     MT_ASSERT(pTextUTF16[0] != '\0');
     MT_ASSERT(textLength > 0);
@@ -5743,7 +5744,7 @@ mt_result mt_itemize_utf16__gdi(mt_api* pAPI, mt_font* pFont, const mt_utf16* pT
     */
 
     /* Try itemizing into the stack first. If this fails we fall back to the heap. */
-    hResult = ((MT_PFN_ScriptItemize)pAPI->gdi.ScriptItemize)((const wchar_t*)pTextUTF16, (int)textLength, MT_COUNTOF(pScriptItemsStack)-1, NULL, NULL, (SCRIPT_ITEM*)pScriptItemsStack, &scriptItemCount);   /* Subtract 1 from item capacity because the last item is always used as a null terminator. */
+    hResult = ((MT_PFN_ScriptItemize)pFont->pAPI->gdi.ScriptItemize)((const wchar_t*)pTextUTF16, (int)textLength, MT_COUNTOF(pScriptItemsStack)-1, NULL, NULL, (SCRIPT_ITEM*)pScriptItemsStack, &scriptItemCount);   /* Subtract 1 from item capacity because the last item is always used as a null terminator. */
     if (hResult == S_OK) {
         pScriptItems = &pScriptItemsStack[0];
     } else {
@@ -5767,7 +5768,7 @@ mt_result mt_itemize_utf16__gdi(mt_api* pAPI, mt_font* pFont, const mt_utf16* pT
 
                 pScriptItemsHeap = pNewScriptItemsHeap;
 
-                hResult = ((MT_PFN_ScriptItemize)pAPI->gdi.ScriptItemize)((const wchar_t*)pTextUTF16, (int)textLength, (int)(heapCap-1), NULL, NULL, (SCRIPT_ITEM*)pScriptItemsHeap, &scriptItemCount);   /* Subtract 1 from item capacity because the last item is always used as a null terminator. */
+                hResult = ((MT_PFN_ScriptItemize)pFont->pAPI->gdi.ScriptItemize)((const wchar_t*)pTextUTF16, (int)textLength, (int)(heapCap-1), NULL, NULL, (SCRIPT_ITEM*)pScriptItemsHeap, &scriptItemCount);   /* Subtract 1 from item capacity because the last item is always used as a null terminator. */
             }
 
             pScriptItems = pScriptItemsHeap;
@@ -5805,13 +5806,11 @@ mt_result mt_itemize_utf16__gdi(mt_api* pAPI, mt_font* pFont, const mt_utf16* pT
     return MT_SUCCESS;
 }
 
-void mt_free_itemize_state__gdi(mt_api* pAPI, mt_itemize_state* pItemizeState)
+void mt_free_itemize_state__gdi(mt_itemize_state* pItemizeState)
 {
-    MT_ASSERT(pAPI != NULL);
     MT_ASSERT(pItemizeState != NULL);
 
     /* Nothing to do here. */
-    (void)pAPI;
     (void)pItemizeState;
 }
 
@@ -7190,13 +7189,13 @@ MT_PRIVATE void mt_free_pango_items__cairo(GList* pPangoItems)
     g_list_free(pPangoItems);
 }
 
-mt_result mt_itemize_utf8__cairo(mt_api* pAPI, mt_font* pFont, const mt_utf8* pTextUTF8, size_t textLength, mt_item* pItems, mt_uint32* pItemCount, mt_itemize_state* pItemizeState)
+mt_result mt_itemize_utf8__cairo(mt_font* pFont, const mt_utf8* pTextUTF8, size_t textLength, mt_item* pItems, mt_uint32* pItemCount, mt_itemize_state* pItemizeState)
 {
     GList* pPangoItems;
     mt_uint32 itemCap;
     mt_uint32 itemCount = 0;
 
-    MT_ASSERT(pAPI != NULL);
+    MT_ASSERT(pFont != NULL);
     MT_ASSERT(textLength > 0);
     MT_ASSERT(pTextUTF8 != NULL);
     MT_ASSERT(pTextUTF8[0] != '\0');
@@ -7205,7 +7204,7 @@ mt_result mt_itemize_utf8__cairo(mt_api* pAPI, mt_font* pFont, const mt_utf8* pT
 
     itemCap = *pItemCount;
 
-    pPangoItems = pango_itemize((PangoContext*)pAPI->cairo.pPangoContext, pTextUTF8, 0, (gint)textLength, (PangoAttrList*)pFont->cairo.pPangoAttrList, NULL);
+    pPangoItems = pango_itemize((PangoContext*)pFont->pAPI->cairo.pPangoContext, pTextUTF8, 0, (gint)textLength, (PangoAttrList*)pFont->cairo.pPangoAttrList, NULL);
     if (pPangoItems == NULL) {
         return MT_ERROR;    /* An error occurred when itemizing. */
     }
@@ -7250,9 +7249,8 @@ mt_result mt_itemize_utf8__cairo(mt_api* pAPI, mt_font* pFont, const mt_utf8* pT
     return MT_SUCCESS;
 }
 
-void mt_free_itemize_state__cairo(mt_api* pAPI, mt_itemize_state* pItemizeState)
+void mt_free_itemize_state__cairo(mt_itemize_state* pItemizeState)
 {
-    MT_ASSERT(pAPI != NULL);
     MT_ASSERT(pItemizeState != NULL);
 
     mt_free_pango_items__cairo((GList*)pItemizeState->backend.cairo.pPangoItems);
@@ -7335,8 +7333,6 @@ void mt_gc_draw_glyphs__cairo(mt_gc* pGC, const mt_item* pItem, const mt_glyph* 
     MT_ASSERT(pGC     != NULL);
     MT_ASSERT(pItem   != NULL);
     MT_ASSERT(pGlyphs != NULL);
-
-    (void)pItem;
 
     pPangoFont = ((PangoItem*)pItem->backend.cairo.pPangoItem)->analysis.font;
 
@@ -7562,7 +7558,7 @@ void mt_uninit(mt_api* pAPI)
     pAPI->uninit(pAPI);
 }
 
-mt_result mt_itemize_utf8(mt_api* pAPI, mt_font* pFont, const mt_utf8* pTextUTF8, size_t textLength, mt_item* pItems, mt_uint32* pItemCount, mt_itemize_state* pItemizeState)
+mt_result mt_itemize_utf8(mt_font* pFont, const mt_utf8* pTextUTF8, size_t textLength, mt_item* pItems, mt_uint32* pItemCount, mt_itemize_state* pItemizeState)
 {
     mt_result result;
     mt_uint32 itemCount;
@@ -7573,7 +7569,7 @@ mt_result mt_itemize_utf8(mt_api* pAPI, mt_font* pFont, const mt_utf8* pTextUTF8
 
     itemCount = *pItemCount;
 
-    if (pAPI == NULL || pTextUTF8 == NULL || textLength == 0) {
+    if (pFont == NULL || pTextUTF8 == NULL || textLength == 0) {
         return MT_INVALID_ARGS;
     }
 
@@ -7584,12 +7580,12 @@ mt_result mt_itemize_utf8(mt_api* pAPI, mt_font* pFont, const mt_utf8* pTextUTF8
     */
 
     /* If the backend directly supports UTF-8, just pass it straight through. Otherwise we need to convert. */
-    if (pAPI->itemizeUTF8) {
+    if (pFont->pAPI->itemizeUTF8) {
         /* UTF-8 natively supported. */
-        result = pAPI->itemizeUTF8(pAPI, pFont, pTextUTF8, textLength, pItems, &itemCount, pItemizeState);
+        result = pFont->pAPI->itemizeUTF8(pFont, pTextUTF8, textLength, pItems, &itemCount, pItemizeState);
     } else {
         /* UTF-8 not natively supported. Need to convert the string to another format. */
-        if (pAPI->itemizeUTF16) {
+        if (pFont->pAPI->itemizeUTF16) {
             /*
             Convert the input string to UTF-16, itemize, then convert offsets back to UTF-8 equivalents. To make things more efficient for small
             strings we can try converting to a stack-allocated buffer first. If this is too small we will fall back to the heap which will be
@@ -7624,7 +7620,7 @@ mt_result mt_itemize_utf8(mt_api* pAPI, mt_font* pFont, const mt_utf8* pTextUTF8
             }
 
             /* We have the UTF-16 string, so now we need to itemize these. */
-            result = pAPI->itemizeUTF16(pAPI, pFont, pUTF16, utf16Len, pItems, &itemCount, pItemizeState);
+            result = pFont->pAPI->itemizeUTF16(pFont, pUTF16, utf16Len, pItems, &itemCount, pItemizeState);
             if (result == MT_SUCCESS) {
                 /* We have the items, so now we need to convert the offsets and lengths to the UTF-8 equivalents. */
                 if (pItems != NULL) {
@@ -7646,7 +7642,7 @@ mt_result mt_itemize_utf8(mt_api* pAPI, mt_font* pFont, const mt_utf8* pTextUTF8
             
             /* Done. */
             MT_FREE(pUTF16Heap);
-        } else if (pAPI->itemizeUTF32) {
+        } else if (pFont->pAPI->itemizeUTF32) {
             /* TODO: Convert the input string to UTF-32, itemize, then convert offsets back to UTF-8 equivalents. */
             return MT_INVALID_OPERATION;
         } else {
@@ -7655,17 +7651,23 @@ mt_result mt_itemize_utf8(mt_api* pAPI, mt_font* pFont, const mt_utf8* pTextUTF8
     }
 
     *pItemCount = itemCount;
+
+    /* Make sure the API object is always set in the itemize state. */
+    if (pItemizeState) {
+        pItemizeState->pAPI = pFont->pAPI;
+    }
+
     return result;
 }
 
-void mt_free_itemize_state(mt_api* pAPI, mt_itemize_state* pItemizeState)
+void mt_free_itemize_state(mt_itemize_state* pItemizeState)
 {
-    if (pAPI == NULL || pItemizeState == NULL) {
+    if (pItemizeState == NULL) {
         return;
     }
 
-    if (pAPI->freeItemizeState) {
-        pAPI->freeItemizeState(pAPI, pItemizeState);
+    if (pItemizeState->pAPI->freeItemizeState) {
+        pItemizeState->pAPI->freeItemizeState(pItemizeState);
     }
 }
 

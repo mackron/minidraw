@@ -88,7 +88,7 @@ void draw_logo(mt_gc* pGC)
                 mt_itemize_state itemizeState;
                 mt_item items[128];
                 mt_uint32 itemCount = MT_COUNTOF(items);
-                result = mt_itemize_utf8(pGC->pAPI, &g_font, g_text, strlen(g_text), items, &itemCount, &itemizeState);
+                result = mt_itemize_utf8(&g_font, g_text, strlen(g_text), items, &itemCount, &itemizeState);
                 if (result == MT_SUCCESS) {
                     mt_uint32 iItem;
                     for (iItem = 0; iItem < itemCount; ++iItem) {
@@ -156,7 +156,7 @@ void draw_logo(mt_gc* pGC)
                         }
                     }
 
-                    mt_free_itemize_state(pGC->pAPI, &itemizeState);
+                    mt_free_itemize_state(&itemizeState);
                 }
             }
         }
