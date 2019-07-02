@@ -84,7 +84,6 @@ void draw_logo(mt_gc* pGC)
             mt_gc_set_line_width(pGC, 1);
             mt_gc_set_text_bg_color(pGC, mt_rgba(0, 0, 0, 0));      /* Foreground color is controlled by the clear color. */
             mt_gc_set_text_fg_color(pGC, g_textFGColor);
-            mt_gc_set_font(pGC, &g_font);
 
             {
                 mt_itemize_state itemizeState;

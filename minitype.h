@@ -522,7 +522,6 @@ struct mt_api
     void      (* gcSetFillBrush)            (mt_gc* pGC, mt_brush* pBrush);
     void      (* gcSetFillBrushSolid)       (mt_gc* pGC, mt_color color);
     void      (* gcSetFillBrushGC)          (mt_gc* pGC, mt_gc* pSrcGC);
-    void      (* gcSetFont)                 (mt_gc* pGC, mt_font* pFont);
     void      (* gcSetTextFGColor)          (mt_gc* pGC, mt_color fgColor);
     void      (* gcSetTextBGColor)          (mt_gc* pGC, mt_color bgColor);
     void      (* gcSetBlendOp)              (mt_gc* pGC, mt_blend_op op);
@@ -738,7 +737,6 @@ typedef struct
     mt_uint32 dashCount;
     float dashes[16];
     mt_blend_op blendOp;
-    mt_font* pFont;
     mt_brush_config lineStockBrush;     /* For use with solid and GC brushes. Only used when pUserLineBrush is NULL. */
     mt_brush* pUserLineBrush;           /* For use with user-defined brushes. */
     mt_brush transientFillBrush;        /* For use with solid and GC brushes. Only used when pUserFillBrush is NULL. */
@@ -751,7 +749,6 @@ typedef struct
 typedef struct
 {
     mt_stretch_filter stretchFilter;
-    mt_font* pFont;
     mt_color textFGColor;
     mt_color textBGColor;
     mt_brush* pFillBrush;
@@ -1172,7 +1169,17 @@ Itemization, Shaping and Placement
 
 **************************************************************************************************************************************************************/
 /*
-Itemizes a UTF-8 string in preparation for shaping, placement and drawing.
+Itemizes a UTF-8 string in preparation for shaping and drawing.
+
+[pFont](in)
+    The base font to use as the basis for font fallback. See remarks.
+
+[pTextUTF8](in)
+    A pointer to the text to itemize.
+
+[textLength](in)
+    The length in bytes (not characters or Unicode code points) of [pTextUTF8]. This can be set to (size_t)-1 in which case it will be treated as null-
+    terminated. Note that this is less efficient, so if you know the length of the string ahead of time you should pass that in.
 
 [pItems](out, optional)
     A pointer to a buffer that will receive the items. Can be NULL, in which case only the item count is returned.
@@ -1180,18 +1187,40 @@ Itemizes a UTF-8 string in preparation for shaping, placement and drawing.
 [pItemCount](in, out)
     A pointer to an unsigned integer that, on input, contains the capacity of [pItems] and on output will receive the actual item count. Cannot be NULL.
 
+[pItemizeState](out)
+    A pointer to an mt_itemize_state object that is used for storing backend-specific data which needs to persist until the application is done with each
+    item. When you are finished with each item in the [pItems] array, you need to free this data with mt_free_itemize_state(). The application need not be
+    concerned with the contents of the object, nor do anything with it except free it.
+
 
 Return Value
 ------------
 MT_SUCCESS is returned on success.
 
-MT_INVALID_ARGS will be returned if [pText] is NULL, [textLength] is zero or [pItemCount] is NULL.
+MT_INVALID_ARGS will be returned if [pFont] is NULL, [pText] is NULL, [textLength] is zero or [pItemCount] is NULL.
 
 MT_NO_SPACE will be returned when [pItems] is not large enough to contain the items. In this case, [pItemCount] will be set to the required count.
 
 Remarks
 -------
 This is the first function you should call when preparing text for drawing.
+
+Some backends will perform font fallback at this point. This is why [pFont] is required. Other backends may defer font fallback to mt_shape_*().
+
+Example
+-------
+```
+mt_itemize_state itemizeState;
+mt_items items[1024];
+size_t itemCount = MT_COUNTOF(items);
+mt_result result = mt_itemize_utf8(&myFont, "Hello, World!", (size_t)-1, items, &itemCount, &itemizeState);
+if (result == MT_SUCCESS) {
+    ... do something with items ...
+
+    // We're done. Free the itemize state.
+    mt_free_itemize_state(&itemizeState);
+}
+```
 */
 mt_result mt_itemize_utf8(mt_font* pFont, const mt_utf8* pTextUTF8, size_t textLength, mt_item* pItems, mt_uint32* pItemCount, mt_itemize_state* pItemizeState);
 
@@ -1360,7 +1389,6 @@ void mt_gc_set_line_brush_gc(mt_gc* pGC, mt_gc* pSrcGC);
 void mt_gc_set_fill_brush(mt_gc* pGC, mt_brush* pBrush);
 void mt_gc_set_fill_brush_solid(mt_gc* pGC, mt_color color);
 void mt_gc_set_fill_brush_gc(mt_gc* pGC, mt_gc* pSrcGC);
-void mt_gc_set_font(mt_gc* pGC, mt_font* pFont);
 void mt_gc_set_text_fg_color(mt_gc* pGC, mt_color fgColor);
 void mt_gc_set_text_bg_color(mt_gc* pGC, mt_color bgColor);
 void mt_gc_set_blend_op(mt_gc* pGC, mt_blend_op op);
@@ -1437,7 +1465,35 @@ image or if you want to draw a non-rectangular shape.
 void mt_gc_draw_gc(mt_gc* pGC, mt_gc* pSrcGC, mt_int32 srcX, mt_int32 srcY);
 
 /*
-Draws a glyph string using the currently selected font.
+Draws a glyph string using the font defined by [pItem].
+
+Parameters
+----------
+[pGC](in)
+    A pointer to the graphics context to draw to.
+
+[pItem](in)
+    The item that was retrieved with prior calls to mt_itemize_*() and mt_shape_*(). The item will be associated with a font, which is the
+    font that's used to draw the glyphs.
+
+[pGlyphs](in)
+    The array of glyphs to draw.
+
+[glyphCount](in)
+    The number of glyphs in [pGlyphs].
+
+[x](in)
+    The x position to draw the glyphs.
+
+[y](in)
+    The y position to draw the glyphs. This is relative to the top left of the bounding box of the text. Offset this against the ascent of the
+    font to know how to offset this value if you want to draw relative to the base line. You can use mt_item_get_font_metrics() to know this.
+
+Remarks
+-------
+Use mt_gc_set_text_bg_color() and mt_gc_set_text_fg_color() to configure the color to draw the font.
+
+GDI/Unicode Specific: This will change the current font on the internal HDC.
 */
 void mt_gc_draw_glyphs(mt_gc* pGC, const mt_item* pItem, const mt_glyph* pGlyphs, size_t glyphCount, mt_int32 x, mt_int32 y);
 
@@ -5404,16 +5460,6 @@ void mt_gc_set_fill_brush_gc__gdi(mt_gc* pGC, mt_gc* pSrcGC)
     mt_gc_set_fill_brush_transient__gdi(pGC, &config);
 }
 
-void mt_gc_set_font__gdi(mt_gc* pGC, mt_font* pFont)
-{
-    MT_ASSERT(pGC != NULL);
-
-    if (pGC->gdi.pState[pGC->gdi.stateCount-1].pFont != pFont) {
-        pGC->gdi.pState[pGC->gdi.stateCount-1].pFont  = pFont;
-        SelectObject((HDC)pGC->gdi.hDC, (HFONT)pFont->gdi.hFont);
-    }
-}
-
 void mt_gc_set_text_fg_color__gdi(mt_gc* pGC, mt_color bgColor)
 {
     MT_ASSERT(pGC != NULL);
@@ -5980,7 +6026,6 @@ void mt_gc_draw_glyphs__gdi(mt_gc* pGC, const mt_item* pItem, const mt_glyph* pG
 {
     HRESULT hResult;
     size_t iGlyph;
-    mt_font* pFont;
     void* pHeap = NULL;
     WORD  pUniscribeGlyphsStack[4096];
     WORD* pUniscribeGlyphsHeap = NULL;              /* Offset of pHeap. */
@@ -5995,11 +6040,6 @@ void mt_gc_draw_glyphs__gdi(mt_gc* pGC, const mt_item* pItem, const mt_glyph* pG
     /* ScriptTextOut() uses an integer for the glyph count, so keep it simple and return an error if we're asking for more. */
     if (glyphCount > 0x7FFFFFFF) {
         return; /* MT_INVALID_ARGS */
-    }
-
-    pFont = pGC->gdi.pState[pGC->gdi.stateCount-1].pFont;
-    if (pFont == NULL) {
-        return; /* MT_INVALID_OPERATION. No font selected. */
     }
 
     if (glyphCount <= MT_COUNTOF(pUniscribeAdvancesStack)) {
@@ -6026,7 +6066,9 @@ void mt_gc_draw_glyphs__gdi(mt_gc* pGC, const mt_item* pItem, const mt_glyph* pG
         pUniscribeOffsets[iGlyph].dv = pGlyphs[iGlyph].backend.gdi.offsetY;
     }
 
-    hResult = ((MT_PFN_ScriptTextOut)pGC->pAPI->gdi.ScriptTextOut)((HDC)pGC->gdi.hDC, &pFont->gdi.sc, x, y, /* fuOptions */ETO_OPAQUE, NULL, (SCRIPT_ANALYSIS*)&pItem->backend.gdi.sa, NULL, 0, pUniscribeGlyphs, (int)glyphCount, pUniscribeAdvances, NULL, pUniscribeOffsets);
+    SelectObject((HDC)pGC->gdi.hDC, (HFONT)pItem->backend.gdi.hFont);
+
+    hResult = ((MT_PFN_ScriptTextOut)pGC->pAPI->gdi.ScriptTextOut)((HDC)pGC->gdi.hDC, &((mt_item*)pItem)->backend.gdi.sc, x, y, /* fuOptions */ETO_OPAQUE, NULL, (SCRIPT_ANALYSIS*)&pItem->backend.gdi.sa, NULL, 0, pUniscribeGlyphs, (int)glyphCount, pUniscribeAdvances, NULL, pUniscribeOffsets);
     if (hResult != S_OK) {
         return; /* Error occurred. */
     }
@@ -6157,7 +6199,6 @@ mt_result mt_init__gdi(const mt_api_config* pConfig, mt_api* pAPI)
     pAPI->gcSetFillBrush             = mt_gc_set_fill_brush__gdi;
     pAPI->gcSetFillBrushSolid        = mt_gc_set_fill_brush_solid__gdi;
     pAPI->gcSetFillBrushGC           = mt_gc_set_fill_brush_gc__gdi;
-    pAPI->gcSetFont                  = mt_gc_set_font__gdi;
     pAPI->gcSetTextFGColor           = mt_gc_set_text_fg_color__gdi;
     pAPI->gcSetTextBGColor           = mt_gc_set_text_bg_color__gdi;
     pAPI->gcSetBlendOp               = mt_gc_set_blend_op__gdi;
@@ -6884,16 +6925,6 @@ void mt_gc_set_fill_brush_gc__cairo(mt_gc* pGC, mt_gc* pSrcGC)
     pGC->cairo.pState[iState].hasTransientFillBrush = MT_TRUE;
 }
 
-void mt_gc_set_font__cairo(mt_gc* pGC, mt_font* pFont)
-{
-    mt_uint32 iState;
-
-    MT_ASSERT(pGC != NULL);
-
-    iState = pGC->cairo.stateCount-1;
-    pGC->cairo.pState[iState].pFont = pFont;
-}
-
 void mt_gc_set_text_fg_color__cairo(mt_gc* pGC, mt_color fgColor)
 {
     mt_uint32 iState;
@@ -7327,7 +7358,6 @@ void mt_gc_draw_glyphs__cairo(mt_gc* pGC, const mt_item* pItem, const mt_glyph* 
 {
     mt_uint32 iState;
     size_t iGlyph;
-    mt_font* pFont;
     mt_color fgColor;
     mt_color bgColor;
     mt_uint32 textWidth = 0;
@@ -7335,6 +7365,9 @@ void mt_gc_draw_glyphs__cairo(mt_gc* pGC, const mt_item* pItem, const mt_glyph* 
     PangoGlyphInfo* pGlyphInfoHeap = NULL;
     PangoGlyphInfo* pGlyphInfo = NULL;
     PangoFont* pPangoFont;
+    PangoFontMetrics* pPangoFontMetrics;
+    mt_int32 ascent;
+    mt_int32 descent;
 
     MT_ASSERT(pGC     != NULL);
     MT_ASSERT(pItem   != NULL);
@@ -7342,8 +7375,13 @@ void mt_gc_draw_glyphs__cairo(mt_gc* pGC, const mt_item* pItem, const mt_glyph* 
 
     pPangoFont = ((PangoItem*)pItem->backend.cairo.pPangoItem)->analysis.font;
 
+    /* May want to optimize this... */
+    pPangoFontMetrics = pango_font_get_metrics(pPangoFont, NULL);
+    ascent  =  pango_font_metrics_get_ascent(pPangoFontMetrics)  / PANGO_SCALE;
+    descent = -pango_font_metrics_get_descent(pPangoFontMetrics) / PANGO_SCALE;
+    pango_font_metrics_unref(pPangoFontMetrics);
+
     iState  = pGC->cairo.stateCount-1;
-    pFont   = pGC->cairo.pState[iState].pFont;
     fgColor = pGC->cairo.pState[iState].textFGColor;
     bgColor = pGC->cairo.pState[iState].textBGColor;
 
@@ -7373,11 +7411,11 @@ void mt_gc_draw_glyphs__cairo(mt_gc* pGC, const mt_item* pItem, const mt_glyph* 
 
     /* Background. */
     cairo_set_source_rgba((cairo_t*)pGC->cairo.pCairoContext, bgColor.r/255.0, bgColor.g/255.0, bgColor.b/255.0, bgColor.a/255.0);
-    cairo_rectangle((cairo_t*)pGC->cairo.pCairoContext, x, y, textWidth, (pFont->metrics.ascent - pFont->metrics.descent));
+    cairo_rectangle((cairo_t*)pGC->cairo.pCairoContext, x, y, textWidth, (ascent - descent));
     cairo_fill((cairo_t*)pGC->cairo.pCairoContext);
 
     /* Text. */
-    cairo_move_to((cairo_t*)pGC->cairo.pCairoContext, x, y + pFont->metrics.ascent);
+    cairo_move_to((cairo_t*)pGC->cairo.pCairoContext, x, y + ascent);
     cairo_set_source_rgba((cairo_t*)pGC->cairo.pCairoContext, fgColor.r/255.0, fgColor.g/255.0, fgColor.b/255.0, fgColor.a/255.0);
     pango_cairo_show_glyph_string((cairo_t*)pGC->cairo.pCairoContext, pPangoFont, &glyphString);
 
@@ -7451,7 +7489,6 @@ mt_result mt_init__cairo(const mt_api_config* pConfig, mt_api* pAPI)
     pAPI->gcSetFillBrush             = mt_gc_set_fill_brush__cairo;
     pAPI->gcSetFillBrushSolid        = mt_gc_set_fill_brush_solid__cairo;
     pAPI->gcSetFillBrushGC           = mt_gc_set_fill_brush_gc__cairo;
-    pAPI->gcSetFont                  = mt_gc_set_font__cairo;
     pAPI->gcSetTextFGColor           = mt_gc_set_text_fg_color__cairo;
     pAPI->gcSetTextBGColor           = mt_gc_set_text_bg_color__cairo;
     pAPI->gcSetBlendOp               = mt_gc_set_blend_op__cairo;
@@ -7579,6 +7616,9 @@ mt_result mt_itemize_utf8(mt_font* pFont, const mt_utf8* pTextUTF8, size_t textL
         return MT_INVALID_ARGS;
     }
 
+    if (textLength == (size_t)-1) {
+        textLength = strlen(pTextUTF8);
+    }
 
     /*
     We could do some generic itemization here such as line breaks and tabs, however it makes things awkward with memory management. I'm therefore
@@ -8439,19 +8479,6 @@ void mt_gc_set_fill_brush_gc(mt_gc* pGC, mt_gc* pSrcGC)
 
     if (pGC->pAPI->gcSetFillBrushGC) {
         pGC->pAPI->gcSetFillBrushGC(pGC, pSrcGC);
-    }
-}
-
-void mt_gc_set_font(mt_gc* pGC, mt_font* pFont)
-{
-    if (pGC == NULL) {
-        return;
-    }
-
-    MT_ASSERT(pGC->pAPI != NULL);
-
-    if (pGC->pAPI->gcSetFont) {
-        pGC->pAPI->gcSetFont(pGC, pFont);
     }
 }
 
