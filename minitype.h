@@ -427,7 +427,7 @@ typedef struct
 
 typedef struct
 {
-    size_t offset;  /* Offset in code units (bytes for UTF-8, shorts for UTF-16, integers for UTF-32. */
+    size_t offset;  /* Offset in code units (bytes for UTF-8, shorts for UTF-16, integers for UTF-32). */
     size_t length;  /* Length in code units. */
 
     /* Backend-specific data. */
@@ -436,7 +436,9 @@ typedef struct
     #if defined(MT_SUPPORT_GDI)
         struct
         {
-            MT_SCRIPT_ANALYSIS sa;   /* Passed around to Script*() APIs. */
+            MT_SCRIPT_ANALYSIS sa;          /* Passed around to Script*() APIs. */
+            /* HFONT */ mt_handle hFont;    /* The font to use when drawing this item. */
+            /*SCRIPT_CACHE*/ mt_ptr sc;     /* The SCRIPT_CACHE object passed around to ScriptShape(), ScriptPlace() and ScriptTextOut(). */
         } gdi;
     #endif
     #if defined(MT_SUPPORT_CAIRO)
@@ -513,7 +515,7 @@ struct mt_api
     void      (* gcSetLineCap)              (mt_gc* pGC, mt_line_cap cap);
     void      (* gcSetLineJoin)             (mt_gc* pGC, mt_line_join join);
     void      (* gcSetMiterLimit)           (mt_gc* pGC, float limit);
-    void      (* gcSetLineDash)             (mt_gc* pGC, float* dashes, mt_uint32 count);
+    void      (* gcSetLineDash)             (mt_gc* pGC, const float* dashes, mt_uint32 count);
     void      (* gcSetLineBrush)            (mt_gc* pGC, mt_brush* pBrush);
     void      (* gcSetLineBrushSolid)       (mt_gc* pGC, mt_color color);
     void      (* gcSetLineBrushGC)          (mt_gc* pGC, mt_gc* pSrcGC);
@@ -1351,7 +1353,7 @@ void mt_gc_set_miter_limit(mt_gc* pGC, float limit);
 void mt_gc_set_line_width(mt_gc* pGC, mt_int32 width);
 void mt_gc_set_line_cap(mt_gc* pGC, mt_line_cap cap);
 void mt_gc_set_line_join(mt_gc* pGC, mt_line_join join);
-void mt_gc_set_line_dash(mt_gc* pGC, float* dashes, mt_uint32 count);  /* Max value for <count> is 16. */
+void mt_gc_set_line_dash(mt_gc* pGC, const float* dashes, mt_uint32 count);  /* Max value for <count> is 16. */
 void mt_gc_set_line_brush(mt_gc* pGC, mt_brush* pBrush);
 void mt_gc_set_line_brush_solid(mt_gc* pGC, mt_color color);
 void mt_gc_set_line_brush_gc(mt_gc* pGC, mt_gc* pSrcGC);
@@ -5286,7 +5288,7 @@ void mt_gc_set_line_join__gdi(mt_gc* pGC, mt_line_join join)
     mt_gc_delete_current_pen__gdi(pGC);
 }
 
-void mt_gc_set_line_dash__gdi(mt_gc* pGC, float* dashes, mt_uint32 count)
+void mt_gc_set_line_dash__gdi(mt_gc* pGC, const float* dashes, mt_uint32 count)
 {
     MT_ASSERT(pGC != NULL);
 
@@ -5792,9 +5794,11 @@ mt_result mt_itemize_utf16__gdi(mt_font* pFont, const mt_utf16* pTextUTF16, size
         if (itemCapacity >= (mt_uint32)scriptItemCount) {
             int iItem;
             for (iItem = 0; iItem < scriptItemCount; ++iItem) {
-                pItems[iItem].offset         = (size_t)pScriptItems[iItem].iCharPos;
-                pItems[iItem].length         = (size_t)(pScriptItems[iItem+1].iCharPos - pScriptItems[iItem].iCharPos);
-                pItems[iItem].backend.gdi.sa = pScriptItems[iItem].a;
+                pItems[iItem].offset            = (size_t)pScriptItems[iItem].iCharPos;
+                pItems[iItem].length            = (size_t)(pScriptItems[iItem+1].iCharPos - pScriptItems[iItem].iCharPos);
+                pItems[iItem].backend.gdi.sa    = pScriptItems[iItem].a;
+                pItems[iItem].backend.gdi.hFont = pFont->gdi.hFont; /* For now always use the input font for all items, but we will likely want to implement some kind of font fallback system. Font fallback should be implemented in mt_shape_utf16__gdi() for Unicode. */
+                pItems[iItem].backend.gdi.sc    = pFont->gdi.sc;    /* ^^^ */
             }
         } else {
             MT_FREE(pScriptItemsHeap);
@@ -5864,6 +5868,8 @@ mt_result mt_shape_utf16__gdi(mt_font* pFont, mt_item* pItem, const mt_utf16* pT
 
         pUniscribeClusters = pUniscribeClustersHeap;
     }
+
+    /* TODO: Font fallback. */
 
     /* We first try with a NULL DC. If this fails we need to select the font into the global DC and try again. */
     hResult = ((MT_PFN_ScriptShape)pFont->pAPI->gdi.ScriptShape)(NULL, (SCRIPT_CACHE*)&pFont->gdi.sc, (const WCHAR*)pTextUTF16, (int)textLength, MT_COUNTOF(pUniscribeGlyphsStack), (SCRIPT_ANALYSIS*)&pItem->backend.gdi.sa, pUniscribeGlyphsStack, pUniscribeClusters, (SCRIPT_VISATTR*)pUniscribeSVAStack, &glyphCount);
@@ -6789,7 +6795,7 @@ void mt_gc_set_line_join__cairo(mt_gc* pGC, mt_line_join join)
     cairo_set_line_join((cairo_t*)pGC->cairo.pCairoContext, joinCairo);
 }
 
-void mt_gc_set_line_dash__cairo(mt_gc* pGC, float* dashes, mt_uint32 count)
+void mt_gc_set_line_dash__cairo(mt_gc* pGC, const float* dashes, mt_uint32 count)
 {
     double dashesD[16]; /* Max of 16. */
     mt_uint32 iDash;
@@ -8341,7 +8347,7 @@ void mt_gc_set_line_join(mt_gc* pGC, mt_line_join join)
     }
 }
 
-void mt_gc_set_line_dash(mt_gc* pGC, float* dashes, mt_uint32 count)
+void mt_gc_set_line_dash(mt_gc* pGC, const float* dashes, mt_uint32 count)
 {
     if (pGC == NULL) {
         return;

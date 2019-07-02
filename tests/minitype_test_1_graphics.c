@@ -18,6 +18,8 @@
 #endif
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "../external/stb/stb_image_write.h"
+#define STB_IMAGE_IMPLEMENTATION
+#include "../external/stb/stb_image.h"
 #if defined(__clang__)
     #pragma GCC diagnostic pop
 #endif

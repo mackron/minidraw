@@ -2,16 +2,6 @@
 #include <stdio.h>
 #include <assert.h>
 
-#if defined(__clang__)
-    #pragma GCC diagnostic push
-    #pragma GCC diagnostic ignored "-Wcomment"  /* // comments are not allowed in this language [-Wcomment] */
-#endif
-#define STB_IMAGE_IMPLEMENTATION
-#include "../external/stb/stb_image.h"
-#if defined(__clang__)
-    #pragma GCC diagnostic pop
-#endif
-
 #if defined(MT_HAS_CAIRO)
 #include <gdk/gdk.h>
 #include <gtk/gtk.h>
