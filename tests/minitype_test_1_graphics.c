@@ -175,7 +175,7 @@ mt_result on_init(mt_testapp* pApp)
     fontConfig.sizeInPixels = 120;
     fontConfig.weight = mt_font_weight_normal;
     fontConfig.slant = mt_font_slant_none;
-    fontConfig.noClearType = MT_FALSE;
+    fontConfig.antialiasMode = mt_antialias_mode_subpixel;
     result = mt_font_init(&pApp->mt, &fontConfig, &g_font);
     if (result != MT_SUCCESS) {
         return result;

@@ -283,8 +283,10 @@ typedef enum
 
 typedef enum
 {
-    mt_antialias_mode_default = 0,  /* Let the backend decide, but prefer anti-aliasing if available. Will be the same as mt_antialias_none on GDI since GDI does not support anti-aliasing. */
-    mt_antialias_mode_none    = 1   /* Anti-aliasing will be disabled. Useful for straight-edge primitives like un-rotated rectangles or where performance is a concern. */
+    mt_antialias_mode_default  = 0, /* Let the backend decide, but prefer anti-aliasing if available. Will be the same as mt_antialias_none on GDI since GDI does not support anti-aliasing. */
+    mt_antialias_mode_none     = 1, /* Anti-aliasing will be disabled. Useful for straight-edge primitives like un-rotated rectangles or where performance is a concern. */
+    mt_antialias_mode_gray     = 2, /* Standard grayscale anti-aliasing. */
+    mt_antialias_mode_subpixel = 3  /* ClearType style anti-aliasing. */
 } mt_antialias_mode;
 
 typedef enum
@@ -614,7 +616,7 @@ struct mt_font_config
     mt_uint32 sizeInPoints; /* If set to 0, sizeInPixels will be used instead. */
     mt_font_weight weight;
     mt_font_slant slant;
-    mt_bool32 noClearType;  /* TODO: Change this to an enum: mt_text_antialias_mode or just reuse mt_antialias_mode. */
+    mt_antialias_mode antialiasMode;    /* Preferred anti-aliasing to use with this font. This is just a hint. */
     struct
     {
         /*PangoFontMap**/ mt_ptr pPangoFontMap; /* Custom application-defined PangoFontMap to use when creating the font. */
@@ -4654,6 +4656,7 @@ mt_result mt_font_init__gdi(mt_api* pAPI, const mt_font_config* pConfig, mt_font
 {
     BYTE slantGDI;
     LONG weightGDI;
+    BYTE qualityGDI;
     LOGFONTA logfont;
     HFONT hFont;
     LONG fontSize;
@@ -4686,12 +4689,21 @@ mt_result mt_font_init__gdi(mt_api* pAPI, const mt_font_config* pConfig, mt_font
         fontSize = -MulDiv(pConfig->sizeInPoints, GetDeviceCaps(pAPI->gdi.hGlobalDC, LOGPIXELSY), 72);
     }
 
+    qualityGDI = CLEARTYPE_QUALITY;
+    switch (pConfig->antialiasMode) {
+        case mt_antialias_mode_none:     qualityGDI = NONANTIALIASED_QUALITY; break;
+        case mt_antialias_mode_gray:     qualityGDI = ANTIALIASED_QUALITY;    break;
+        case mt_antialias_mode_subpixel: qualityGDI = CLEARTYPE_QUALITY;      break;
+        case mt_antialias_mode_default:  qualityGDI = CLEARTYPE_QUALITY;      break;
+        default:                         qualityGDI = CLEARTYPE_QUALITY;      break;
+    }
+
     MT_ZERO_OBJECT(&logfont);
     logfont.lfHeight      = fontSize;
     logfont.lfWeight      = weightGDI;
     logfont.lfItalic      = slantGDI;
     logfont.lfCharSet     = DEFAULT_CHARSET;
-    logfont.lfQuality     = (pConfig->noClearType) ? ANTIALIASED_QUALITY : CLEARTYPE_QUALITY;
+    logfont.lfQuality     = qualityGDI;
     logfont.lfEscapement  = 0;
     logfont.lfOrientation = 0;
     mt_strncpy_s(logfont.lfFaceName, sizeof(logfont.lfFaceName), pConfig->family, _TRUNCATE);
@@ -6982,6 +6994,17 @@ void mt_gc_set_antialias_mode__cairo(mt_gc* pGC, mt_antialias_mode mode)
         {
             modeCairo = CAIRO_ANTIALIAS_NONE;
         } break;
+
+        case mt_antialias_mode_gray:
+        {
+            modeCairo = CAIRO_ANTIALIAS_GRAY
+        } break;
+
+        case mt_antialias_mode_subpixel:
+        {
+            modeCairo = CAIRO_ANTIALIAS_SUBPIXEL;
+        } break;
+
         case mt_antialias_mode_default:
         default:
         {
