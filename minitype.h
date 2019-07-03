@@ -6997,7 +6997,7 @@ void mt_gc_set_antialias_mode__cairo(mt_gc* pGC, mt_antialias_mode mode)
 
         case mt_antialias_mode_gray:
         {
-            modeCairo = CAIRO_ANTIALIAS_GRAY
+            modeCairo = CAIRO_ANTIALIAS_GRAY;
         } break;
 
         case mt_antialias_mode_subpixel:
