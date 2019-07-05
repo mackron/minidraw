@@ -7385,6 +7385,7 @@ void mt_gc_draw_glyphs__cairo(mt_gc* pGC, const mt_item* pItem, const mt_glyph* 
     mt_color bgColor;
     mt_uint32 textWidth = 0;
     PangoGlyphString glyphString;
+    PangoGlyphInfo  pGlyphInfoStack[4096];
     PangoGlyphInfo* pGlyphInfoHeap = NULL;
     PangoGlyphInfo* pGlyphInfo = NULL;
     PangoFont* pPangoFont;
@@ -7409,7 +7410,10 @@ void mt_gc_draw_glyphs__cairo(mt_gc* pGC, const mt_item* pItem, const mt_glyph* 
     bgColor = pGC->cairo.pState[iState].textBGColor;
 
     /* Unfortunately Pango's API doesn't map too well with minitype's. We need to build our own glyph string. */
-    {
+    if (glyphCount <= MT_COUNTOF(pGlyphInfoStack)) {
+        /* Enough room on the stack. */
+        pGlyphInfo = pGlyphInfoStack;
+    } else {
         /* Try a heap allocation. */
         pGlyphInfoHeap = (PangoGlyphInfo*)MT_MALLOC(sizeof(*pGlyphInfoHeap) * glyphCount);
         if (pGlyphInfoHeap == NULL) {
