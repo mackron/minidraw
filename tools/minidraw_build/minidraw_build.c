@@ -1,5 +1,5 @@
 /*
-This is used for doing code generation for minitype. Code is generated primarily based on the Unicode Character Database.
+This is used for doing code generation for minidraw. Code is generated primarily based on the Unicode Character Database.
 */
 #include <stdlib.h>
 #include <string.h>
@@ -15,68 +15,68 @@ This is used for doing code generation for minitype. Code is generated primarily
         #pragma GCC diagnostic ignored "-Wlanguage-extension-token"
         #pragma GCC diagnostic ignored "-Wc++11-long-long"
     #endif
-    typedef   signed __int8  mtbuild_int8;
-    typedef unsigned __int8  mtbuild_uint8;
-    typedef   signed __int16 mtbuild_int16;
-    typedef unsigned __int16 mtbuild_uint16;
-    typedef   signed __int32 mtbuild_int32;
-    typedef unsigned __int32 mtbuild_uint32;
-    typedef   signed __int64 mtbuild_int64;
-    typedef unsigned __int64 mtbuild_uint64;
+    typedef   signed __int8  mdbuild_int8;
+    typedef unsigned __int8  mdbuild_uint8;
+    typedef   signed __int16 mdbuild_int16;
+    typedef unsigned __int16 mdbuild_uint16;
+    typedef   signed __int32 mdbuild_int32;
+    typedef unsigned __int32 mdbuild_uint32;
+    typedef   signed __int64 mdbuild_int64;
+    typedef unsigned __int64 mdbuild_uint64;
     #if defined(__clang__)
         #pragma GCC diagnostic pop
     #endif
 #else
-    #define MTBUILD_HAS_STDINT
+    #define MDBUILD_HAS_STDINT
     #include <stdint.h>
-    typedef int8_t   mtbuild_int8;
-    typedef uint8_t  mtbuild_uint8;
-    typedef int16_t  mtbuild_int16;
-    typedef uint16_t mtbuild_uint16;
-    typedef int32_t  mtbuild_int32;
-    typedef uint32_t mtbuild_uint32;
-    typedef int64_t  mtbuild_int64;
-    typedef uint64_t mtbuild_uint64;
+    typedef int8_t   mdbuild_int8;
+    typedef uint8_t  mdbuild_uint8;
+    typedef int16_t  mdbuild_int16;
+    typedef uint16_t mdbuild_uint16;
+    typedef int32_t  mdbuild_int32;
+    typedef uint32_t mdbuild_uint32;
+    typedef int64_t  mdbuild_int64;
+    typedef uint64_t mdbuild_uint64;
 #endif
 
-#ifdef MTBUILD_HAS_STDINT
-    typedef uintptr_t mtbuild_uintptr;
+#ifdef MDBUILD_HAS_STDINT
+    typedef uintptr_t mdbuild_uintptr;
 #else
     #if defined(_WIN32)
         #if defined(_WIN64)
-            typedef mtbuild_uint64 mtbuild_uintptr;
+            typedef mdbuild_uint64 mdbuild_uintptr;
         #else
-            typedef mtbuild_uint32 mtbuild_uintptr;
+            typedef mdbuild_uint32 mdbuild_uintptr;
         #endif
     #elif defined(__GNUC__)
         #if defined(__LP64__)
-            typedef mtbuild_uint64 mtbuild_uintptr;
+            typedef mdbuild_uint64 mdbuild_uintptr;
         #else
-            typedef mtbuild_uint32 mtbuild_uintptr;
+            typedef mdbuild_uint32 mdbuild_uintptr;
         #endif
     #else
-        typedef mtbuild_uint64 mtbuild_uintptr;   /* Fallback. */
+        typedef mdbuild_uint64 mdbuild_uintptr;   /* Fallback. */
     #endif
 #endif
-typedef mtbuild_uint8    mtbuild_bool8;
-typedef mtbuild_uint32   mtbuild_bool32;
-#define MTBUILD_TRUE     1
-#define MTBUILD_FALSE    0
+typedef mdbuild_uint8    mdbuild_bool8;
+typedef mdbuild_uint32   mdbuild_bool32;
+#define MDBUILD_TRUE     1
+#define MDBUILD_FALSE    0
 
-typedef mtbuild_uint32 mtbuild_utf32;
+typedef mdbuild_uint32 mdbuild_utf32;
 
-typedef int mtbuild_result;
-#define MTBUILD_SUCCESS              0
-#define MTBUILD_ERROR               -1
-#define MTBUILD_INVALID_ARGS        -2
-#define MTBUILD_INVALID_OPERATION   -3
-#define MTBUILD_OUT_OF_MEMORY       -4
+typedef int mdbuild_result;
+#define MDBUILD_SUCCESS              0
+#define MDBUILD_ERROR               -1
+#define MDBUILD_INVALID_ARGS        -2
+#define MDBUILD_INVALID_OPERATION   -3
+#define MDBUILD_OUT_OF_MEMORY       -4
 
-#define MTBUILD_UCD_PATH    "../../external/ucd"
+#define MDBUILD_UCD_PATH    "../../external/ucd"
 
-#define MTBUILD_ZERO_OBJECT(p)   memset((p), 0, sizeof(*(p)))
+#define MDBUILD_ZERO_OBJECT(p)   memset((p), 0, sizeof(*(p)))
 
-mtbuild_result mtbuild_fopen(FILE** ppFile, const char* filePath, const char* openMode)
+mdbuild_result mdbuild_fopen(FILE** ppFile, const char* filePath, const char* openMode)
 {
 #if _MSC_VER
     errno_t err;
@@ -87,13 +87,13 @@ mtbuild_result mtbuild_fopen(FILE** ppFile, const char* filePath, const char* op
     }
 
     if (filePath == NULL || openMode == NULL || ppFile == NULL) {
-        return MTBUILD_INVALID_ARGS;
+        return MDBUILD_INVALID_ARGS;
     }
 
 #if _MSC_VER
     err = fopen_s(ppFile, filePath, openMode);
     if (err != 0) {
-        return MTBUILD_ERROR;
+        return MDBUILD_ERROR;
     }
 #else
 #if defined(_WIN32) || defined(__APPLE__)
@@ -102,26 +102,26 @@ mtbuild_result mtbuild_fopen(FILE** ppFile, const char* filePath, const char* op
     *ppFile = fopen64(filePath, openMode);
 #endif
     if (*ppFile == NULL) {
-        return MTBUILD_ERROR;
+        return MDBUILD_ERROR;
     }
 #endif
 
-    return MTBUILD_SUCCESS;
+    return MDBUILD_SUCCESS;
 }
 
-mtbuild_result mtbuild_open_and_read_file(const char* filePath, size_t* pFileSizeOut, void** ppFileData)
+mdbuild_result mdbuild_open_and_read_file(const char* filePath, size_t* pFileSizeOut, void** ppFileData)
 {
-    mtbuild_result result;
-    mtbuild_uint64 fileSize;
+    mdbuild_result result;
+    mdbuild_uint64 fileSize;
     FILE* pFile;
     void* pFileData;
     size_t bytesRead;
 
     assert(filePath != NULL);
 
-    result = mtbuild_fopen(&pFile, filePath, "rb");
-    if (result != MTBUILD_SUCCESS) {
-        return MTBUILD_ERROR;
+    result = mdbuild_fopen(&pFile, filePath, "rb");
+    if (result != MDBUILD_SUCCESS) {
+        return MDBUILD_ERROR;
     }
 
     fseek(pFile, 0, SEEK_END);
@@ -130,20 +130,20 @@ mtbuild_result mtbuild_open_and_read_file(const char* filePath, size_t* pFileSiz
 
     if (fileSize > SIZE_MAX) {
         fclose(pFile);
-        return MTBUILD_ERROR;
+        return MDBUILD_ERROR;
     }
 
     pFileData = malloc((size_t)fileSize);    /* <-- Safe cast due to the check above. */
     if (pFileData == NULL) {
         fclose(pFile);
-        return MTBUILD_OUT_OF_MEMORY;
+        return MDBUILD_OUT_OF_MEMORY;
     }
 
     bytesRead = fread(pFileData, 1, (size_t)fileSize, pFile);
     if (bytesRead != fileSize) {
         free(pFileData);
         fclose(pFile);
-        return MTBUILD_ERROR;
+        return MDBUILD_ERROR;
     }
 
     fclose(pFile);
@@ -158,20 +158,20 @@ mtbuild_result mtbuild_open_and_read_file(const char* filePath, size_t* pFileSiz
         free(pFileData);
     }
 
-    return MTBUILD_SUCCESS;
+    return MDBUILD_SUCCESS;
 }
 
-mtbuild_bool32 mtbuild_is_hex_digit(char ch)
+mdbuild_bool32 mdbuild_is_hex_digit(char ch)
 {
     return (ch >= '0' && ch <= '9') || (ch >= 'A' && ch <= 'F') || (ch >= 'a' && ch <= 'f');
 }
 
-mtbuild_utf32 mtbuild_cp_str_to_uint(const char* str)
+mdbuild_utf32 mdbuild_cp_str_to_uint(const char* str)
 {
-    return (mtbuild_utf32)strtoul(str, NULL, 16);
+    return (mdbuild_utf32)strtoul(str, NULL, 16);
 }
 
-int mtbuild_itoa_s(int value, char* dst, size_t dstSizeInBytes, int radix)
+int mdbuild_itoa_s(int value, char* dst, size_t dstSizeInBytes, int radix)
 {
 #ifdef _MSC_VER
     return _itoa_s(value, dst, dstSizeInBytes, radix);
@@ -242,7 +242,7 @@ int mtbuild_itoa_s(int value, char* dst, size_t dstSizeInBytes, int radix)
 }
 
 
-char* mtbuild_string_append(char* str, const char* other)
+char* mdbuild_string_append(char* str, const char* other)
 {
     size_t len0;
     size_t len1;
@@ -265,13 +265,13 @@ char* mtbuild_string_append(char* str, const char* other)
     return newStr;
 }
 
-char* mtbuild_string_append_utf8_cp_hex(char* pCodeOut, char utf8)
+char* mdbuild_string_append_utf8_cp_hex(char* pCodeOut, char utf8)
 {
     size_t i;
     char str[16];
     str[0] = '0';
     str[1] = 'x';
-    mtbuild_itoa_s((mtbuild_uint8)utf8, str+2, sizeof(str)-2, 16);
+    mdbuild_itoa_s((mdbuild_uint8)utf8, str+2, sizeof(str)-2, 16);
 
     /* For aesthetics I want to use upper case characters. */
     for (i = 2; i < sizeof(str); ++i) {
@@ -282,48 +282,48 @@ char* mtbuild_string_append_utf8_cp_hex(char* pCodeOut, char utf8)
         str[i] = toupper(str[i]);
     }
 
-    return mtbuild_string_append(pCodeOut, str);
+    return mdbuild_string_append(pCodeOut, str);
 }
 
 
 typedef struct
 {
-    mtbuild_utf32 beg;
-    mtbuild_utf32 end;
-} mtbuild_codepoint_range;
+    mdbuild_utf32 beg;
+    mdbuild_utf32 end;
+} mdbuild_codepoint_range;
 
 typedef struct
 {
-    mtbuild_codepoint_range cp;
-    const char* category;   /* An offset of mtbuild_ucd_proplist._pRawData. */
-} mtbuild_ucd_proplist_item;
+    mdbuild_codepoint_range cp;
+    const char* category;   /* An offset of mdbuild_ucd_proplist._pRawData. */
+} mdbuild_ucd_proplist_item;
 
 typedef struct
 {
-    mtbuild_ucd_proplist_item* pItems;
+    mdbuild_ucd_proplist_item* pItems;
     size_t itemCount;
     char* _pRawData;
-} mtbuild_ucd_proplist;
+} mdbuild_ucd_proplist;
 
 typedef struct
 {
-    mtbuild_ucd_proplist proplist;
-} mtbuild_ucd;
+    mdbuild_ucd_proplist proplist;
+} mdbuild_ucd;
 
-mtbuild_result mtbuild_ucd_proplist_load(mtbuild_ucd_proplist* pPropList)
+mdbuild_result mdbuild_ucd_proplist_load(mdbuild_ucd_proplist* pPropList)
 {
-    mtbuild_result result;
+    mdbuild_result result;
     size_t fileSize;
     size_t iByte;
     size_t iItem;
-    mtbuild_bool32 skippingLine = MTBUILD_FALSE;
+    mdbuild_bool32 skippingLine = MDBUILD_FALSE;
 
     assert(pPropList != NULL);
 
-    MTBUILD_ZERO_OBJECT(pPropList);
+    MDBUILD_ZERO_OBJECT(pPropList);
 
-    result = mtbuild_open_and_read_file(MTBUILD_UCD_PATH"/PropList.txt", &fileSize, (void**)&pPropList->_pRawData);
-    if (result != MTBUILD_SUCCESS) {
+    result = mdbuild_open_and_read_file(MDBUILD_UCD_PATH"/PropList.txt", &fileSize, (void**)&pPropList->_pRawData);
+    if (result != MDBUILD_SUCCESS) {
         return result;
     }
 
@@ -334,25 +334,25 @@ mtbuild_result mtbuild_ucd_proplist_load(mtbuild_ucd_proplist* pPropList)
     for (iByte = 0; iByte < fileSize; ++iByte) {
         if (skippingLine) {
             if (pPropList->_pRawData[iByte] == '\n') {
-                skippingLine = MTBUILD_FALSE;       /* Found the start of the end of the line. */
+                skippingLine = MDBUILD_FALSE;       /* Found the start of the end of the line. */
                 continue;
             }
         } else {
             /* If the line starts with a hex digit we can treat it as a valid item. Otherwise we skip the line. */
-            if (mtbuild_is_hex_digit(pPropList->_pRawData[iByte])) {
+            if (mdbuild_is_hex_digit(pPropList->_pRawData[iByte])) {
                 pPropList->itemCount += 1;
-                skippingLine = MTBUILD_TRUE;        /* Skip the rest of the line since we don't need to do anything more with it. */
+                skippingLine = MDBUILD_TRUE;        /* Skip the rest of the line since we don't need to do anything more with it. */
             } else {
                 if (pPropList->_pRawData[iByte] != '\n') {
-                    skippingLine = MTBUILD_TRUE;   /* Not a hex digit so skip the line. */
+                    skippingLine = MDBUILD_TRUE;   /* Not a hex digit so skip the line. */
                 }
             }
         }
     }
 
-    pPropList->pItems = (mtbuild_ucd_proplist_item*)malloc(sizeof(*pPropList->pItems) * pPropList->itemCount);
+    pPropList->pItems = (mdbuild_ucd_proplist_item*)malloc(sizeof(*pPropList->pItems) * pPropList->itemCount);
     if (pPropList->pItems == NULL) {
-        return MTBUILD_OUT_OF_MEMORY;
+        return MDBUILD_OUT_OF_MEMORY;
     }
 
     /* This part fills the content of each item. */
@@ -360,12 +360,12 @@ mtbuild_result mtbuild_ucd_proplist_load(mtbuild_ucd_proplist* pPropList)
     for (iByte = 0; iByte < fileSize; ++iByte) {
         if (skippingLine) {
             if (pPropList->_pRawData[iByte] == '\n') {
-                skippingLine = MTBUILD_FALSE;       /* Found the start of the end of the line. */
+                skippingLine = MDBUILD_FALSE;       /* Found the start of the end of the line. */
                 continue;
             }
         } else {
             /* If the line starts with a hex digit we can treat it as a valid item. Otherwise we skip the line. */
-            if (mtbuild_is_hex_digit(pPropList->_pRawData[iByte])) {
+            if (mdbuild_is_hex_digit(pPropList->_pRawData[iByte])) {
                 /* Now we need to parse the code point range and category. We insert null terminators directly into the raw data. */
                 char* cpBeg = NULL;
                 char* cpEnd = NULL;
@@ -417,37 +417,37 @@ mtbuild_result mtbuild_ucd_proplist_load(mtbuild_ucd_proplist* pPropList)
                 }
 
                 /* At this point we have our item. We can now convert our code points to integers and insert the item. */
-                pPropList->pItems[iItem].cp.beg = mtbuild_cp_str_to_uint(cpBeg);
-                pPropList->pItems[iItem].cp.end = mtbuild_cp_str_to_uint(cpEnd);
+                pPropList->pItems[iItem].cp.beg = mdbuild_cp_str_to_uint(cpBeg);
+                pPropList->pItems[iItem].cp.end = mdbuild_cp_str_to_uint(cpEnd);
                 pPropList->pItems[iItem].category = category;
                 iItem += 1;
 
                 if (pPropList->_pRawData[iByte] != '\n' && pPropList->_pRawData[iByte] != '\0') {
-                    skippingLine = MTBUILD_TRUE;    /* Skip the rest of the line since we don't need to do anything more with it. */
+                    skippingLine = MDBUILD_TRUE;    /* Skip the rest of the line since we don't need to do anything more with it. */
                 }
             } else {
                 if (pPropList->_pRawData[iByte] != '\n') {
-                    skippingLine = MTBUILD_TRUE;   /* Not a hex digit so skip the line. */
+                    skippingLine = MDBUILD_TRUE;   /* Not a hex digit so skip the line. */
                 }
             }
         }
     }
 
-    return MTBUILD_SUCCESS;
+    return MDBUILD_SUCCESS;
 }
 
-void mtbuild_ucd_proplist_unload(mtbuild_ucd_proplist* pPropList)
+void mdbuild_ucd_proplist_unload(mdbuild_ucd_proplist* pPropList)
 {
     assert(pPropList != NULL);
     free(pPropList->pItems);
     free(pPropList->_pRawData);
 }
 
-mtbuild_result mtbuild_ucd_proplist_generate_code__is_null_or_whitespace_utf8(mtbuild_ucd_proplist* pPropList, char** ppCodeOut)
+mdbuild_result mdbuild_ucd_proplist_generate_code__is_null_or_whitespace_utf8(mdbuild_ucd_proplist* pPropList, char** ppCodeOut)
 {
     char* pCodeOut = NULL;
     size_t iItem;
-    mtbuild_utf32 cp;
+    mdbuild_utf32 cp;
 
     assert(pPropList != NULL);
     assert(ppCodeOut != NULL);
@@ -458,111 +458,111 @@ mtbuild_result mtbuild_ucd_proplist_generate_code__is_null_or_whitespace_utf8(mt
 
     /* Naive implementation for now. This can be optimized. */
     for (iItem = 0; iItem < pPropList->itemCount; ++iItem) {
-        mtbuild_ucd_proplist_item* pItem = &pPropList->pItems[iItem];
+        mdbuild_ucd_proplist_item* pItem = &pPropList->pItems[iItem];
         if (strcmp(pItem->category, "White_Space") == 0) {
             const char* utf8LenStr = "";
 
             /* A quick little hack for sequential ASCII characters. This will be made generic later. */
             if (pItem->cp.beg <= 0x7F && pItem->cp.end <= 0x7F && pItem->cp.beg != pItem->cp.end) {
                 utf8LenStr = "1";
-                pCodeOut = mtbuild_string_append(pCodeOut, "        if ((mt_uint8)pUTF8[0] >= ");
-                pCodeOut = mtbuild_string_append_utf8_cp_hex(pCodeOut, (char)pItem->cp.beg);
-                pCodeOut = mtbuild_string_append(pCodeOut, " && (mt_uint8)pUTF8[0] <= ");
-                pCodeOut = mtbuild_string_append_utf8_cp_hex(pCodeOut, (char)pItem->cp.end);
+                pCodeOut = mdbuild_string_append(pCodeOut, "        if ((md_uint8)pUTF8[0] >= ");
+                pCodeOut = mdbuild_string_append_utf8_cp_hex(pCodeOut, (char)pItem->cp.beg);
+                pCodeOut = mdbuild_string_append(pCodeOut, " && (md_uint8)pUTF8[0] <= ");
+                pCodeOut = mdbuild_string_append_utf8_cp_hex(pCodeOut, (char)pItem->cp.end);
 
-                pCodeOut = mtbuild_string_append(pCodeOut, ") {\n");
-                pCodeOut = mtbuild_string_append(pCodeOut, "            pUTF8 += "); pCodeOut = mtbuild_string_append(pCodeOut, utf8LenStr); pCodeOut = mtbuild_string_append(pCodeOut, ";\n");
-                pCodeOut = mtbuild_string_append(pCodeOut, "            continue;\n");
-                pCodeOut = mtbuild_string_append(pCodeOut, "        }\n");
+                pCodeOut = mdbuild_string_append(pCodeOut, ") {\n");
+                pCodeOut = mdbuild_string_append(pCodeOut, "            pUTF8 += "); pCodeOut = mdbuild_string_append(pCodeOut, utf8LenStr); pCodeOut = mdbuild_string_append(pCodeOut, ";\n");
+                pCodeOut = mdbuild_string_append(pCodeOut, "            continue;\n");
+                pCodeOut = mdbuild_string_append(pCodeOut, "        }\n");
             } else {
                 for (cp = pItem->cp.beg; cp <= pItem->cp.end; cp += 1) {
                     if (cp <= 0x7F) {
-                        mtbuild_uint8 utf8_0 = (mtbuild_uint8)cp;
+                        mdbuild_uint8 utf8_0 = (mdbuild_uint8)cp;
                         utf8LenStr = "1";
 
-                        pCodeOut = mtbuild_string_append(pCodeOut, "        if ((mt_uint8)pUTF8[0] == ");
-                        pCodeOut = mtbuild_string_append_utf8_cp_hex(pCodeOut, utf8_0);
+                        pCodeOut = mdbuild_string_append(pCodeOut, "        if ((md_uint8)pUTF8[0] == ");
+                        pCodeOut = mdbuild_string_append_utf8_cp_hex(pCodeOut, utf8_0);
                     } else if (cp <= 0x7FF) {
-                        mtbuild_uint8 utf8_0 = 0xC0 | ((cp & 0x07C0) >> 6);
-                        mtbuild_uint8 utf8_1 = 0x80 |  (cp & 0x003F);
+                        mdbuild_uint8 utf8_0 = 0xC0 | ((cp & 0x07C0) >> 6);
+                        mdbuild_uint8 utf8_1 = 0x80 |  (cp & 0x003F);
                         utf8LenStr = "2";
 
-                        pCodeOut = mtbuild_string_append(pCodeOut, "        if ((mt_uint8)pUTF8[0] == ");
-                        pCodeOut = mtbuild_string_append_utf8_cp_hex(pCodeOut, utf8_0);
-                        pCodeOut = mtbuild_string_append(pCodeOut, " && (mt_uint8)pUTF8[1] == ");
-                        pCodeOut = mtbuild_string_append_utf8_cp_hex(pCodeOut, utf8_1);
+                        pCodeOut = mdbuild_string_append(pCodeOut, "        if ((md_uint8)pUTF8[0] == ");
+                        pCodeOut = mdbuild_string_append_utf8_cp_hex(pCodeOut, utf8_0);
+                        pCodeOut = mdbuild_string_append(pCodeOut, " && (md_uint8)pUTF8[1] == ");
+                        pCodeOut = mdbuild_string_append_utf8_cp_hex(pCodeOut, utf8_1);
                     } else if (cp <= 0xFFFF) {
-                        mtbuild_uint8 utf8_0 = 0xE0 | ((cp & 0xF000) >> 12);
-                        mtbuild_uint8 utf8_1 = 0x80 | ((cp & 0x0FC0) >>  6);
-                        mtbuild_uint8 utf8_2 = 0x80 |  (cp & 0x003F);
+                        mdbuild_uint8 utf8_0 = 0xE0 | ((cp & 0xF000) >> 12);
+                        mdbuild_uint8 utf8_1 = 0x80 | ((cp & 0x0FC0) >>  6);
+                        mdbuild_uint8 utf8_2 = 0x80 |  (cp & 0x003F);
                         utf8LenStr = "3";
 
-                        pCodeOut = mtbuild_string_append(pCodeOut, "        if ((mt_uint8)pUTF8[0] == ");
-                        pCodeOut = mtbuild_string_append_utf8_cp_hex(pCodeOut, utf8_0);
-                        pCodeOut = mtbuild_string_append(pCodeOut, " && (mt_uint8)pUTF8[1] == ");
-                        pCodeOut = mtbuild_string_append_utf8_cp_hex(pCodeOut, utf8_1);
-                        pCodeOut = mtbuild_string_append(pCodeOut, " && (mt_uint8)pUTF8[2] == ");
-                        pCodeOut = mtbuild_string_append_utf8_cp_hex(pCodeOut, utf8_2);
+                        pCodeOut = mdbuild_string_append(pCodeOut, "        if ((md_uint8)pUTF8[0] == ");
+                        pCodeOut = mdbuild_string_append_utf8_cp_hex(pCodeOut, utf8_0);
+                        pCodeOut = mdbuild_string_append(pCodeOut, " && (md_uint8)pUTF8[1] == ");
+                        pCodeOut = mdbuild_string_append_utf8_cp_hex(pCodeOut, utf8_1);
+                        pCodeOut = mdbuild_string_append(pCodeOut, " && (md_uint8)pUTF8[2] == ");
+                        pCodeOut = mdbuild_string_append_utf8_cp_hex(pCodeOut, utf8_2);
                     } else if (cp <= 0x10FFFF) {
-                        mtbuild_uint8 utf8_0 = 0xF0 | ((cp & 0x1C0000) >> 18);
-                        mtbuild_uint8 utf8_1 = 0x80 | ((cp & 0x03F000) >> 12);
-                        mtbuild_uint8 utf8_2 = 0x80 | ((cp & 0x000FC0) >>  6);
-                        mtbuild_uint8 utf8_3 = 0x80 |  (cp & 0x00003F);
+                        mdbuild_uint8 utf8_0 = 0xF0 | ((cp & 0x1C0000) >> 18);
+                        mdbuild_uint8 utf8_1 = 0x80 | ((cp & 0x03F000) >> 12);
+                        mdbuild_uint8 utf8_2 = 0x80 | ((cp & 0x000FC0) >>  6);
+                        mdbuild_uint8 utf8_3 = 0x80 |  (cp & 0x00003F);
                         utf8LenStr = "4";
 
-                        pCodeOut = mtbuild_string_append(pCodeOut, "        if ((mt_uint8)pUTF8[0] == ");
-                        pCodeOut = mtbuild_string_append_utf8_cp_hex(pCodeOut, utf8_0);
-                        pCodeOut = mtbuild_string_append(pCodeOut, " && (mt_uint8)pUTF8[1] == ");
-                        pCodeOut = mtbuild_string_append_utf8_cp_hex(pCodeOut, utf8_1);
-                        pCodeOut = mtbuild_string_append(pCodeOut, " && (mt_uint8)pUTF8[2] == ");
-                        pCodeOut = mtbuild_string_append_utf8_cp_hex(pCodeOut, utf8_2);
-                        pCodeOut = mtbuild_string_append(pCodeOut, " && (mt_uint8)pUTF8[3] == ");
-                        pCodeOut = mtbuild_string_append_utf8_cp_hex(pCodeOut, utf8_3);
+                        pCodeOut = mdbuild_string_append(pCodeOut, "        if ((md_uint8)pUTF8[0] == ");
+                        pCodeOut = mdbuild_string_append_utf8_cp_hex(pCodeOut, utf8_0);
+                        pCodeOut = mdbuild_string_append(pCodeOut, " && (md_uint8)pUTF8[1] == ");
+                        pCodeOut = mdbuild_string_append_utf8_cp_hex(pCodeOut, utf8_1);
+                        pCodeOut = mdbuild_string_append(pCodeOut, " && (md_uint8)pUTF8[2] == ");
+                        pCodeOut = mdbuild_string_append_utf8_cp_hex(pCodeOut, utf8_2);
+                        pCodeOut = mdbuild_string_append(pCodeOut, " && (md_uint8)pUTF8[3] == ");
+                        pCodeOut = mdbuild_string_append_utf8_cp_hex(pCodeOut, utf8_3);
                     }
 
-                    pCodeOut = mtbuild_string_append(pCodeOut, ") {\n");
-                    pCodeOut = mtbuild_string_append(pCodeOut, "            pUTF8 += "); pCodeOut = mtbuild_string_append(pCodeOut, utf8LenStr); pCodeOut = mtbuild_string_append(pCodeOut, ";\n");
-                    pCodeOut = mtbuild_string_append(pCodeOut, "            continue;\n");
-                    pCodeOut = mtbuild_string_append(pCodeOut, "        }\n");
+                    pCodeOut = mdbuild_string_append(pCodeOut, ") {\n");
+                    pCodeOut = mdbuild_string_append(pCodeOut, "            pUTF8 += "); pCodeOut = mdbuild_string_append(pCodeOut, utf8LenStr); pCodeOut = mdbuild_string_append(pCodeOut, ";\n");
+                    pCodeOut = mdbuild_string_append(pCodeOut, "            continue;\n");
+                    pCodeOut = mdbuild_string_append(pCodeOut, "        }\n");
                 }
             }
         }
     }
 
     *ppCodeOut = pCodeOut;
-    return MTBUILD_SUCCESS;
+    return MDBUILD_SUCCESS;
 }
 
 
-mtbuild_result mtbuild_ucd_load(mtbuild_ucd* pUCD)
+mdbuild_result mdbuild_ucd_load(mdbuild_ucd* pUCD)
 {
-    mtbuild_result result;
+    mdbuild_result result;
 
     assert(pUCD != NULL);
 
-    result = mtbuild_ucd_proplist_load(&pUCD->proplist);
-    if (result != MTBUILD_SUCCESS) {
+    result = mdbuild_ucd_proplist_load(&pUCD->proplist);
+    if (result != MDBUILD_SUCCESS) {
         return result;
     }
 
-    return MTBUILD_SUCCESS;
+    return MDBUILD_SUCCESS;
 }
 
-void mtbuild_ucd_unload(mtbuild_ucd* pUCD)
+void mdbuild_ucd_unload(mdbuild_ucd* pUCD)
 {
     assert(pUCD != NULL);
-    mtbuild_ucd_proplist_unload(&pUCD->proplist);
+    mdbuild_ucd_proplist_unload(&pUCD->proplist);
 }
 
-mtbuild_result mtbuild_ucd_generate_code(mtbuild_ucd* pUCD)
+mdbuild_result mdbuild_ucd_generate_code(mdbuild_ucd* pUCD)
 {
-    mtbuild_result result;
+    mdbuild_result result;
     char* pCodeGen_IsNullOrWhitespaceUTF8;
 
     assert(pUCD != NULL);
 
-    result = mtbuild_ucd_proplist_generate_code__is_null_or_whitespace_utf8(&pUCD->proplist, &pCodeGen_IsNullOrWhitespaceUTF8);
-    if (result == MTBUILD_SUCCESS) {
+    result = mdbuild_ucd_proplist_generate_code__is_null_or_whitespace_utf8(&pUCD->proplist, &pCodeGen_IsNullOrWhitespaceUTF8);
+    if (result == MDBUILD_SUCCESS) {
         return result;
     }
 
@@ -570,27 +570,27 @@ mtbuild_result mtbuild_ucd_generate_code(mtbuild_ucd* pUCD)
 
 
     free(pCodeGen_IsNullOrWhitespaceUTF8);
-    return MTBUILD_SUCCESS;
+    return MDBUILD_SUCCESS;
 }
 
 
 int main(int argc, char** argv)
 {
-    mtbuild_result result;
-    mtbuild_ucd ucd;
+    mdbuild_result result;
+    mdbuild_ucd ucd;
 
-    result = mtbuild_ucd_load(&ucd);
-    if (result != MTBUILD_SUCCESS) {
+    result = mdbuild_ucd_load(&ucd);
+    if (result != MDBUILD_SUCCESS) {
         return (int)result;
     }
 
-    result = mtbuild_ucd_generate_code(&ucd);
-    if (result != MTBUILD_SUCCESS) {
-        mtbuild_ucd_unload(&ucd);
+    result = mdbuild_ucd_generate_code(&ucd);
+    if (result != MDBUILD_SUCCESS) {
+        mdbuild_ucd_unload(&ucd);
         return (int)result;
     }
 
-    mtbuild_ucd_unload(&ucd);
+    mdbuild_ucd_unload(&ucd);
 
     (void)argc;
     (void)argv;

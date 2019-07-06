@@ -1,16 +1,16 @@
-/* Include this file after the implementation of minitype.h */
+/* Include this file after the implementation of minidraw.h */
 #include <stdio.h>
 #include <assert.h>
 
 #define GLBIND_IMPLEMENTATION
 #include "../external/glbind/glbind.h"
 
-#if defined(MT_HAS_CAIRO)
+#if defined(MD_HAS_CAIRO)
 #include <gdk/gdk.h>
 #include <gtk/gtk.h>
 #endif
 
-mt_result mt_fopen(FILE** ppFile, const char* filePath, const char* openMode)
+md_result md_fopen(FILE** ppFile, const char* filePath, const char* openMode)
 {
 #if _MSC_VER
     errno_t err;
@@ -21,13 +21,13 @@ mt_result mt_fopen(FILE** ppFile, const char* filePath, const char* openMode)
     }
 
     if (filePath == NULL || openMode == NULL || ppFile == NULL) {
-        return MT_INVALID_ARGS;
+        return MD_INVALID_ARGS;
     }
 
 #if _MSC_VER
     err = fopen_s(ppFile, filePath, openMode);
     if (err != 0) {
-        return mt_result_from_errno(err);
+        return md_result_from_errno(err);
     }
 #else
 #if defined(_WIN32) || defined(__APPLE__)
@@ -40,29 +40,29 @@ mt_result mt_fopen(FILE** ppFile, const char* filePath, const char* openMode)
     #endif
 #endif
     if (*ppFile == NULL) {
-        mt_result result = mt_result_from_errno(errno);
-        if (result == MT_SUCCESS) {
-            return MT_ERROR;   /* Just a safety check to make sure we never ever return success when pFile == NULL. */
+        md_result result = md_result_from_errno(errno);
+        if (result == MD_SUCCESS) {
+            return MD_ERROR;   /* Just a safety check to make sure we never ever return success when pFile == NULL. */
         }
     }
 #endif
 
-    return MT_SUCCESS;
+    return MD_SUCCESS;
 }
 
-mt_result mt_open_and_read_file(const char* filePath, size_t* pFileSizeOut, void** ppFileData)
+md_result md_open_and_read_file(const char* filePath, size_t* pFileSizeOut, void** ppFileData)
 {
-    mt_result result;
-    mt_uint64 fileSize;
+    md_result result;
+    md_uint64 fileSize;
     FILE* pFile;
     void* pFileData;
     size_t bytesRead;
 
-    MT_ASSERT(filePath != NULL);
+    MD_ASSERT(filePath != NULL);
 
-    result = mt_fopen(&pFile, filePath, "rb");
-    if (result != MT_SUCCESS) {
-        return MT_FAILED_TO_OPEN_FILE;
+    result = md_fopen(&pFile, filePath, "rb");
+    if (result != MD_SUCCESS) {
+        return MD_FAILED_TO_OPEN_FILE;
     }
 
     fseek(pFile, 0, SEEK_END);
@@ -71,20 +71,20 @@ mt_result mt_open_and_read_file(const char* filePath, size_t* pFileSizeOut, void
 
     if (fileSize > SIZE_MAX) {
         fclose(pFile);
-        return MT_TOO_BIG;
+        return MD_TOO_BIG;
     }
 
-    pFileData = MT_MALLOC((size_t)fileSize);    /* <-- Safe cast due to the check above. */
+    pFileData = MD_MALLOC((size_t)fileSize);    /* <-- Safe cast due to the check above. */
     if (pFileData == NULL) {
         fclose(pFile);
-        return MT_OUT_OF_MEMORY;
+        return MD_OUT_OF_MEMORY;
     }
 
     bytesRead = fread(pFileData, 1, (size_t)fileSize, pFile);
     if (bytesRead != fileSize) {
-        MT_FREE(pFileData);
+        MD_FREE(pFileData);
         fclose(pFile);
-        return MT_FAILED_TO_READ_FILE;
+        return MD_FAILED_TO_READ_FILE;
     }
 
     fclose(pFile);
@@ -96,89 +96,89 @@ mt_result mt_open_and_read_file(const char* filePath, size_t* pFileSizeOut, void
     if (ppFileData) {
         *ppFileData = pFileData;
     } else {
-        MT_FREE(pFileData);
+        MD_FREE(pFileData);
     }
 
-    return MT_SUCCESS;
+    return MD_SUCCESS;
 }
 
-mt_result mt_open_and_read_file_utf8(const char* filePath, size_t* pFileSizeOutInUTF8, mt_utf8** ppFileData)
+md_result md_open_and_read_file_utf8(const char* filePath, size_t* pFileSizeOutInUTF8, md_utf8** ppFileData)
 {
-    mt_result result = mt_open_and_read_file(filePath, pFileSizeOutInUTF8, (void**)ppFileData);
-    *pFileSizeOutInUTF8 /= sizeof(mt_utf8);
+    md_result result = md_open_and_read_file(filePath, pFileSizeOutInUTF8, (void**)ppFileData);
+    *pFileSizeOutInUTF8 /= sizeof(md_utf8);
 
     return result;
 }
 
-mt_result mt_open_and_read_file_utf16(const char* filePath, size_t* pFileSizeOutInUTF16, mt_utf16** ppFileData)
+md_result md_open_and_read_file_utf16(const char* filePath, size_t* pFileSizeOutInUTF16, md_utf16** ppFileData)
 {
-    mt_result result = mt_open_and_read_file(filePath, pFileSizeOutInUTF16, (void**)ppFileData);
-    *pFileSizeOutInUTF16 /= sizeof(mt_utf16);
+    md_result result = md_open_and_read_file(filePath, pFileSizeOutInUTF16, (void**)ppFileData);
+    *pFileSizeOutInUTF16 /= sizeof(md_utf16);
 
     return result;
 }
 
-mt_result mt_open_and_read_file_utf32(const char* filePath, size_t* pFileSizeOutInUTF32, mt_utf32** ppFileData)
+md_result md_open_and_read_file_utf32(const char* filePath, size_t* pFileSizeOutInUTF32, md_utf32** ppFileData)
 {
-    mt_result result = mt_open_and_read_file(filePath, pFileSizeOutInUTF32, (void**)ppFileData);
-    *pFileSizeOutInUTF32 /= sizeof(mt_utf32);
+    md_result result = md_open_and_read_file(filePath, pFileSizeOutInUTF32, (void**)ppFileData);
+    *pFileSizeOutInUTF32 /= sizeof(md_utf32);
 
     return result;
 }
 
 
 
-typedef struct mt_testapp mt_testapp;
+typedef struct md_testapp md_testapp;
 
-typedef mt_result (* mt_testapp_on_init)  (mt_testapp* pApp);
-typedef void      (* mt_testapp_on_uninit)(mt_testapp* pApp);
-typedef void      (* mt_testapp_on_size)  (mt_testapp* pApp, mt_uint32 sizeX, mt_uint32 sizeY);
-typedef void      (* mt_testapp_on_paint) (mt_testapp* pApp, mt_gc* pGC);
+typedef md_result (* md_testapp_on_init)  (md_testapp* pApp);
+typedef void      (* md_testapp_on_uninit)(md_testapp* pApp);
+typedef void      (* md_testapp_on_size)  (md_testapp* pApp, md_uint32 sizeX, md_uint32 sizeY);
+typedef void      (* md_testapp_on_paint) (md_testapp* pApp, md_gc* pGC);
 
 typedef struct
 {
-    mt_api_config apiConfig;
+    md_api_config apiConfig;
     GLBapi* pGL;    /* When not NULL, creates an OpenGL-enabled window. */
     const char* pWindowTitle;
-    mt_uint32 windowWidth;
-    mt_uint32 windowHeight;
-    mt_testapp_on_init onInit;
-    mt_testapp_on_uninit onUninit;
-    mt_testapp_on_size onSize;
-    mt_testapp_on_paint onPaint;
+    md_uint32 windowWidth;
+    md_uint32 windowHeight;
+    md_testapp_on_init onInit;
+    md_testapp_on_uninit onUninit;
+    md_testapp_on_size onSize;
+    md_testapp_on_paint onPaint;
     void* pUserData;
-} mt_testapp_config;
+} md_testapp_config;
 
-struct mt_testapp
+struct md_testapp
 {
     int argc;
     char** argv;
     GLBapi* pGL;
-    mt_api mt;
-    mt_testapp_on_init onInit;
-    mt_testapp_on_uninit onUninit;
-    mt_testapp_on_size onSize;
-    mt_testapp_on_paint onPaint;
+    md_api mt;
+    md_testapp_on_init onInit;
+    md_testapp_on_uninit onUninit;
+    md_testapp_on_size onSize;
+    md_testapp_on_paint onPaint;
     void* pUserData;
-#if defined(MT_WIN32)
+#if defined(MD_WIN32)
     HWND hWnd;  /* Main window handle. */
-#elif defined(MT_APPLE)
+#elif defined(MD_APPLE)
 #else
-    #if defined(MT_HAS_CAIRO)
+    #if defined(MD_HAS_CAIRO)
         GtkWidget* pWindowWidget;
-        mt_int32 posXGTK;
-        mt_int32 posYGTK;
-        mt_int32 sizeXGTK;
-        mt_int32 sizeYGTK;
+        md_int32 posXGTK;
+        md_int32 posYGTK;
+        md_int32 sizeXGTK;
+        md_int32 sizeYGTK;
     #endif
 #endif
 };
 
-#if defined(MT_WIN32)
-LRESULT mt_testapp_MainWindowProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
+#if defined(MD_WIN32)
+LRESULT md_testapp_MainWindowProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
-    mt_result result;
-    mt_testapp* pApp = (mt_testapp*)GetWindowLongPtrA(hWnd, 0);
+    md_result result;
+    md_testapp* pApp = (md_testapp*)GetWindowLongPtrA(hWnd, 0);
 
     switch (msg)
     {
@@ -190,18 +190,18 @@ LRESULT mt_testapp_MainWindowProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPa
         case WM_SIZE:
         {
             if (pApp->onSize) {
-                mt_uint32 sizeX = LOWORD(lParam);
-                mt_uint32 sizeY = HIWORD(lParam);
+                md_uint32 sizeX = LOWORD(lParam);
+                md_uint32 sizeY = HIWORD(lParam);
                 pApp->onSize(pApp, sizeX, sizeY);
             }
         } break;
 
         case WM_PAINT:
         {
-            mt_gc_config gcConfig;
-            mt_gc gc;
+            md_gc_config gcConfig;
+            md_gc gc;
 
-            MT_ZERO_OBJECT(&gcConfig);
+            MD_ZERO_OBJECT(&gcConfig);
 
             if (pApp->pGL == NULL) {
                 PAINTSTRUCT ps;
@@ -209,23 +209,23 @@ LRESULT mt_testapp_MainWindowProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPa
                 if (hDC != NULL) {
                     gcConfig.gdi.hDC = hDC;
 
-                    result = mt_gc_init(&pApp->mt, &gcConfig, &gc);
-                    if (result == MT_SUCCESS) {
+                    result = md_gc_init(&pApp->mt, &gcConfig, &gc);
+                    if (result == MD_SUCCESS) {
                         if (pApp->onPaint) {
                             pApp->onPaint(pApp, &gc);
                         }
-                        mt_gc_uninit(&gc);
+                        md_gc_uninit(&gc);
                     }
                 }
                 EndPaint(hWnd, &ps);
             } else {
                 /* OpenGL */
-                result = mt_gc_init(&pApp->mt, &gcConfig, &gc);
-                if (result == MT_SUCCESS) {
+                result = md_gc_init(&pApp->mt, &gcConfig, &gc);
+                if (result == MD_SUCCESS) {
                     if (pApp->onPaint) {
                         pApp->onPaint(pApp, &gc);
                     }
-                    mt_gc_uninit(&gc);
+                    md_gc_uninit(&gc);
                 }
                 SwapBuffers(GetDC(hWnd));
             }
@@ -237,16 +237,16 @@ LRESULT mt_testapp_MainWindowProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPa
     return DefWindowProcA(hWnd, msg, wParam, lParam);
 }
 
-HWND mt_testapp_create_HWND(mt_testapp_config* pConfig, mt_testapp* pApp)
+HWND md_testapp_create_HWND(md_testapp_config* pConfig, md_testapp* pApp)
 {
     WNDCLASSEXA wc;
     HWND hWnd;
 
-    MT_ZERO_OBJECT(&wc);
+    MD_ZERO_OBJECT(&wc);
     wc.cbSize        = sizeof(wc);
     wc.cbWndExtra    = sizeof(pApp);
-    wc.lpfnWndProc   = (WNDPROC)mt_testapp_MainWindowProc;
-    wc.lpszClassName = "mt_testapp";
+    wc.lpfnWndProc   = (WNDPROC)md_testapp_MainWindowProc;
+    wc.lpszClassName = "md_testapp";
     wc.hCursor       = LoadCursorA(NULL, MAKEINTRESOURCEA(32512));
     wc.hIcon         = LoadIconA(GetModuleHandleA(NULL), MAKEINTRESOURCEA(101));
     wc.style         = CS_OWNDC | CS_DBLCLKS;
@@ -254,7 +254,7 @@ HWND mt_testapp_create_HWND(mt_testapp_config* pConfig, mt_testapp* pApp)
         return NULL;
     }
 
-    hWnd = CreateWindowExA(0, "mt_testapp", (pConfig->pWindowTitle != NULL) ? pConfig->pWindowTitle : "Test App", WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN | WS_CLIPSIBLINGS, CW_USEDEFAULT, CW_USEDEFAULT, pConfig->windowWidth, pConfig->windowHeight, NULL, NULL, NULL, NULL);
+    hWnd = CreateWindowExA(0, "md_testapp", (pConfig->pWindowTitle != NULL) ? pConfig->pWindowTitle : "Test App", WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN | WS_CLIPSIBLINGS, CW_USEDEFAULT, CW_USEDEFAULT, pConfig->windowWidth, pConfig->windowHeight, NULL, NULL, NULL, NULL);
     if (hWnd == NULL) {
         return NULL;
     }
@@ -272,31 +272,31 @@ HWND mt_testapp_create_HWND(mt_testapp_config* pConfig, mt_testapp* pApp)
 
     return hWnd;
 }
-#elif defined(MT_APPLE)
+#elif defined(MD_APPLE)
 /* Implement me. */
 #else
-#define MT_TESTAPP_GTK_PROPERTY_NAME_USERDATA   "mt.testapp.userdata"
+#define MD_TESTAPP_GTK_PROPERTY_NAME_USERDATA   "mt.testapp.userdata"
 
-static gboolean mt_window__on_close__gtk(GtkWidget* pWidget, GdkEvent* pEvent, gpointer pUserData)
+static gboolean md_window__on_close__gtk(GtkWidget* pWidget, GdkEvent* pEvent, gpointer pUserData)
 {
     (void)pWidget;
     (void)pEvent;
 
-    mt_testapp* pApp = (mt_testapp*)pUserData;
+    md_testapp* pApp = (md_testapp*)pUserData;
     if (pApp == NULL) {
-        return MT_TRUE;
+        return MD_TRUE;
     }
 
     gtk_main_quit();
     
-    return MT_TRUE;
+    return MD_TRUE;
 }
 
-static gboolean mt_window__on_configure__gtk(GtkWidget* pWidget, GdkEventConfigure* pEvent, gpointer pUserData)
+static gboolean md_window__on_configure__gtk(GtkWidget* pWidget, GdkEventConfigure* pEvent, gpointer pUserData)
 {
-    mt_testapp* pApp = (mt_testapp*)pUserData;
+    md_testapp* pApp = (md_testapp*)pUserData;
     if (pApp == NULL) {
-        return MT_FALSE;
+        return MD_FALSE;
     }
 
     if (pEvent->x != pApp->posXGTK || pEvent->y != pApp->posYGTK) {    
@@ -310,22 +310,22 @@ static gboolean mt_window__on_configure__gtk(GtkWidget* pWidget, GdkEventConfigu
         pApp->sizeXGTK = pEvent->width;
         pApp->sizeYGTK = pEvent->height;
         if (pApp->onSize) {
-            pApp->onSize(pApp, (mt_uint32)pEvent->width, (mt_uint32)pEvent->height);
+            pApp->onSize(pApp, (md_uint32)pEvent->width, (md_uint32)pEvent->height);
         }
     }
 
-    return MT_FALSE;
+    return MD_FALSE;
 }
 
-static gboolean mt_window__on_draw__gtk(GtkWidget* pWidget, cairo_t* cr, gpointer pUserData)
+static gboolean md_window__on_draw__gtk(GtkWidget* pWidget, cairo_t* cr, gpointer pUserData)
 {
-    mt_result result;
-    mt_gc_config gcConfig;
-    mt_gc gc;
+    md_result result;
+    md_gc_config gcConfig;
+    md_gc gc;
 
-    mt_testapp* pApp = (mt_testapp*)pUserData;
+    md_testapp* pApp = (md_testapp*)pUserData;
     if (pApp == NULL) {
-        return MT_FALSE;
+        return MD_FALSE;
     }
 
 #if 0
@@ -337,42 +337,42 @@ static gboolean mt_window__on_draw__gtk(GtkWidget* pWidget, cairo_t* cr, gpointe
     printf("on_draw: %f %f %f %f\n", clipLeft, clipTop, clipRight, clipBottom);
 #endif
 
-    MT_ZERO_OBJECT(&gcConfig);
+    MD_ZERO_OBJECT(&gcConfig);
     gcConfig.sizeX = pApp->sizeXGTK;
     gcConfig.sizeY = pApp->sizeYGTK;
     gcConfig.cairo.pCairoContext = cr;
 
-    result = mt_gc_init(&pApp->mt, &gcConfig, &gc);
-    if (result == MT_SUCCESS) {
+    result = md_gc_init(&pApp->mt, &gcConfig, &gc);
+    if (result == MD_SUCCESS) {
         if (pApp->onPaint) {
             pApp->onPaint(pApp, &gc);
         }
-        mt_gc_uninit(&gc);
+        md_gc_uninit(&gc);
     }
 
-    return MT_TRUE;
+    return MD_TRUE;
 }
 
-GtkWidget* mt_testapp_create_window__gtk(mt_testapp_config* pConfig, mt_testapp* pApp)
+GtkWidget* md_testapp_create_window__gtk(md_testapp_config* pConfig, md_testapp* pApp)
 {
     GtkWidget* pWindowWidget;
 
     pWindowWidget = gtk_window_new(GTK_WINDOW_TOPLEVEL);
     if (pWindowWidget == NULL) {
-        mt_uninit(&pApp->mt);
+        md_uninit(&pApp->mt);
         return NULL;
     }
 
-    g_object_set_data(G_OBJECT(pWindowWidget), MT_TESTAPP_GTK_PROPERTY_NAME_USERDATA, pApp);
+    g_object_set_data(G_OBJECT(pWindowWidget), MD_TESTAPP_GTK_PROPERTY_NAME_USERDATA, pApp);
 
     gtk_window_set_title(GTK_WINDOW(pWindowWidget), (pConfig->pWindowTitle != NULL) ? pConfig->pWindowTitle : "Test App");
     gtk_window_set_resizable(GTK_WINDOW(pWindowWidget), TRUE);
     gtk_window_set_default_size(GTK_WINDOW(pWindowWidget), (gint)pConfig->windowWidth, (gint)pConfig->windowHeight);
     gtk_window_resize(GTK_WINDOW(pWindowWidget), (gint)pConfig->windowWidth, (gint)pConfig->windowHeight);
 
-    g_signal_connect(pWindowWidget, "delete-event",    G_CALLBACK(mt_window__on_close__gtk),     pApp); /* Close */
-    g_signal_connect(pWindowWidget, "configure-event", G_CALLBACK(mt_window__on_configure__gtk), pApp); /* Size/Move */
-    g_signal_connect(pWindowWidget, "draw",            G_CALLBACK(mt_window__on_draw__gtk),      pApp); /* Paint */
+    g_signal_connect(pWindowWidget, "delete-event",    G_CALLBACK(md_window__on_close__gtk),     pApp); /* Close */
+    g_signal_connect(pWindowWidget, "configure-event", G_CALLBACK(md_window__on_configure__gtk), pApp); /* Size/Move */
+    g_signal_connect(pWindowWidget, "draw",            G_CALLBACK(md_window__on_draw__gtk),      pApp); /* Paint */
 
     /* Show the window. */
     gtk_widget_realize(pWindowWidget);
@@ -382,15 +382,15 @@ GtkWidget* mt_testapp_create_window__gtk(mt_testapp_config* pConfig, mt_testapp*
 }
 #endif
 
-mt_result mt_testapp_init(mt_testapp_config* pConfig, mt_testapp* pApp)
+md_result md_testapp_init(md_testapp_config* pConfig, md_testapp* pApp)
 {
-    mt_result result;
+    md_result result;
 
     if (pApp == NULL || pConfig == NULL) {
-        return MT_INVALID_ARGS;
+        return MD_INVALID_ARGS;
     }
 
-    MT_ZERO_OBJECT(pApp);
+    MD_ZERO_OBJECT(pApp);
     pApp->pGL       = pConfig->pGL;
     pApp->onInit    = pConfig->onInit;
     pApp->onUninit  = pConfig->onUninit;
@@ -399,42 +399,42 @@ mt_result mt_testapp_init(mt_testapp_config* pConfig, mt_testapp* pApp)
     pApp->pUserData = pConfig->pUserData;
 
     /* API */
-    result = mt_init(&pConfig->apiConfig, &pApp->mt);
-    if (result != MT_SUCCESS) {
+    result = md_init(&pConfig->apiConfig, &pApp->mt);
+    if (result != MD_SUCCESS) {
         return result;
     }
 
     /* Window */
-#if defined(MT_WIN32)
-    pApp->hWnd = mt_testapp_create_HWND(pConfig, pApp);
+#if defined(MD_WIN32)
+    pApp->hWnd = md_testapp_create_HWND(pConfig, pApp);
     if (pApp->hWnd == NULL) {
-        mt_uninit(&pApp->mt);
-        return MT_ERROR;
+        md_uninit(&pApp->mt);
+        return MD_ERROR;
     }
-#elif defined(MT_APPLE)
+#elif defined(MD_APPLE)
     /* Implement me. */
 #else
-    #if defined(MT_SUPPORT_CAIRO)
-        if (pConfig->apiConfig.backend == mt_backend_cairo) {
+    #if defined(MD_SUPPORT_CAIRO)
+        if (pConfig->apiConfig.backend == md_backend_cairo) {
             /* GTK */
             if (!gtk_init_check(0, NULL)) {
-                mt_uninit(&pApp->mt);
-                return MT_ERROR;
+                md_uninit(&pApp->mt);
+                return MD_ERROR;
             }
 
-            pApp->pWindowWidget = mt_testapp_create_window__gtk(pConfig, pApp);
+            pApp->pWindowWidget = md_testapp_create_window__gtk(pConfig, pApp);
             if (pApp->pWindowWidget == NULL) {
-                mt_uninit(&pApp->mt);
-                return MT_ERROR;
+                md_uninit(&pApp->mt);
+                return MD_ERROR;
             }
         }
     #endif
-    #if defined(MT_HAS_XFT)
+    #if defined(MD_HAS_XFT)
         #if 0
-        if (pConfig->apiConfig.backend == mt_backend_xft) {
+        if (pConfig->apiConfig.backend == md_backend_xft) {
             /* X */
-            mt_uninit(&pApp->mt);
-            return MT_ERROR;    /* Not yet implemented. */
+            md_uninit(&pApp->mt);
+            return MD_ERROR;    /* Not yet implemented. */
         }
         #endif
     #endif
@@ -442,23 +442,23 @@ mt_result mt_testapp_init(mt_testapp_config* pConfig, mt_testapp* pApp)
 
     if (pApp->onInit) {
         result = pApp->onInit(pApp);
-        if (result != MT_SUCCESS) {
-        #if defined(MT_WIN32)
+        if (result != MD_SUCCESS) {
+        #if defined(MD_WIN32)
             DestroyWindow(pApp->hWnd);
-        #elif defined(MT_APPLE)
+        #elif defined(MD_APPLE)
             /* TODO: Implement me. */
         #else
             gtk_widget_destroy(GTK_WIDGET(pApp->pWindowWidget));
         #endif
-            mt_uninit(&pApp->mt);
+            md_uninit(&pApp->mt);
             return result;
         }
     }
 
-    return MT_SUCCESS;
+    return MD_SUCCESS;
 }
 
-void mt_testapp_uninit(mt_testapp* pApp)
+void md_testapp_uninit(md_testapp* pApp)
 {
     if (pApp == NULL) {
         return;
@@ -468,24 +468,24 @@ void mt_testapp_uninit(mt_testapp* pApp)
         pApp->onUninit(pApp);
     }
 
-#if defined(MT_WIN32)
+#if defined(MD_WIN32)
     DestroyWindow(pApp->hWnd);
-#elif defined(MT_APPLE)
+#elif defined(MD_APPLE)
     /* TODO: Implement me. */
 #else
-    if (pApp->mt.backend == mt_backend_cairo) {
+    if (pApp->mt.backend == md_backend_cairo) {
         gtk_widget_destroy(GTK_WIDGET(pApp->pWindowWidget));
     }
 #endif
 
-    mt_uninit(&pApp->mt);
+    md_uninit(&pApp->mt);
 }
 
-int mt_testapp_run(mt_testapp* pApp)
+int md_testapp_run(md_testapp* pApp)
 {
     int exitCode = 0;
 
-#if defined(MT_WIN32)
+#if defined(MD_WIN32)
     for (;;) {
         MSG msg;
         BOOL result = GetMessageA(&msg, NULL, 0, 0);
@@ -501,7 +501,7 @@ int mt_testapp_run(mt_testapp* pApp)
         TranslateMessage(&msg);
         DispatchMessageA(&msg);
     }
-#elif defined(MT_APPLE)
+#elif defined(MD_APPLE)
     /* TODO: Implement me. */
 #else
     gtk_main();
@@ -511,44 +511,44 @@ int mt_testapp_run(mt_testapp* pApp)
     return exitCode;
 }
 
-void mt_testapp_get_size(mt_testapp* pApp, mt_uint32* pSizeX, mt_uint32* pSizeY)
+void md_testapp_get_size(md_testapp* pApp, md_uint32* pSizeX, md_uint32* pSizeY)
 {
-#if defined(MT_WIN32)
+#if defined(MD_WIN32)
     RECT rect;
 #endif
 
-    MT_ASSERT(pApp != NULL);
+    MD_ASSERT(pApp != NULL);
 
     if (pSizeX) *pSizeX = 0;
     if (pSizeY) *pSizeY = 0;
 
-#if defined(MT_WIN32)
+#if defined(MD_WIN32)
     GetClientRect(pApp->hWnd, &rect);
-    if (pSizeX) *pSizeX = (mt_uint32)(rect.right  - rect.left);
-    if (pSizeY) *pSizeY = (mt_uint32)(rect.bottom - rect.top);
-#elif defined(MT_APPLE)
+    if (pSizeX) *pSizeX = (md_uint32)(rect.right  - rect.left);
+    if (pSizeY) *pSizeY = (md_uint32)(rect.bottom - rect.top);
+#elif defined(MD_APPLE)
     /* Implement me. */
 #else
-    if (pSizeX) *pSizeX = (mt_uint32)pApp->sizeXGTK;
-    if (pSizeY) *pSizeY = (mt_uint32)pApp->sizeYGTK;
+    if (pSizeX) *pSizeX = (md_uint32)pApp->sizeXGTK;
+    if (pSizeY) *pSizeY = (md_uint32)pApp->sizeYGTK;
 #endif
 }
 
-void mt_testapp_scheduled_redraw(mt_testapp* pApp, mt_int32 left, mt_int32 top, mt_int32 right, mt_int32 bottom)
+void md_testapp_scheduled_redraw(md_testapp* pApp, md_int32 left, md_int32 top, md_int32 right, md_int32 bottom)
 {
-#if defined(MT_WIN32)
+#if defined(MD_WIN32)
     RECT rect;
 #endif
 
-    MT_ASSERT(pApp != NULL);
+    MD_ASSERT(pApp != NULL);
 
-#if defined(MT_WIN32)
+#if defined(MD_WIN32)
     rect.left   = left;
     rect.top    = top;
     rect.right  = right;
     rect.bottom = bottom;
     RedrawWindow(pApp->hWnd, &rect, NULL, RDW_INVALIDATE);
-#elif defined(MT_APPLE)
+#elif defined(MD_APPLE)
     /* Implement me. */
 #else
     gtk_widget_queue_draw_area(GTK_WIDGET(pApp->pWindowWidget), left, top, (right - left), (bottom - top));
