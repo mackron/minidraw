@@ -266,6 +266,14 @@ int main(int argc, char** argv)
     appConfig.onSize       = on_size;
     appConfig.onPaint      = on_paint;
     appConfig.pUserData    = NULL;
+
+#if defined(MT_WIN32)
+    appConfig.apiConfig.backend = mt_backend_gdi;
+#elif defined(MT_APPLE)
+    appConfig.apiConfig.backend = mt_backend_coregraphics;
+#else
+    appConfig.apiConfig.backend = mt_backend_cairo;
+#endif
     
     result = mt_testapp_init(&appConfig, &app);
     if (result != MT_SUCCESS) {

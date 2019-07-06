@@ -226,8 +226,9 @@ typedef enum
     mt_backend_gdi,            /* Typography via Uniscribe */
     /*mt_backend_direct2d,*/       /* Typography via DirectWrite */
     /*mt_backend_coregraphics,*/   /* Typography via Core Text */
-    mt_backend_cairo          /* Typography via Pango */
+    mt_backend_cairo,         /* Typography via Pango */
     /*mt_backend_xft*/             /* Typography via minitype */
+    mt_backend_custom
 } mt_backend;
 
 typedef enum
@@ -469,9 +470,133 @@ typedef struct
 } mt_itemize_state;
 
 
+typedef void      (* mt_uninit_proc)                      (mt_api* pAPI);
+typedef mt_result (* mt_itemize_utf8_proc)                (mt_font* pFont, const mt_utf8* pTextUTF8, size_t textLength, mt_item* pItems, mt_uint32* pItemCount, mt_itemize_state* pItemizeState);
+typedef mt_result (* itemize_utf16_proc)                  (mt_font* pFont, const mt_utf16* pTextUTF16, size_t textLength, mt_item* pItems, mt_uint32* pItemCount, mt_itemize_state* pItemizeState);
+typedef mt_result (* itemize_utf32_proc)                  (mt_font* pFont, const mt_utf32* pTextUTF32, size_t textLength, mt_item* pItems, mt_uint32* pItemCount, mt_itemize_state* pItemizeState);
+typedef void      (* free_itemize_state_proc)             (mt_itemize_state* pItemizeState);
+typedef mt_result (* shape_utf8_proc)                     (mt_font* pFont, mt_item* pItem, const mt_utf8* pTextUTF8, size_t textLength, mt_glyph* pGlyphs, size_t* pGlyphCount, size_t* pClusters, mt_text_metrics* pRunMetrics);
+typedef mt_result (* shape_utf16_proc)                    (mt_font* pFont, mt_item* pItem, const mt_utf16* pTextUTF16, size_t textLength, mt_glyph* pGlyphs, size_t* pGlyphCount, size_t* pClusters, mt_text_metrics* pRunMetrics);
+typedef mt_result (* shape_utf32_proc)                    (mt_font* pFont, mt_item* pItem, const mt_utf32* pTextUTF32, size_t textLength, mt_glyph* pGlyphs, size_t* pGlyphCount, size_t* pClusters, mt_text_metrics* pRunMetrics);
+typedef mt_result (* font_init_proc)                      (mt_api* pAPI, const mt_font_config* pConfig, mt_font* pFont);
+typedef void      (* font_uninit_proc)                    (mt_font* pFont);
+typedef mt_result (* font_get_glyph_metrics_proc)         (mt_font* pFont, const mt_glyph* pGlyphs, size_t glyphCount, mt_glyph_metrics* pGlyphMetrics);
+typedef mt_result (* font_get_glyph_metrics_by_index_proc)(mt_font* pFont, const mt_uint32* pGlyphIndices, size_t glyphCount, mt_glyph_metrics* pGlyphMetrics);
+typedef mt_result (* brush_init_proc)                     (mt_api* pAPI, const mt_brush_config* pConfig, mt_brush* pBrush);
+typedef void      (* brush_uninit_proc)                   (mt_brush* pBrush);
+typedef void      (* brush_set_origin_proc)               (mt_brush* pBrush, mt_int32 x, mt_int32 y);
+typedef mt_result (* gc_init_proc)                        (mt_api* pAPI, const mt_gc_config* pConfig, mt_gc* pGC);
+typedef void      (* gc_uninit_proc)                      (mt_gc* pGC);
+typedef mt_result (* gc_get_image_data_proc)              (mt_gc* pGC, mt_format outputFormat, void* pImageData);
+typedef mt_result (* gc_get_size_proc)                    (mt_gc* pGC, mt_uint32* pSizeX, mt_uint32* pSizeY);
+typedef mt_result (* gc_save_proc)                        (mt_gc* pGC);
+typedef mt_result (* gc_restore_proc)                     (mt_gc* pGC);
+typedef void      (* gc_set_matrix_proc)                  (mt_gc* pGC, const mt_matrix* pMatrix);
+typedef void      (* gc_get_matrix_proc)                  (mt_gc* pGC, mt_matrix* pMatrix);
+typedef void      (* gc_set_matrix_identity_proc)         (mt_gc* pGC);
+typedef void      (* gc_transform_proc)                   (mt_gc* pGC, const mt_matrix* pMatrix);
+typedef void      (* gc_translate_proc)                   (mt_gc* pGC, mt_int32 offsetX, mt_int32 offsetY);
+typedef void      (* gc_rotate_proc)                      (mt_gc* pGC, float rotationInRadians);
+typedef void      (* gc_scale_proc)                       (mt_gc* pGC, float scaleX, float scaleY);
+typedef void      (* gc_set_line_width_proc)              (mt_gc* pGC, mt_int32 width);
+typedef void      (* gc_set_line_cap_proc)                (mt_gc* pGC, mt_line_cap cap);
+typedef void      (* gc_set_line_join_proc)               (mt_gc* pGC, mt_line_join join);
+typedef void      (* gc_set_miter_limit_proc)             (mt_gc* pGC, float limit);
+typedef void      (* gc_set_line_dash_proc)               (mt_gc* pGC, const float* dashes, mt_uint32 count);
+typedef void      (* gc_set_line_brush_proc)              (mt_gc* pGC, mt_brush* pBrush);
+typedef void      (* gc_set_line_brush_solid_proc)        (mt_gc* pGC, mt_color color);
+typedef void      (* gc_set_line_brush_gc_proc)           (mt_gc* pGC, mt_gc* pSrcGC);
+typedef void      (* gc_set_fill_brush_proc)              (mt_gc* pGC, mt_brush* pBrush);
+typedef void      (* gc_set_fill_brush_solid_proc)        (mt_gc* pGC, mt_color color);
+typedef void      (* gc_set_fill_brush_gc_proc)           (mt_gc* pGC, mt_gc* pSrcGC);
+typedef void      (* gc_set_text_fg_color_proc)           (mt_gc* pGC, mt_color fgColor);
+typedef void      (* gc_set_text_bg_color_proc)           (mt_gc* pGC, mt_color bgColor);
+typedef void      (* gc_set_blend_op_proc)                (mt_gc* pGC, mt_blend_op op);
+typedef void      (* gc_set_antialias_mode_proc)          (mt_gc* pGC, mt_antialias_mode mode);
+typedef void      (* gc_set_stretch_filter_proc)          (mt_gc* pGC, mt_stretch_filter filter);
+typedef void      (* gc_move_to_proc)                     (mt_gc* pGC, mt_int32 x, mt_int32 y);
+typedef void      (* gc_line_to_proc)                     (mt_gc* pGC, mt_int32 x, mt_int32 y);
+typedef void      (* gc_rectangle_proc)                   (mt_gc* pGC, mt_int32 left, mt_int32 top, mt_int32 right, mt_int32 bottom);
+typedef void      (* gc_arc_proc)                         (mt_gc* pGC, mt_int32 x, mt_int32 y, mt_int32 radius, float angle1InRadians, float angle2InRadians);
+typedef void      (* gc_curveTo_proc)                     (mt_gc* pGC, mt_int32 x1, mt_int32 y1, mt_int32 x2, mt_int32 y2, mt_int32 x3, mt_int32 y3);
+typedef void      (* gc_closePath_proc)                   (mt_gc* pGC);
+typedef void      (* gc_clip_proc)                        (mt_gc* pGC);
+typedef void      (* gc_resetClip_proc)                   (mt_gc* pGC);
+typedef mt_bool32 (* gc_is_point_inside_clip_proc)        (mt_gc* pGC, mt_int32 x, mt_int32 y);
+typedef void      (* gc_fill_proc)                        (mt_gc* pGC);
+typedef void      (* gc_stroke_proc)                      (mt_gc* pGC);
+typedef void      (* gc_fill_and_stroke_proc)             (mt_gc* pGC);
+typedef void      (* gc_draw_gc_proc)                     (mt_gc* pGC, mt_gc* pSrcGC, mt_int32 srcX, mt_int32 srcY);
+typedef void      (* gc_draw_glyphs_proc)                 (mt_gc* pGC, const mt_item* pItem, const mt_glyph* pGlyphs, size_t glyphCount, mt_int32 x, mt_int32 y);
+typedef void      (* gc_clear_proc)                       (mt_gc* pGC, mt_color color);
+
+typedef struct
+{
+    mt_uninit_proc                       uninit;
+    mt_itemize_utf8_proc                 itemizeUTF8;
+    itemize_utf16_proc                   itemizeUTF16;
+    itemize_utf32_proc                   itemizeUTF32;
+    free_itemize_state_proc              freeItemizeState;
+    shape_utf8_proc                      shapeUTF8;
+    shape_utf16_proc                     shapeUTF16;
+    shape_utf32_proc                     shapeUTF32;
+    font_init_proc                       fontInit;
+    font_uninit_proc                     fontUninit;
+    font_get_glyph_metrics_proc          fontGetGlyphMetrics;
+    font_get_glyph_metrics_by_index_proc fontGetGlyphMetricsByIndex;
+    brush_init_proc                      brushInit;
+    brush_uninit_proc                    brushUninit;
+    brush_set_origin_proc                brushSetOrigin;
+    gc_init_proc                         gcInit;
+    gc_uninit_proc                       gcUninit;
+    gc_get_image_data_proc               gcGetImageData;
+    gc_get_size_proc                     gcGetSize;
+    gc_save_proc                         gcSave;
+    gc_restore_proc                      gcRestore;
+    gc_set_matrix_proc                   gcSetMatrix;
+    gc_get_matrix_proc                   gcGetMatrix;
+    gc_set_matrix_identity_proc          gcSetMatrixIdentity;
+    gc_transform_proc                    gcTransform;
+    gc_translate_proc                    gcTranslate;
+    gc_rotate_proc                       gcRotate;
+    gc_scale_proc                        gcScale;
+    gc_set_line_width_proc               gcSetLineWidth;
+    gc_set_line_cap_proc                 gcSetLineCap;
+    gc_set_line_join_proc                gcSetLineJoin;
+    gc_set_miter_limit_proc              gcSetMiterLimit;
+    gc_set_line_dash_proc                gcSetLineDash;
+    gc_set_line_brush_proc               gcSetLineBrush;
+    gc_set_line_brush_solid_proc         gcSetLineBrushSolid;
+    gc_set_line_brush_gc_proc            gcSetLineBrushGC;
+    gc_set_fill_brush_proc               gcSetFillBrush;
+    gc_set_fill_brush_solid_proc         gcSetFillBrushSolid;
+    gc_set_fill_brush_gc_proc            gcSetFillBrushGC;
+    gc_set_text_fg_color_proc            gcSetTextFGColor;
+    gc_set_text_bg_color_proc            gcSetTextBGColor;
+    gc_set_blend_op_proc                 gcSetBlendOp;
+    gc_set_antialias_mode_proc           gcSetAntialiasMode;
+    gc_set_stretch_filter_proc           gcSetStretchFilter;
+    gc_move_to_proc                      gcMoveTo;
+    gc_line_to_proc                      gcLineTo;
+    gc_rectangle_proc                    gcRectangle;
+    gc_arc_proc                          gcArc;
+    gc_curveTo_proc                      gcCurveTo;
+    gc_closePath_proc                    gcClosePath;
+    gc_clip_proc                         gcClip;
+    gc_resetClip_proc                    gcResetClip;
+    gc_is_point_inside_clip_proc         gcIsPointInsideClip;
+    gc_fill_proc                         gcFill;
+    gc_stroke_proc                       gcStroke;
+    gc_fill_and_stroke_proc              gcFillAndStroke;
+    gc_draw_gc_proc                      gcDrawGC;
+    gc_draw_glyphs_proc                  gcDrawGlyphs;
+    gc_clear_proc                        gcClear;
+} mt_api_procs;
+
 struct mt_api_config
 {
     mt_backend backend;
+    void* pUserData;
     struct
     {
         /*HDC*/ mt_handle hDC;  /* Optional pre-created global device context. */
@@ -480,71 +605,17 @@ struct mt_api_config
     {
         /*PangoContext**/ mt_ptr pPangoContext; /* Optional application-defined PangoContext. When set to null, the pango context is set to pango_font_map_create_context(pango_cairo_font_map_get_default()) */
     } cairo;
+    struct
+    {
+        mt_api_procs procs;
+    } custom;
 };
 
 struct mt_api
 {
     mt_backend backend;
-    void      (* uninit)                    (mt_api* pAPI);
-    mt_result (* itemizeUTF8)               (mt_font* pFont, const mt_utf8* pTextUTF8, size_t textLength, mt_item* pItems, mt_uint32* pItemCount, mt_itemize_state* pItemizeState);
-    mt_result (* itemizeUTF16)              (mt_font* pFont, const mt_utf16* pTextUTF16, size_t textLength, mt_item* pItems, mt_uint32* pItemCount, mt_itemize_state* pItemizeState);
-    mt_result (* itemizeUTF32)              (mt_font* pFont, const mt_utf32* pTextUTF32, size_t textLength, mt_item* pItems, mt_uint32* pItemCount, mt_itemize_state* pItemizeState);
-    void      (* freeItemizeState)          (mt_itemize_state* pItemizeState);
-    mt_result (* shapeUTF8)                 (mt_font* pFont, mt_item* pItem, const mt_utf8* pTextUTF8, size_t textLength, mt_glyph* pGlyphs, size_t* pGlyphCount, size_t* pClusters, mt_text_metrics* pRunMetrics);
-    mt_result (* shapeUTF16)                (mt_font* pFont, mt_item* pItem, const mt_utf16* pTextUTF16, size_t textLength, mt_glyph* pGlyphs, size_t* pGlyphCount, size_t* pClusters, mt_text_metrics* pRunMetrics);
-    mt_result (* shapeUTF32)                (mt_font* pFont, mt_item* pItem, const mt_utf32* pTextUTF32, size_t textLength, mt_glyph* pGlyphs, size_t* pGlyphCount, size_t* pClusters, mt_text_metrics* pRunMetrics);
-    mt_result (* fontInit)                  (mt_api* pAPI, const mt_font_config* pConfig, mt_font* pFont);
-    void      (* fontUninit)                (mt_font* pFont);
-    mt_result (* fontGetGlyphMetrics)       (mt_font* pFont, const mt_glyph* pGlyphs, size_t glyphCount, mt_glyph_metrics* pGlyphMetrics);
-    mt_result (* fontGetGlyphMetricsByIndex)(mt_font* pFont, const mt_uint32* pGlyphIndices, size_t glyphCount, mt_glyph_metrics* pGlyphMetrics);
-    mt_result (* brushInit)                 (mt_api* pAPI, const mt_brush_config* pConfig, mt_brush* pBrush);
-    void      (* brushUninit)               (mt_brush* pBrush);
-    void      (* brushSetOrigin)            (mt_brush* pBrush, mt_int32 x, mt_int32 y);
-    mt_result (* gcInit)                    (mt_api* pAPI, const mt_gc_config* pConfig, mt_gc* pGC);
-    void      (* gcUninit)                  (mt_gc* pGC);
-    mt_result (* gcGetImageData)            (mt_gc* pGC, mt_format outputFormat, void* pImageData);
-    mt_result (* gcGetSize)                 (mt_gc* pGC, mt_uint32* pSizeX, mt_uint32* pSizeY);
-    mt_result (* gcSave)                    (mt_gc* pGC);
-    mt_result (* gcRestore)                 (mt_gc* pGC);
-    void      (* gcSetMatrix)               (mt_gc* pGC, const mt_matrix* pMatrix);
-    void      (* gcGetMatrix)               (mt_gc* pGC, mt_matrix* pMatrix);
-    void      (* gcSetMatrixIdentity)       (mt_gc* pGC);
-    void      (* gcTransform)               (mt_gc* pGC, const mt_matrix* pMatrix);
-    void      (* gcTranslate)               (mt_gc* pGC, mt_int32 offsetX, mt_int32 offsetY);
-    void      (* gcRotate)                  (mt_gc* pGC, float rotationInRadians);
-    void      (* gcScale)                   (mt_gc* pGC, float scaleX, float scaleY);
-    void      (* gcSetLineWidth)            (mt_gc* pGC, mt_int32 width);
-    void      (* gcSetLineCap)              (mt_gc* pGC, mt_line_cap cap);
-    void      (* gcSetLineJoin)             (mt_gc* pGC, mt_line_join join);
-    void      (* gcSetMiterLimit)           (mt_gc* pGC, float limit);
-    void      (* gcSetLineDash)             (mt_gc* pGC, const float* dashes, mt_uint32 count);
-    void      (* gcSetLineBrush)            (mt_gc* pGC, mt_brush* pBrush);
-    void      (* gcSetLineBrushSolid)       (mt_gc* pGC, mt_color color);
-    void      (* gcSetLineBrushGC)          (mt_gc* pGC, mt_gc* pSrcGC);
-    void      (* gcSetFillBrush)            (mt_gc* pGC, mt_brush* pBrush);
-    void      (* gcSetFillBrushSolid)       (mt_gc* pGC, mt_color color);
-    void      (* gcSetFillBrushGC)          (mt_gc* pGC, mt_gc* pSrcGC);
-    void      (* gcSetTextFGColor)          (mt_gc* pGC, mt_color fgColor);
-    void      (* gcSetTextBGColor)          (mt_gc* pGC, mt_color bgColor);
-    void      (* gcSetBlendOp)              (mt_gc* pGC, mt_blend_op op);
-    void      (* gcSetAntialiasMode)        (mt_gc* pGC, mt_antialias_mode mode);
-    void      (* gcSetStretchFilter)        (mt_gc* pGC, mt_stretch_filter filter);
-    void      (* gcMoveTo)                  (mt_gc* pGC, mt_int32 x, mt_int32 y);
-    void      (* gcLineTo)                  (mt_gc* pGC, mt_int32 x, mt_int32 y);
-    void      (* gcRectangle)               (mt_gc* pGC, mt_int32 left, mt_int32 top, mt_int32 right, mt_int32 bottom);
-    void      (* gcArc)                     (mt_gc* pGC, mt_int32 x, mt_int32 y, mt_int32 radius, float angle1InRadians, float angle2InRadians);
-    void      (* gcCurveTo)                 (mt_gc* pGC, mt_int32 x1, mt_int32 y1, mt_int32 x2, mt_int32 y2, mt_int32 x3, mt_int32 y3);
-    void      (* gcClosePath)               (mt_gc* pGC);
-    void      (* gcClip)                    (mt_gc* pGC);
-    void      (* gcResetClip)               (mt_gc* pGC);
-    mt_bool32 (* gcIsPointInsideClip)       (mt_gc* pGC, mt_int32 x, mt_int32 y);
-    void      (* gcFill)                    (mt_gc* pGC);
-    void      (* gcStroke)                  (mt_gc* pGC);
-    void      (* gcFillAndStroke)           (mt_gc* pGC);
-    void      (* gcDrawGC)                  (mt_gc* pGC, mt_gc* pSrcGC, mt_int32 srcX, mt_int32 srcY);
-    void      (* gcDrawGlyphs)              (mt_gc* pGC, const mt_item* pItem, const mt_glyph* pGlyphs, size_t glyphCount, mt_int32 x, mt_int32 y);
-    void      (* gcClear)                   (mt_gc* pGC, mt_color color);
-
+    void* pUserData;
+    mt_api_procs procs;
 #if defined(MT_WIN32)
     struct
     {
@@ -607,6 +678,10 @@ struct mt_api
         int _unused;
     } xft;
 #endif
+    struct
+    {
+        int _unused;
+    } custom;
 };
 
 struct mt_font_config
@@ -617,6 +692,7 @@ struct mt_font_config
     mt_font_weight weight;
     mt_font_slant slant;
     mt_antialias_mode antialiasMode;    /* Preferred anti-aliasing to use with this font. This is just a hint. */
+    void* pUserData;
     struct
     {
         /*PangoFontMap**/ mt_ptr pPangoFontMap; /* Custom application-defined PangoFontMap to use when creating the font. */
@@ -627,6 +703,7 @@ struct mt_font_config
 struct mt_font
 {
     mt_api* pAPI;   /* The mt_api object that was used to initialize the font. */
+    void* pUserData;
     mt_font_metrics metrics;
 
 #if defined(MT_SUPPORT_GDI)
@@ -667,6 +744,7 @@ struct mt_font
 struct mt_brush_config
 {
     mt_brush_type type;
+    void* pUserData;
     struct
     {
         mt_color color;
@@ -687,7 +765,9 @@ struct mt_brush_config
 struct mt_brush
 {
     mt_api* pAPI;
+    void* pUserData;
     mt_brush_config config;
+    
 #if defined(MT_SUPPORT_GDI)
     struct
     {
@@ -714,6 +794,7 @@ struct mt_gc_config
     mt_uint32 stride;                   /* Stride in pixels. Only used when pInitialImageData is not null. */
     mt_format format;                   /* The format of the data contained in pInitialImageData (if any) and the preferred internal format. Cannot be mt_format_unkonwn if pInitialImageData is not null. */
     const void* pInitialImageData;      /* Can be null in which case the initial contents are undefined. */
+    void* pUserData;
 
 #if defined(MT_SUPPORT_GDI)
     struct
@@ -765,6 +846,7 @@ typedef struct
 struct mt_gc
 {
     mt_api* pAPI;                       /* The mt_api object that was used to initialize the graphics context. */
+    void* pUserData;
     mt_format format;
     mt_bool32 isTransient : 1;
 
@@ -6172,65 +6254,65 @@ mt_result mt_init__gdi(const mt_api_config* pConfig, mt_api* pAPI)
     /* Stock objects. */
     pAPI->gdi.hStockSolidFillBrush = GetStockObject(DC_BRUSH);    /* The brush to use for solid brushes. */
 
-    pAPI->uninit                     = mt_uninit__gdi;
-    pAPI->itemizeUTF8                = NULL;   /* No native support for UTF-8 with Uniscribe. */
-    pAPI->itemizeUTF16               = mt_itemize_utf16__gdi;
-    pAPI->itemizeUTF32               = NULL;   /* No native support for UTF-32 with Uniscribe. */
-    pAPI->freeItemizeState           = mt_free_itemize_state__gdi;
-    pAPI->shapeUTF8                  = NULL;   /* No native support for UTF-8 with Uniscribe. */
-    pAPI->shapeUTF16                 = mt_shape_utf16__gdi;
-    pAPI->shapeUTF32                 = NULL;   /* No native support for UTF-32 with Uniscribe. */
-    pAPI->fontInit                   = mt_font_init__gdi;
-    pAPI->fontUninit                 = mt_font_uninit__gdi;
-    pAPI->fontGetGlyphMetrics        = mt_font_get_glyph_metrics__gdi;
-    pAPI->fontGetGlyphMetricsByIndex = mt_font_get_glyph_metrics_by_index__gdi;
-    pAPI->brushInit                  = mt_brush_init__gdi;
-    pAPI->brushUninit                = mt_brush_uninit__gdi;
-    pAPI->brushSetOrigin             = mt_brush_set_origin__gdi;
-    pAPI->gcInit                     = mt_gc_init__gdi;
-    pAPI->gcUninit                   = mt_gc_uninit__gdi;
-    pAPI->gcGetImageData             = mt_gc_get_image_data__gdi;
-    pAPI->gcGetSize                  = mt_gc_get_size__gdi;
-    pAPI->gcSave                     = mt_gc_save__gdi;
-    pAPI->gcRestore                  = mt_gc_restore__gdi;
-    pAPI->gcSetMatrix                = mt_gc_set_matrix__gdi;
-    pAPI->gcGetMatrix                = mt_gc_get_matrix__gdi;
-    pAPI->gcSetMatrixIdentity        = mt_gc_set_matrix_identity__gdi;
-    pAPI->gcTransform                = mt_gc_transform__gdi;
-    pAPI->gcTranslate                = mt_gc_translate__gdi;
-    pAPI->gcRotate                   = mt_gc_rotate__gdi;
-    pAPI->gcScale                    = mt_gc_scale__gdi;
-    pAPI->gcSetLineWidth             = mt_gc_set_line_width__gdi;
-    pAPI->gcSetLineCap               = mt_gc_set_line_cap__gdi;
-    pAPI->gcSetLineJoin              = mt_gc_set_line_join__gdi;
-    pAPI->gcSetMiterLimit            = mt_gc_set_miter_limit__gdi;
-    pAPI->gcSetLineDash              = mt_gc_set_line_dash__gdi;
-    pAPI->gcSetLineBrush             = mt_gc_set_line_brush__gdi;
-    pAPI->gcSetLineBrushSolid        = mt_gc_set_line_brush_solid__gdi;
-    pAPI->gcSetLineBrushGC           = mt_gc_set_line_brush_gc__gdi;
-    pAPI->gcSetFillBrush             = mt_gc_set_fill_brush__gdi;
-    pAPI->gcSetFillBrushSolid        = mt_gc_set_fill_brush_solid__gdi;
-    pAPI->gcSetFillBrushGC           = mt_gc_set_fill_brush_gc__gdi;
-    pAPI->gcSetTextFGColor           = mt_gc_set_text_fg_color__gdi;
-    pAPI->gcSetTextBGColor           = mt_gc_set_text_bg_color__gdi;
-    pAPI->gcSetBlendOp               = mt_gc_set_blend_op__gdi;
-    pAPI->gcSetAntialiasMode         = mt_gc_set_antialias_mode__gdi;
-    pAPI->gcSetStretchFilter         = mt_gc_set_stretch_filter__gdi;
-    pAPI->gcMoveTo                   = mt_gc_move_to__gdi;
-    pAPI->gcLineTo                   = mt_gc_line_to__gdi;
-    pAPI->gcRectangle                = mt_gc_rectangle__gdi;
-    pAPI->gcArc                      = mt_gc_arc__gdi;
-    pAPI->gcCurveTo                  = mt_gc_curve_to__gdi;
-    pAPI->gcClosePath                = mt_gc_close_path__gdi;
-    pAPI->gcClip                     = mt_gc_clip__gdi;
-    pAPI->gcResetClip                = mt_gc_reset_clip__gdi;
-    pAPI->gcIsPointInsideClip        = mt_gc_is_point_inside_clip__gdi;
-    pAPI->gcFill                     = mt_gc_fill__gdi;
-    pAPI->gcStroke                   = mt_gc_stroke__gdi;
-    pAPI->gcFillAndStroke            = mt_gc_fill_and_stroke__gdi;
-    pAPI->gcDrawGC                   = mt_gc_draw_gc__gdi;
-    pAPI->gcDrawGlyphs               = mt_gc_draw_glyphs__gdi;
-    pAPI->gcClear                    = mt_gc_clear__gdi;
+    pAPI->procs.uninit                     = mt_uninit__gdi;
+    pAPI->procs.itemizeUTF8                = NULL;   /* No native support for UTF-8 with Uniscribe. */
+    pAPI->procs.itemizeUTF16               = mt_itemize_utf16__gdi;
+    pAPI->procs.itemizeUTF32               = NULL;   /* No native support for UTF-32 with Uniscribe. */
+    pAPI->procs.freeItemizeState           = mt_free_itemize_state__gdi;
+    pAPI->procs.shapeUTF8                  = NULL;   /* No native support for UTF-8 with Uniscribe. */
+    pAPI->procs.shapeUTF16                 = mt_shape_utf16__gdi;
+    pAPI->procs.shapeUTF32                 = NULL;   /* No native support for UTF-32 with Uniscribe. */
+    pAPI->procs.fontInit                   = mt_font_init__gdi;
+    pAPI->procs.fontUninit                 = mt_font_uninit__gdi;
+    pAPI->procs.fontGetGlyphMetrics        = mt_font_get_glyph_metrics__gdi;
+    pAPI->procs.fontGetGlyphMetricsByIndex = mt_font_get_glyph_metrics_by_index__gdi;
+    pAPI->procs.brushInit                  = mt_brush_init__gdi;
+    pAPI->procs.brushUninit                = mt_brush_uninit__gdi;
+    pAPI->procs.brushSetOrigin             = mt_brush_set_origin__gdi;
+    pAPI->procs.gcInit                     = mt_gc_init__gdi;
+    pAPI->procs.gcUninit                   = mt_gc_uninit__gdi;
+    pAPI->procs.gcGetImageData             = mt_gc_get_image_data__gdi;
+    pAPI->procs.gcGetSize                  = mt_gc_get_size__gdi;
+    pAPI->procs.gcSave                     = mt_gc_save__gdi;
+    pAPI->procs.gcRestore                  = mt_gc_restore__gdi;
+    pAPI->procs.gcSetMatrix                = mt_gc_set_matrix__gdi;
+    pAPI->procs.gcGetMatrix                = mt_gc_get_matrix__gdi;
+    pAPI->procs.gcSetMatrixIdentity        = mt_gc_set_matrix_identity__gdi;
+    pAPI->procs.gcTransform                = mt_gc_transform__gdi;
+    pAPI->procs.gcTranslate                = mt_gc_translate__gdi;
+    pAPI->procs.gcRotate                   = mt_gc_rotate__gdi;
+    pAPI->procs.gcScale                    = mt_gc_scale__gdi;
+    pAPI->procs.gcSetLineWidth             = mt_gc_set_line_width__gdi;
+    pAPI->procs.gcSetLineCap               = mt_gc_set_line_cap__gdi;
+    pAPI->procs.gcSetLineJoin              = mt_gc_set_line_join__gdi;
+    pAPI->procs.gcSetMiterLimit            = mt_gc_set_miter_limit__gdi;
+    pAPI->procs.gcSetLineDash              = mt_gc_set_line_dash__gdi;
+    pAPI->procs.gcSetLineBrush             = mt_gc_set_line_brush__gdi;
+    pAPI->procs.gcSetLineBrushSolid        = mt_gc_set_line_brush_solid__gdi;
+    pAPI->procs.gcSetLineBrushGC           = mt_gc_set_line_brush_gc__gdi;
+    pAPI->procs.gcSetFillBrush             = mt_gc_set_fill_brush__gdi;
+    pAPI->procs.gcSetFillBrushSolid        = mt_gc_set_fill_brush_solid__gdi;
+    pAPI->procs.gcSetFillBrushGC           = mt_gc_set_fill_brush_gc__gdi;
+    pAPI->procs.gcSetTextFGColor           = mt_gc_set_text_fg_color__gdi;
+    pAPI->procs.gcSetTextBGColor           = mt_gc_set_text_bg_color__gdi;
+    pAPI->procs.gcSetBlendOp               = mt_gc_set_blend_op__gdi;
+    pAPI->procs.gcSetAntialiasMode         = mt_gc_set_antialias_mode__gdi;
+    pAPI->procs.gcSetStretchFilter         = mt_gc_set_stretch_filter__gdi;
+    pAPI->procs.gcMoveTo                   = mt_gc_move_to__gdi;
+    pAPI->procs.gcLineTo                   = mt_gc_line_to__gdi;
+    pAPI->procs.gcRectangle                = mt_gc_rectangle__gdi;
+    pAPI->procs.gcArc                      = mt_gc_arc__gdi;
+    pAPI->procs.gcCurveTo                  = mt_gc_curve_to__gdi;
+    pAPI->procs.gcClosePath                = mt_gc_close_path__gdi;
+    pAPI->procs.gcClip                     = mt_gc_clip__gdi;
+    pAPI->procs.gcResetClip                = mt_gc_reset_clip__gdi;
+    pAPI->procs.gcIsPointInsideClip        = mt_gc_is_point_inside_clip__gdi;
+    pAPI->procs.gcFill                     = mt_gc_fill__gdi;
+    pAPI->procs.gcStroke                   = mt_gc_stroke__gdi;
+    pAPI->procs.gcFillAndStroke            = mt_gc_fill_and_stroke__gdi;
+    pAPI->procs.gcDrawGC                   = mt_gc_draw_gc__gdi;
+    pAPI->procs.gcDrawGlyphs               = mt_gc_draw_glyphs__gdi;
+    pAPI->procs.gcClear                    = mt_gc_clear__gdi;
 
     (void)pConfig;
     return MT_SUCCESS;
@@ -7477,65 +7559,65 @@ mt_result mt_init__cairo(const mt_api_config* pConfig, mt_api* pAPI)
     MT_ASSERT(pConfig != NULL);
     MT_ASSERT(pAPI != NULL);
 
-    pAPI->uninit                     = mt_uninit__cairo;
-    pAPI->itemizeUTF8                = mt_itemize_utf8__cairo;
-    pAPI->itemizeUTF16               = NULL;    /* No native support for UTF-16 with Pango. */
-    pAPI->itemizeUTF32               = NULL;    /* No native support for UTF-32 with Pango. */
-    pAPI->freeItemizeState           = mt_free_itemize_state__cairo;
-    pAPI->shapeUTF8                  = mt_shape_utf8__cairo;
-    pAPI->shapeUTF16                 = NULL;    /* No native support for UTF-16 with Pango. */
-    pAPI->shapeUTF32                 = NULL;    /* No native support for UTF-32 with Pango. */
-    pAPI->fontInit                   = mt_font_init__cairo;
-    pAPI->fontUninit                 = mt_font_uninit__cairo;
-    pAPI->fontGetGlyphMetrics        = mt_font_get_glyph_metrics__cairo;
-    pAPI->fontGetGlyphMetricsByIndex = mt_font_get_glyph_metrics_by_index__cairo;
-    pAPI->brushInit                  = mt_brush_init__cairo;
-    pAPI->brushUninit                = mt_brush_uninit__cairo;
-    pAPI->brushSetOrigin             = mt_brush_set_origin__cairo;
-    pAPI->gcInit                     = mt_gc_init__cairo;
-    pAPI->gcUninit                   = mt_gc_uninit__cairo;
-    pAPI->gcGetImageData             = mt_gc_get_image_data__cairo;
-    pAPI->gcGetSize                  = mt_gc_get_size__cairo;
-    pAPI->gcSave                     = mt_gc_save__cairo;
-    pAPI->gcRestore                  = mt_gc_restore__cairo;
-    pAPI->gcSetMatrix                = mt_gc_set_matrix__cairo;
-    pAPI->gcGetMatrix                = mt_gc_get_matrix__cairo;
-    pAPI->gcSetMatrixIdentity        = mt_gc_set_matrix_identity__cairo;
-    pAPI->gcTransform                = mt_gc_transform__cairo;
-    pAPI->gcTranslate                = mt_gc_translate__cairo;
-    pAPI->gcRotate                   = mt_gc_rotate__cairo;
-    pAPI->gcScale                    = mt_gc_scale__cairo;
-    pAPI->gcSetLineWidth             = mt_gc_set_line_width__cairo;
-    pAPI->gcSetLineCap               = mt_gc_set_line_cap__cairo;
-    pAPI->gcSetLineJoin              = mt_gc_set_line_join__cairo;
-    pAPI->gcSetMiterLimit            = mt_gc_set_miter_limit__cairo;
-    pAPI->gcSetLineDash              = mt_gc_set_line_dash__cairo;
-    pAPI->gcSetLineBrush             = mt_gc_set_line_brush__cairo;
-    pAPI->gcSetLineBrushSolid        = mt_gc_set_line_brush_solid__cairo;
-    pAPI->gcSetLineBrushGC           = mt_gc_set_line_brush_gc__cairo;
-    pAPI->gcSetFillBrush             = mt_gc_set_fill_brush__cairo;
-    pAPI->gcSetFillBrushSolid        = mt_gc_set_fill_brush_solid__cairo;
-    pAPI->gcSetFillBrushGC           = mt_gc_set_fill_brush_gc__cairo;
-    pAPI->gcSetTextFGColor           = mt_gc_set_text_fg_color__cairo;
-    pAPI->gcSetTextBGColor           = mt_gc_set_text_bg_color__cairo;
-    pAPI->gcSetBlendOp               = mt_gc_set_blend_op__cairo;
-    pAPI->gcSetAntialiasMode         = mt_gc_set_antialias_mode__cairo;
-    pAPI->gcSetStretchFilter         = mt_gc_set_stretch_filter__cairo;
-    pAPI->gcMoveTo                   = mt_gc_move_to__cairo;
-    pAPI->gcLineTo                   = mt_gc_line_to__cairo;
-    pAPI->gcRectangle                = mt_gc_rectangle__cairo;
-    pAPI->gcArc                      = mt_gc_arc__cairo;
-    pAPI->gcCurveTo                  = mt_gc_curve_to__cairo;
-    pAPI->gcClosePath                = mt_gc_close_path__cairo;
-    pAPI->gcClip                     = mt_gc_clip__cairo;
-    pAPI->gcResetClip                = mt_gc_reset_clip__cairo;
-    pAPI->gcIsPointInsideClip        = mt_gc_is_point_inside_clip__cairo;
-    pAPI->gcFill                     = mt_gc_fill__cairo;
-    pAPI->gcStroke                   = mt_gc_stroke__cairo;
-    pAPI->gcFillAndStroke            = mt_gc_fill_and_stroke__cairo;
-    pAPI->gcDrawGC                   = mt_gc_draw_gc__cairo;
-    pAPI->gcDrawGlyphs               = mt_gc_draw_glyphs__cairo;
-    pAPI->gcClear                    = mt_gc_clear__cairo;
+    pAPI->procs.uninit                     = mt_uninit__cairo;
+    pAPI->procs.itemizeUTF8                = mt_itemize_utf8__cairo;
+    pAPI->procs.itemizeUTF16               = NULL;    /* No native support for UTF-16 with Pango. */
+    pAPI->procs.itemizeUTF32               = NULL;    /* No native support for UTF-32 with Pango. */
+    pAPI->procs.freeItemizeState           = mt_free_itemize_state__cairo;
+    pAPI->procs.shapeUTF8                  = mt_shape_utf8__cairo;
+    pAPI->procs.shapeUTF16                 = NULL;    /* No native support for UTF-16 with Pango. */
+    pAPI->procs.shapeUTF32                 = NULL;    /* No native support for UTF-32 with Pango. */
+    pAPI->procs.fontInit                   = mt_font_init__cairo;
+    pAPI->procs.fontUninit                 = mt_font_uninit__cairo;
+    pAPI->procs.fontGetGlyphMetrics        = mt_font_get_glyph_metrics__cairo;
+    pAPI->procs.fontGetGlyphMetricsByIndex = mt_font_get_glyph_metrics_by_index__cairo;
+    pAPI->procs.brushInit                  = mt_brush_init__cairo;
+    pAPI->procs.brushUninit                = mt_brush_uninit__cairo;
+    pAPI->procs.brushSetOrigin             = mt_brush_set_origin__cairo;
+    pAPI->procs.gcInit                     = mt_gc_init__cairo;
+    pAPI->procs.gcUninit                   = mt_gc_uninit__cairo;
+    pAPI->procs.gcGetImageData             = mt_gc_get_image_data__cairo;
+    pAPI->procs.gcGetSize                  = mt_gc_get_size__cairo;
+    pAPI->procs.gcSave                     = mt_gc_save__cairo;
+    pAPI->procs.gcRestore                  = mt_gc_restore__cairo;
+    pAPI->procs.gcSetMatrix                = mt_gc_set_matrix__cairo;
+    pAPI->procs.gcGetMatrix                = mt_gc_get_matrix__cairo;
+    pAPI->procs.gcSetMatrixIdentity        = mt_gc_set_matrix_identity__cairo;
+    pAPI->procs.gcTransform                = mt_gc_transform__cairo;
+    pAPI->procs.gcTranslate                = mt_gc_translate__cairo;
+    pAPI->procs.gcRotate                   = mt_gc_rotate__cairo;
+    pAPI->procs.gcScale                    = mt_gc_scale__cairo;
+    pAPI->procs.gcSetLineWidth             = mt_gc_set_line_width__cairo;
+    pAPI->procs.gcSetLineCap               = mt_gc_set_line_cap__cairo;
+    pAPI->procs.gcSetLineJoin              = mt_gc_set_line_join__cairo;
+    pAPI->procs.gcSetMiterLimit            = mt_gc_set_miter_limit__cairo;
+    pAPI->procs.gcSetLineDash              = mt_gc_set_line_dash__cairo;
+    pAPI->procs.gcSetLineBrush             = mt_gc_set_line_brush__cairo;
+    pAPI->procs.gcSetLineBrushSolid        = mt_gc_set_line_brush_solid__cairo;
+    pAPI->procs.gcSetLineBrushGC           = mt_gc_set_line_brush_gc__cairo;
+    pAPI->procs.gcSetFillBrush             = mt_gc_set_fill_brush__cairo;
+    pAPI->procs.gcSetFillBrushSolid        = mt_gc_set_fill_brush_solid__cairo;
+    pAPI->procs.gcSetFillBrushGC           = mt_gc_set_fill_brush_gc__cairo;
+    pAPI->procs.gcSetTextFGColor           = mt_gc_set_text_fg_color__cairo;
+    pAPI->procs.gcSetTextBGColor           = mt_gc_set_text_bg_color__cairo;
+    pAPI->procs.gcSetBlendOp               = mt_gc_set_blend_op__cairo;
+    pAPI->procs.gcSetAntialiasMode         = mt_gc_set_antialias_mode__cairo;
+    pAPI->procs.gcSetStretchFilter         = mt_gc_set_stretch_filter__cairo;
+    pAPI->procs.gcMoveTo                   = mt_gc_move_to__cairo;
+    pAPI->procs.gcLineTo                   = mt_gc_line_to__cairo;
+    pAPI->procs.gcRectangle                = mt_gc_rectangle__cairo;
+    pAPI->procs.gcArc                      = mt_gc_arc__cairo;
+    pAPI->procs.gcCurveTo                  = mt_gc_curve_to__cairo;
+    pAPI->procs.gcClosePath                = mt_gc_close_path__cairo;
+    pAPI->procs.gcClip                     = mt_gc_clip__cairo;
+    pAPI->procs.gcResetClip                = mt_gc_reset_clip__cairo;
+    pAPI->procs.gcIsPointInsideClip        = mt_gc_is_point_inside_clip__cairo;
+    pAPI->procs.gcFill                     = mt_gc_fill__cairo;
+    pAPI->procs.gcStroke                   = mt_gc_stroke__cairo;
+    pAPI->procs.gcFillAndStroke            = mt_gc_fill_and_stroke__cairo;
+    pAPI->procs.gcDrawGC                   = mt_gc_draw_gc__cairo;
+    pAPI->procs.gcDrawGlyphs               = mt_gc_draw_glyphs__cairo;
+    pAPI->procs.gcClear                    = mt_gc_clear__cairo;
 
     /* We need to a PangoContext before we'll be able to create fonts. */
     if (pConfig->cairo.pPangoContext != NULL) {
@@ -7572,6 +7654,20 @@ mt_result mt_init__cairo(const mt_api_config* pConfig, mt_api* pAPI)
 #endif
 
 
+
+/**************************************************************************************************************************************************************
+
+ Custom
+
+ **************************************************************************************************************************************************************/
+mt_result mt_init__custom(const mt_api_config* pConfig, mt_api* pAPI)
+{
+    pAPI->procs = pConfig->custom.procs;
+    return MT_SUCCESS;
+}
+
+
+
 /**************************************************************************************************************************************************************
 
 API
@@ -7591,6 +7687,9 @@ mt_result mt_init(const mt_api_config* pConfig, mt_api* pAPI)
         return MT_INVALID_ARGS;
     }
 
+    pAPI->backend = pConfig->backend;
+    pAPI->pUserData = pConfig->pUserData;
+
     switch (pConfig->backend)
     {
 #if defined(MT_HAS_GDI)
@@ -7605,6 +7704,11 @@ mt_result mt_init(const mt_api_config* pConfig, mt_api* pAPI)
             result = mt_init__cairo(pConfig, pAPI);
         } break;
 #endif
+
+        case mt_backend_custom:
+        {
+            result = mt_init__custom(pConfig, pAPI);
+        } break;
 
         default:
         {
@@ -7625,7 +7729,7 @@ void mt_uninit(mt_api* pAPI)
         return;
     }
 
-    pAPI->uninit(pAPI);
+    pAPI->procs.uninit(pAPI);
 }
 
 mt_result mt_itemize_utf8(mt_font* pFont, const mt_utf8* pTextUTF8, size_t textLength, mt_item* pItems, mt_uint32* pItemCount, mt_itemize_state* pItemizeState)
@@ -7653,12 +7757,12 @@ mt_result mt_itemize_utf8(mt_font* pFont, const mt_utf8* pTextUTF8, size_t textL
     */
 
     /* If the backend directly supports UTF-8, just pass it straight through. Otherwise we need to convert. */
-    if (pFont->pAPI->itemizeUTF8) {
+    if (pFont->pAPI->procs.itemizeUTF8) {
         /* UTF-8 natively supported. */
-        result = pFont->pAPI->itemizeUTF8(pFont, pTextUTF8, textLength, pItems, &itemCount, pItemizeState);
+        result = pFont->pAPI->procs.itemizeUTF8(pFont, pTextUTF8, textLength, pItems, &itemCount, pItemizeState);
     } else {
         /* UTF-8 not natively supported. Need to convert the string to another format. */
-        if (pFont->pAPI->itemizeUTF16) {
+        if (pFont->pAPI->procs.itemizeUTF16) {
             /*
             Convert the input string to UTF-16, itemize, then convert offsets back to UTF-8 equivalents. To make things more efficient for small
             strings we can try converting to a stack-allocated buffer first. If this is too small we will fall back to the heap which will be
@@ -7693,7 +7797,7 @@ mt_result mt_itemize_utf8(mt_font* pFont, const mt_utf8* pTextUTF8, size_t textL
             }
 
             /* We have the UTF-16 string, so now we need to itemize these. */
-            result = pFont->pAPI->itemizeUTF16(pFont, pUTF16, utf16Len, pItems, &itemCount, pItemizeState);
+            result = pFont->pAPI->procs.itemizeUTF16(pFont, pUTF16, utf16Len, pItems, &itemCount, pItemizeState);
             if (result == MT_SUCCESS) {
                 /* We have the items, so now we need to convert the offsets and lengths to the UTF-8 equivalents. */
                 if (pItems != NULL) {
@@ -7715,7 +7819,7 @@ mt_result mt_itemize_utf8(mt_font* pFont, const mt_utf8* pTextUTF8, size_t textL
             
             /* Done. */
             MT_FREE(pUTF16Heap);
-        } else if (pFont->pAPI->itemizeUTF32) {
+        } else if (pFont->pAPI->procs.itemizeUTF32) {
             /* TODO: Convert the input string to UTF-32, itemize, then convert offsets back to UTF-8 equivalents. */
             return MT_INVALID_OPERATION;
         } else {
@@ -7739,8 +7843,8 @@ void mt_free_itemize_state(mt_itemize_state* pItemizeState)
         return;
     }
 
-    if (pItemizeState->pAPI->freeItemizeState) {
-        pItemizeState->pAPI->freeItemizeState(pItemizeState);
+    if (pItemizeState->pAPI->procs.freeItemizeState) {
+        pItemizeState->pAPI->procs.freeItemizeState(pItemizeState);
     }
 }
 
@@ -7753,10 +7857,10 @@ mt_result mt_shape_utf8(mt_font* pFont, mt_item* pItem, const mt_utf8* pTextUTF8
     }
 
     /* If the backend directly supports UTF-8, just pass it straight through. Otherwise we need to convert. */
-    if (pFont->pAPI->shapeUTF8) {
-        result = pFont->pAPI->shapeUTF8(pFont, pItem, pTextUTF8, textLength, pGlyphs, pGlyphCount, pClusters, pRunMetrics);
+    if (pFont->pAPI->procs.shapeUTF8) {
+        result = pFont->pAPI->procs.shapeUTF8(pFont, pItem, pTextUTF8, textLength, pGlyphs, pGlyphCount, pClusters, pRunMetrics);
     } else {
-        if (pFont->pAPI->shapeUTF16) {
+        if (pFont->pAPI->procs.shapeUTF16) {
             /* Convert to UTF-16. We can try using the stack first, and then fall back to a heap-allocation if necessary. */
             size_t    utf16Len;
             void*     pHeap = NULL;
@@ -7801,7 +7905,7 @@ mt_result mt_shape_utf8(mt_font* pFont, mt_item* pItem, const mt_utf8* pTextUTF8
             MT_ASSERT(utf16Len <= textLength);
 
             /* We have the UTF-16 string, so now we perform shaping. */
-            result = pFont->pAPI->shapeUTF16(pFont, pItem, pUTF16, utf16Len, pGlyphs, pGlyphCount, pUTF16Clusters, pRunMetrics);
+            result = pFont->pAPI->procs.shapeUTF16(pFont, pItem, pUTF16, utf16Len, pGlyphs, pGlyphCount, pUTF16Clusters, pRunMetrics);
             if (result == MT_SUCCESS) {
                 /* The values in pClusters need to be expanded so that they map to the original UTF-8 string. */
                 if (pClusters != NULL) {
@@ -7835,7 +7939,7 @@ mt_result mt_shape_utf8(mt_font* pFont, mt_item* pItem, const mt_utf8* pTextUTF8
             }
 
             MT_FREE(pHeap);
-        } else if (pFont->pAPI->shapeUTF32) {
+        } else if (pFont->pAPI->procs.shapeUTF32) {
             /* TODO: Implement me. */
             return MT_INVALID_OPERATION;
         } else {
@@ -7999,8 +8103,9 @@ mt_result mt_font_init(mt_api* pAPI, const mt_font_config* pConfig, mt_font* pFo
     }
 
     pFont->pAPI = pAPI;
+    pFont->pUserData = pConfig->pUserData;
 
-    result = pAPI->fontInit(pAPI, pConfig, pFont);
+    result = pAPI->procs.fontInit(pAPI, pConfig, pFont);
     if (result != MT_SUCCESS) {
         return result;
     }
@@ -8014,8 +8119,8 @@ void mt_font_uninit(mt_font* pFont)
         return;
     }
 
-    if (pFont->pAPI->fontUninit) {
-        pFont->pAPI->fontUninit(pFont);
+    if (pFont->pAPI->procs.fontUninit) {
+        pFont->pAPI->procs.fontUninit(pFont);
     }
     
     MT_ZERO_OBJECT(pFont);  /* Safety. */
@@ -8033,11 +8138,11 @@ mt_result mt_font_get_glyph_metrics(mt_font* pFont, const mt_glyph* pGlyphs, siz
         return MT_INVALID_ARGS;
     }
 
-    if (pFont->pAPI->fontGetGlyphMetrics == NULL) {
+    if (pFont->pAPI->procs.fontGetGlyphMetrics == NULL) {
         return MT_INVALID_OPERATION;
     }
 
-    return pFont->pAPI->fontGetGlyphMetrics(pFont, pGlyphs, glyphCount, pGlyphMetrics);
+    return pFont->pAPI->procs.fontGetGlyphMetrics(pFont, pGlyphs, glyphCount, pGlyphMetrics);
 }
 
 mt_result mt_font_get_glyph_metrics_by_index(mt_font* pFont, const mt_uint32* pGlyphIndices, size_t glyphCount, mt_glyph_metrics* pGlyphMetrics)
@@ -8052,11 +8157,11 @@ mt_result mt_font_get_glyph_metrics_by_index(mt_font* pFont, const mt_uint32* pG
         return MT_INVALID_ARGS;
     }
 
-    if (pFont->pAPI->fontGetGlyphMetricsByIndex == NULL) {
+    if (pFont->pAPI->procs.fontGetGlyphMetricsByIndex == NULL) {
         return MT_INVALID_OPERATION;
     }
 
-    return pFont->pAPI->fontGetGlyphMetricsByIndex(pFont, pGlyphIndices, glyphCount, pGlyphMetrics);
+    return pFont->pAPI->procs.fontGetGlyphMetricsByIndex(pFont, pGlyphIndices, glyphCount, pGlyphMetrics);
 }
 
 
@@ -8080,10 +8185,11 @@ mt_result mt_brush_init(mt_api* pAPI, const mt_brush_config* pConfig, mt_brush* 
     }
 
     pBrush->pAPI = pAPI;
+    pBrush->pUserData = pConfig->pUserData;
     pBrush->config = *pConfig;
 
-    if (pAPI->brushInit) {
-        result = pAPI->brushInit(pAPI, pConfig, pBrush);
+    if (pAPI->procs.brushInit) {
+        result = pAPI->procs.brushInit(pAPI, pConfig, pBrush);
         if (result != MT_SUCCESS) {
             return result;
         }
@@ -8100,8 +8206,8 @@ void mt_brush_uninit(mt_brush* pBrush)
 
     MT_ASSERT(pBrush->pAPI != NULL);
 
-    if (pBrush->pAPI->brushUninit) {
-        pBrush->pAPI->brushUninit(pBrush);
+    if (pBrush->pAPI->procs.brushUninit) {
+        pBrush->pAPI->procs.brushUninit(pBrush);
     }
 
     MT_ZERO_OBJECT(pBrush);  /* Safety. */
@@ -8115,8 +8221,8 @@ void mt_brush_set_origin(mt_brush* pBrush, mt_int32 x, mt_int32 y)
 
     MT_ASSERT(pBrush->pAPI != NULL);
 
-    if (pBrush->pAPI->brushSetOrigin) {
-        pBrush->pAPI->brushSetOrigin(pBrush, x, y);
+    if (pBrush->pAPI->procs.brushSetOrigin) {
+        pBrush->pAPI->procs.brushSetOrigin(pBrush, x, y);
     }
 }
 
@@ -8135,9 +8241,10 @@ mt_result mt_gc_init(mt_api* pAPI, const mt_gc_config* pConfig, mt_gc* pGC)
     }
 
     pGC->pAPI = pAPI;
+    pGC->pUserData = pConfig->pUserData;
 
-    if (pAPI->gcInit) {
-        result = pAPI->gcInit(pAPI, pConfig, pGC);
+    if (pAPI->procs.gcInit) {
+        result = pAPI->procs.gcInit(pAPI, pConfig, pGC);
         if (result != MT_SUCCESS) {
             return result;
         }
@@ -8154,8 +8261,8 @@ void mt_gc_uninit(mt_gc* pGC)
 
     MT_ASSERT(pGC->pAPI != NULL);
 
-    if (pGC->pAPI->gcUninit) {
-        pGC->pAPI->gcUninit(pGC);
+    if (pGC->pAPI->procs.gcUninit) {
+        pGC->pAPI->procs.gcUninit(pGC);
     }
 }
 
@@ -8195,8 +8302,8 @@ mt_result mt_gc_get_image_data(mt_gc* pGC, mt_format outputFormat, void* pImageD
 
     MT_ASSERT(pGC->pAPI != NULL);
 
-    if (pGC->pAPI->gcGetImageData) {
-        result = pGC->pAPI->gcGetImageData(pGC, outputFormat, pImageData);
+    if (pGC->pAPI->procs.gcGetImageData) {
+        result = pGC->pAPI->procs.gcGetImageData(pGC, outputFormat, pImageData);
         if (result != MT_SUCCESS) {
             return result;
         }
@@ -8222,10 +8329,10 @@ mt_result mt_gc_get_size(mt_gc* pGC, mt_uint32* pSizeX, mt_uint32* pSizeY)
 
     MT_ASSERT(pGC->pAPI != NULL);
 
-    if (pGC->pAPI->gcGetSize) {
+    if (pGC->pAPI->procs.gcGetSize) {
         mt_uint32 sizeX;
         mt_uint32 sizeY;
-        mt_result result = pGC->pAPI->gcGetSize(pGC, &sizeX, &sizeY);
+        mt_result result = pGC->pAPI->procs.gcGetSize(pGC, &sizeX, &sizeY);
         if (result != MT_SUCCESS) {
             return result;
         }
@@ -8249,8 +8356,8 @@ mt_result mt_gc_save(mt_gc* pGC)
 
     MT_ASSERT(pGC->pAPI != NULL);
 
-    if (pGC->pAPI->gcSave) {
-        return pGC->pAPI->gcSave(pGC);
+    if (pGC->pAPI->procs.gcSave) {
+        return pGC->pAPI->procs.gcSave(pGC);
     }
     
     return MT_SUCCESS;
@@ -8264,8 +8371,8 @@ mt_result mt_gc_restore(mt_gc* pGC)
 
     MT_ASSERT(pGC->pAPI != NULL);
 
-    if (pGC->pAPI->gcRestore) {
-        return pGC->pAPI->gcRestore(pGC);
+    if (pGC->pAPI->procs.gcRestore) {
+        return pGC->pAPI->procs.gcRestore(pGC);
     }
     
     return MT_SUCCESS;
@@ -8279,8 +8386,8 @@ void mt_gc_set_matrix(mt_gc* pGC, const mt_matrix* pMatrix)
 
     MT_ASSERT(pGC->pAPI != NULL);
 
-    if (pGC->pAPI->gcSetMatrix) {
-        pGC->pAPI->gcSetMatrix(pGC, pMatrix);
+    if (pGC->pAPI->procs.gcSetMatrix) {
+        pGC->pAPI->procs.gcSetMatrix(pGC, pMatrix);
     }
 }
 
@@ -8292,8 +8399,8 @@ void mt_gc_get_matrix(mt_gc* pGC, mt_matrix* pMatrix)
 
     MT_ASSERT(pGC->pAPI != NULL);
 
-    if (pGC->pAPI->gcGetMatrix) {
-        pGC->pAPI->gcGetMatrix(pGC, pMatrix);
+    if (pGC->pAPI->procs.gcGetMatrix) {
+        pGC->pAPI->procs.gcGetMatrix(pGC, pMatrix);
     }
 }
 
@@ -8305,8 +8412,8 @@ void mt_gc_set_matrix_identity(mt_gc* pGC)
 
     MT_ASSERT(pGC->pAPI != NULL);
 
-    if (pGC->pAPI->gcSetMatrixIdentity) {
-        pGC->pAPI->gcSetMatrixIdentity(pGC);
+    if (pGC->pAPI->procs.gcSetMatrixIdentity) {
+        pGC->pAPI->procs.gcSetMatrixIdentity(pGC);
     }
 }
 
@@ -8318,8 +8425,8 @@ void mt_gc_transform(mt_gc* pGC, const mt_matrix* pMatrix)
 
     MT_ASSERT(pGC->pAPI != NULL);
 
-    if (pGC->pAPI->gcTransform) {
-        pGC->pAPI->gcTransform(pGC, pMatrix);
+    if (pGC->pAPI->procs.gcTransform) {
+        pGC->pAPI->procs.gcTransform(pGC, pMatrix);
     }
 }
 
@@ -8331,8 +8438,8 @@ void mt_gc_translate(mt_gc* pGC, mt_int32 offsetX, mt_int32 offsetY)
 
     MT_ASSERT(pGC->pAPI != NULL);
 
-    if (pGC->pAPI->gcTranslate) {
-        pGC->pAPI->gcTranslate(pGC, offsetX, offsetY);
+    if (pGC->pAPI->procs.gcTranslate) {
+        pGC->pAPI->procs.gcTranslate(pGC, offsetX, offsetY);
     }
 }
 
@@ -8344,8 +8451,8 @@ void mt_gc_rotate(mt_gc* pGC, float rotationInRadians)
 
     MT_ASSERT(pGC->pAPI != NULL);
 
-    if (pGC->pAPI->gcRotate) {
-        pGC->pAPI->gcRotate(pGC, rotationInRadians);
+    if (pGC->pAPI->procs.gcRotate) {
+        pGC->pAPI->procs.gcRotate(pGC, rotationInRadians);
     }
 }
 
@@ -8357,8 +8464,8 @@ void mt_gc_scale(mt_gc* pGC, float scaleX, float scaleY)
 
     MT_ASSERT(pGC->pAPI != NULL);
 
-    if (pGC->pAPI->gcScale) {
-        pGC->pAPI->gcScale(pGC, scaleX, scaleY);
+    if (pGC->pAPI->procs.gcScale) {
+        pGC->pAPI->procs.gcScale(pGC, scaleX, scaleY);
     }
 }
 
@@ -8370,8 +8477,8 @@ void mt_gc_set_miter_limit(mt_gc* pGC, float limit)
 
     MT_ASSERT(pGC->pAPI != NULL);
 
-    if (pGC->pAPI->gcSetMiterLimit) {
-        pGC->pAPI->gcSetMiterLimit(pGC, limit);
+    if (pGC->pAPI->procs.gcSetMiterLimit) {
+        pGC->pAPI->procs.gcSetMiterLimit(pGC, limit);
     }
 }
 
@@ -8383,8 +8490,8 @@ void mt_gc_set_line_width(mt_gc* pGC, mt_int32 width)
 
     MT_ASSERT(pGC->pAPI != NULL);
 
-    if (pGC->pAPI->gcSetLineWidth) {
-        pGC->pAPI->gcSetLineWidth(pGC, width);
+    if (pGC->pAPI->procs.gcSetLineWidth) {
+        pGC->pAPI->procs.gcSetLineWidth(pGC, width);
     }
 }
 
@@ -8396,8 +8503,8 @@ void mt_gc_set_line_cap(mt_gc* pGC, mt_line_cap cap)
 
     MT_ASSERT(pGC->pAPI != NULL);
 
-    if (pGC->pAPI->gcSetLineCap) {
-        pGC->pAPI->gcSetLineCap(pGC, cap);
+    if (pGC->pAPI->procs.gcSetLineCap) {
+        pGC->pAPI->procs.gcSetLineCap(pGC, cap);
     }
 }
 
@@ -8409,8 +8516,8 @@ void mt_gc_set_line_join(mt_gc* pGC, mt_line_join join)
 
     MT_ASSERT(pGC->pAPI != NULL);
 
-    if (pGC->pAPI->gcSetLineJoin) {
-        pGC->pAPI->gcSetLineJoin(pGC, join);
+    if (pGC->pAPI->procs.gcSetLineJoin) {
+        pGC->pAPI->procs.gcSetLineJoin(pGC, join);
     }
 }
 
@@ -8426,8 +8533,8 @@ void mt_gc_set_line_dash(mt_gc* pGC, const float* dashes, mt_uint32 count)
         return; /* Count cannot be more than 16. */
     }
 
-    if (pGC->pAPI->gcSetLineDash) {
-        pGC->pAPI->gcSetLineDash(pGC, dashes, count);
+    if (pGC->pAPI->procs.gcSetLineDash) {
+        pGC->pAPI->procs.gcSetLineDash(pGC, dashes, count);
     }
 }
 
@@ -8439,8 +8546,8 @@ void mt_gc_set_line_brush(mt_gc* pGC, mt_brush* pBrush)
 
     MT_ASSERT(pGC->pAPI != NULL);
 
-    if (pGC->pAPI->gcSetLineBrush) {
-        pGC->pAPI->gcSetLineBrush(pGC, pBrush);
+    if (pGC->pAPI->procs.gcSetLineBrush) {
+        pGC->pAPI->procs.gcSetLineBrush(pGC, pBrush);
     }
 }
 
@@ -8452,8 +8559,8 @@ void mt_gc_set_line_brush_solid(mt_gc* pGC, mt_color color)
 
     MT_ASSERT(pGC->pAPI != NULL);
 
-    if (pGC->pAPI->gcSetLineBrushSolid) {
-        pGC->pAPI->gcSetLineBrushSolid(pGC, color);
+    if (pGC->pAPI->procs.gcSetLineBrushSolid) {
+        pGC->pAPI->procs.gcSetLineBrushSolid(pGC, color);
     }
 }
 
@@ -8465,8 +8572,8 @@ void mt_gc_set_line_brush_gc(mt_gc* pGC, mt_gc* pSrcGC)
 
     MT_ASSERT(pGC->pAPI != NULL);
 
-    if (pGC->pAPI->gcSetLineBrushGC) {
-        pGC->pAPI->gcSetLineBrushGC(pGC, pSrcGC);
+    if (pGC->pAPI->procs.gcSetLineBrushGC) {
+        pGC->pAPI->procs.gcSetLineBrushGC(pGC, pSrcGC);
     }
 }
 
@@ -8478,8 +8585,8 @@ void mt_gc_set_fill_brush(mt_gc* pGC, mt_brush* pBrush)
 
     MT_ASSERT(pGC->pAPI != NULL);
 
-    if (pGC->pAPI->gcSetFillBrush) {
-        pGC->pAPI->gcSetFillBrush(pGC, pBrush);
+    if (pGC->pAPI->procs.gcSetFillBrush) {
+        pGC->pAPI->procs.gcSetFillBrush(pGC, pBrush);
     }
 }
 
@@ -8491,8 +8598,8 @@ void mt_gc_set_fill_brush_solid(mt_gc* pGC, mt_color color)
 
     MT_ASSERT(pGC->pAPI != NULL);
 
-    if (pGC->pAPI->gcSetFillBrushSolid) {
-        pGC->pAPI->gcSetFillBrushSolid(pGC, color);
+    if (pGC->pAPI->procs.gcSetFillBrushSolid) {
+        pGC->pAPI->procs.gcSetFillBrushSolid(pGC, color);
     }
 }
 
@@ -8504,8 +8611,8 @@ void mt_gc_set_fill_brush_gc(mt_gc* pGC, mt_gc* pSrcGC)
 
     MT_ASSERT(pGC->pAPI != NULL);
 
-    if (pGC->pAPI->gcSetFillBrushGC) {
-        pGC->pAPI->gcSetFillBrushGC(pGC, pSrcGC);
+    if (pGC->pAPI->procs.gcSetFillBrushGC) {
+        pGC->pAPI->procs.gcSetFillBrushGC(pGC, pSrcGC);
     }
 }
 
@@ -8517,8 +8624,8 @@ void mt_gc_set_text_fg_color(mt_gc* pGC, mt_color fgColor)
 
     MT_ASSERT(pGC->pAPI != NULL);
 
-    if (pGC->pAPI->gcSetTextFGColor) {
-        pGC->pAPI->gcSetTextFGColor(pGC, fgColor);
+    if (pGC->pAPI->procs.gcSetTextFGColor) {
+        pGC->pAPI->procs.gcSetTextFGColor(pGC, fgColor);
     }
 }
 
@@ -8530,8 +8637,8 @@ void mt_gc_set_text_bg_color(mt_gc* pGC, mt_color bgColor)
 
     MT_ASSERT(pGC->pAPI != NULL);
 
-    if (pGC->pAPI->gcSetTextBGColor) {
-        pGC->pAPI->gcSetTextBGColor(pGC, bgColor);
+    if (pGC->pAPI->procs.gcSetTextBGColor) {
+        pGC->pAPI->procs.gcSetTextBGColor(pGC, bgColor);
     }
 }
 
@@ -8543,8 +8650,8 @@ void mt_gc_set_blend_op(mt_gc* pGC, mt_blend_op op)
 
     MT_ASSERT(pGC->pAPI != NULL);
 
-    if (pGC->pAPI->gcSetBlendOp) {
-        pGC->pAPI->gcSetBlendOp(pGC, op);
+    if (pGC->pAPI->procs.gcSetBlendOp) {
+        pGC->pAPI->procs.gcSetBlendOp(pGC, op);
     }
 }
 
@@ -8556,8 +8663,8 @@ void mt_gc_set_antialias_mode(mt_gc* pGC, mt_antialias_mode mode)
 
     MT_ASSERT(pGC->pAPI != NULL);
 
-    if (pGC->pAPI->gcSetAntialiasMode) {
-        pGC->pAPI->gcSetAntialiasMode(pGC, mode);
+    if (pGC->pAPI->procs.gcSetAntialiasMode) {
+        pGC->pAPI->procs.gcSetAntialiasMode(pGC, mode);
     }
 }
 
@@ -8569,8 +8676,8 @@ void mt_gc_set_stretch_filter(mt_gc* pGC, mt_stretch_filter filter)
 
     MT_ASSERT(pGC->pAPI != NULL);
 
-    if (pGC->pAPI->gcSetStretchFilter) {
-        pGC->pAPI->gcSetStretchFilter(pGC, filter);
+    if (pGC->pAPI->procs.gcSetStretchFilter) {
+        pGC->pAPI->procs.gcSetStretchFilter(pGC, filter);
     }
 }
 
@@ -8582,8 +8689,8 @@ void mt_gc_move_to(mt_gc* pGC, mt_int32 x, mt_int32 y)
 
     MT_ASSERT(pGC->pAPI != NULL);
 
-    if (pGC->pAPI->gcMoveTo) {
-        pGC->pAPI->gcMoveTo(pGC, x, y);
+    if (pGC->pAPI->procs.gcMoveTo) {
+        pGC->pAPI->procs.gcMoveTo(pGC, x, y);
     }
 }
 
@@ -8595,8 +8702,8 @@ void mt_gc_line_to(mt_gc* pGC, mt_int32 x, mt_int32 y)
 
     MT_ASSERT(pGC->pAPI != NULL);
 
-    if (pGC->pAPI->gcLineTo) {
-        pGC->pAPI->gcLineTo(pGC, x, y);
+    if (pGC->pAPI->procs.gcLineTo) {
+        pGC->pAPI->procs.gcLineTo(pGC, x, y);
     }
 }
 
@@ -8608,8 +8715,8 @@ void mt_gc_rectangle(mt_gc* pGC, mt_int32 left, mt_int32 top, mt_int32 right, mt
 
     MT_ASSERT(pGC->pAPI != NULL);
 
-    if (pGC->pAPI->gcRectangle) {
-        pGC->pAPI->gcRectangle(pGC, left, top, right, bottom);
+    if (pGC->pAPI->procs.gcRectangle) {
+        pGC->pAPI->procs.gcRectangle(pGC, left, top, right, bottom);
     }
 }
 
@@ -8621,8 +8728,8 @@ void mt_gc_arc(mt_gc* pGC, mt_int32 x, mt_int32 y, mt_int32 radius, float angle1
 
     MT_ASSERT(pGC->pAPI != NULL);
 
-    if (pGC->pAPI->gcArc) {
-        pGC->pAPI->gcArc(pGC, x, y, radius, angle1InRadians, angle2InRadians);
+    if (pGC->pAPI->procs.gcArc) {
+        pGC->pAPI->procs.gcArc(pGC, x, y, radius, angle1InRadians, angle2InRadians);
     }
 }
 
@@ -8634,8 +8741,8 @@ void mt_gc_curve_to(mt_gc* pGC, mt_int32 x1, mt_int32 y1, mt_int32 x2, mt_int32 
 
     MT_ASSERT(pGC->pAPI != NULL);
 
-    if (pGC->pAPI->gcCurveTo) {
-        pGC->pAPI->gcCurveTo(pGC, x1, y1, x2, y2, x3, y3);
+    if (pGC->pAPI->procs.gcCurveTo) {
+        pGC->pAPI->procs.gcCurveTo(pGC, x1, y1, x2, y2, x3, y3);
     }
 }
 
@@ -8647,8 +8754,8 @@ void mt_gc_close_path(mt_gc* pGC)
 
     MT_ASSERT(pGC->pAPI != NULL);
 
-    if (pGC->pAPI->gcClosePath) {
-        pGC->pAPI->gcClosePath(pGC);
+    if (pGC->pAPI->procs.gcClosePath) {
+        pGC->pAPI->procs.gcClosePath(pGC);
     }
 }
 
@@ -8660,8 +8767,8 @@ void mt_gc_clip(mt_gc* pGC)
 
     MT_ASSERT(pGC->pAPI != NULL);
 
-    if (pGC->pAPI->gcClip) {
-        pGC->pAPI->gcClip(pGC);
+    if (pGC->pAPI->procs.gcClip) {
+        pGC->pAPI->procs.gcClip(pGC);
     }
 }
 
@@ -8673,8 +8780,8 @@ void mt_gc_reset_clip(mt_gc* pGC)
 
     MT_ASSERT(pGC->pAPI != NULL);
 
-    if (pGC->pAPI->gcResetClip) {
-        pGC->pAPI->gcResetClip(pGC);
+    if (pGC->pAPI->procs.gcResetClip) {
+        pGC->pAPI->procs.gcResetClip(pGC);
     }
 }
 
@@ -8686,8 +8793,8 @@ mt_bool32 mt_gc_is_point_inside_clip(mt_gc* pGC, mt_int32 x, mt_int32 y)
 
     MT_ASSERT(pGC->pAPI != NULL);
 
-    if (pGC->pAPI->gcIsPointInsideClip) {
-        return pGC->pAPI->gcIsPointInsideClip(pGC, x, y);
+    if (pGC->pAPI->procs.gcIsPointInsideClip) {
+        return pGC->pAPI->procs.gcIsPointInsideClip(pGC, x, y);
     }
 
     return MT_FALSE;
@@ -8701,8 +8808,8 @@ void mt_gc_fill(mt_gc* pGC)
 
     MT_ASSERT(pGC->pAPI != NULL);
 
-    if (pGC->pAPI->gcFill) {
-        pGC->pAPI->gcFill(pGC);
+    if (pGC->pAPI->procs.gcFill) {
+        pGC->pAPI->procs.gcFill(pGC);
     }
 }
 
@@ -8714,8 +8821,8 @@ void mt_gc_stroke(mt_gc* pGC)
 
     MT_ASSERT(pGC->pAPI != NULL);
 
-    if (pGC->pAPI->gcStroke) {
-        pGC->pAPI->gcStroke(pGC);
+    if (pGC->pAPI->procs.gcStroke) {
+        pGC->pAPI->procs.gcStroke(pGC);
     }
 }
 
@@ -8727,8 +8834,8 @@ void mt_gc_fill_and_stroke(mt_gc* pGC)
 
     MT_ASSERT(pGC->pAPI != NULL);
 
-    if (pGC->pAPI->gcFillAndStroke) {
-        pGC->pAPI->gcFillAndStroke(pGC);
+    if (pGC->pAPI->procs.gcFillAndStroke) {
+        pGC->pAPI->procs.gcFillAndStroke(pGC);
     }
 }
 
@@ -8744,8 +8851,8 @@ void mt_gc_draw_gc(mt_gc* pGC, mt_gc* pSrcGC, mt_int32 srcX, mt_int32 srcY)
         return; /* Nothing to draw. */
     }
 
-    if (pGC->pAPI->gcDrawGC) {
-        pGC->pAPI->gcDrawGC(pGC, pSrcGC, srcX, srcY);
+    if (pGC->pAPI->procs.gcDrawGC) {
+        pGC->pAPI->procs.gcDrawGC(pGC, pSrcGC, srcX, srcY);
     }
 }
 
@@ -8761,8 +8868,8 @@ void mt_gc_draw_glyphs(mt_gc* pGC, const mt_item* pItem, const mt_glyph* pGlyphs
         return; /* Nothing to draw. */
     }
 
-    if (pGC->pAPI->gcDrawGlyphs) {
-        pGC->pAPI->gcDrawGlyphs(pGC, pItem, pGlyphs, glyphCount, x, y);
+    if (pGC->pAPI->procs.gcDrawGlyphs) {
+        pGC->pAPI->procs.gcDrawGlyphs(pGC, pItem, pGlyphs, glyphCount, x, y);
     }
 }
 
@@ -8775,8 +8882,8 @@ void mt_gc_clear(mt_gc* pGC, mt_color color)
     MT_ASSERT(pGC->pAPI != NULL);
 
     /* Clearing can be emulated if the backend does not provide one explicitly. */
-    if (pGC->pAPI->gcClear) {
-        pGC->pAPI->gcClear(pGC, color);
+    if (pGC->pAPI->procs.gcClear) {
+        pGC->pAPI->procs.gcClear(pGC, color);
     } else {
         mt_gc_save(pGC);
         {

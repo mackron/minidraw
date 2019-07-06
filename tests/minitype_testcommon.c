@@ -2,6 +2,9 @@
 #include <stdio.h>
 #include <assert.h>
 
+#define GLBIND_IMPLEMENTATION
+#include "../external/glbind/glbind.h"
+
 #if defined(MT_HAS_CAIRO)
 #include <gdk/gdk.h>
 #include <gtk/gtk.h>
@@ -134,6 +137,8 @@ typedef void      (* mt_testapp_on_paint) (mt_testapp* pApp, mt_gc* pGC);
 
 typedef struct
 {
+    mt_api_config apiConfig;
+    GLBapi* pGL;    /* When not NULL, creates an OpenGL-enabled window. */
     const char* pWindowTitle;
     mt_uint32 windowWidth;
     mt_uint32 windowHeight;
@@ -148,6 +153,7 @@ struct mt_testapp
 {
     int argc;
     char** argv;
+    GLBapi* pGL;
     mt_api mt;
     mt_testapp_on_init onInit;
     mt_testapp_on_uninit onUninit;
@@ -192,15 +198,28 @@ LRESULT mt_testapp_MainWindowProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPa
 
         case WM_PAINT:
         {
-            PAINTSTRUCT ps;
-            HDC hDC = BeginPaint(hWnd, &ps);
-            if (hDC != NULL) {
-                mt_gc_config gcConfig;
-                mt_gc gc;
+            mt_gc_config gcConfig;
+            mt_gc gc;
 
-                MT_ZERO_OBJECT(&gcConfig);
-                gcConfig.gdi.hDC = hDC;
+            MT_ZERO_OBJECT(&gcConfig);
 
+            if (pApp->pGL == NULL) {
+                PAINTSTRUCT ps;
+                HDC hDC = BeginPaint(hWnd, &ps);
+                if (hDC != NULL) {
+                    gcConfig.gdi.hDC = hDC;
+
+                    result = mt_gc_init(&pApp->mt, &gcConfig, &gc);
+                    if (result == MT_SUCCESS) {
+                        if (pApp->onPaint) {
+                            pApp->onPaint(pApp, &gc);
+                        }
+                        mt_gc_uninit(&gc);
+                    }
+                }
+                EndPaint(hWnd, &ps);
+            } else {
+                /* OpenGL */
                 result = mt_gc_init(&pApp->mt, &gcConfig, &gc);
                 if (result == MT_SUCCESS) {
                     if (pApp->onPaint) {
@@ -208,8 +227,8 @@ LRESULT mt_testapp_MainWindowProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPa
                     }
                     mt_gc_uninit(&gc);
                 }
+                SwapBuffers(GetDC(hWnd));
             }
-            EndPaint(hWnd, &ps);
         } break;
 
         default: break;
@@ -241,6 +260,13 @@ HWND mt_testapp_create_HWND(mt_testapp_config* pConfig, mt_testapp* pApp)
     }
 
     SetWindowLongPtrA(hWnd, 0, (LONG_PTR)pApp);   /* HWND user data. */
+
+    /* May want to enable the window for OpenGL. */
+    if (pConfig->pGL != NULL) {
+        SetPixelFormat(GetDC(hWnd), glbGetPixelFormat(), glbGetPFD());
+        pConfig->pGL->wglMakeCurrent(GetDC(hWnd), glbGetRC());
+    }
+    
 
     ShowWindow(hWnd, SW_SHOWNORMAL);
 
@@ -359,13 +385,13 @@ GtkWidget* mt_testapp_create_window__gtk(mt_testapp_config* pConfig, mt_testapp*
 mt_result mt_testapp_init(mt_testapp_config* pConfig, mt_testapp* pApp)
 {
     mt_result result;
-    mt_api_config apiConfig;
 
     if (pApp == NULL || pConfig == NULL) {
         return MT_INVALID_ARGS;
     }
 
     MT_ZERO_OBJECT(pApp);
+    pApp->pGL       = pConfig->pGL;
     pApp->onInit    = pConfig->onInit;
     pApp->onUninit  = pConfig->onUninit;
     pApp->onSize    = pConfig->onSize;
@@ -373,15 +399,7 @@ mt_result mt_testapp_init(mt_testapp_config* pConfig, mt_testapp* pApp)
     pApp->pUserData = pConfig->pUserData;
 
     /* API */
-    MT_ZERO_OBJECT(&apiConfig);
-#if defined(MT_WIN32)
-    apiConfig.backend = mt_backend_gdi;
-#elif defined(MT_APPLE)
-    apiConfig.backend = mt_backend_coregraphics;
-#else
-    apiConfig.backend = mt_backend_cairo;
-#endif
-    result = mt_init(&apiConfig, &pApp->mt);
+    result = mt_init(&pConfig->apiConfig, &pApp->mt);
     if (result != MT_SUCCESS) {
         return result;
     }
@@ -397,7 +415,7 @@ mt_result mt_testapp_init(mt_testapp_config* pConfig, mt_testapp* pApp)
     /* Implement me. */
 #else
     #if defined(MT_SUPPORT_CAIRO)
-        if (apiConfig.backend == mt_backend_cairo) {
+        if (pConfig->apiConfig.backend == mt_backend_cairo) {
             /* GTK */
             if (!gtk_init_check(0, NULL)) {
                 mt_uninit(&pApp->mt);
@@ -413,7 +431,7 @@ mt_result mt_testapp_init(mt_testapp_config* pConfig, mt_testapp* pApp)
     #endif
     #if defined(MT_HAS_XFT)
         #if 0
-        if (apiConfig.backend == mt_backend_xft) {
+        if (pConfig->apiConfig.backend == mt_backend_xft) {
             /* X */
             mt_uninit(&pApp->mt);
             return MT_ERROR;    /* Not yet implemented. */
