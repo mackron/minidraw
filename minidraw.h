@@ -7542,6 +7542,12 @@ md_result md_itemize_utf8__cairo(md_font* pFont, const md_utf8* pTextUTF8, size_
         return MD_ERROR;    /* An error occurred when itemizing. */
     }
 
+    /*
+    Unfortunately Pango does not split items the way minidraw defines them. We need certain common characters to have their own items to simplify text processing.
+        * New lines
+        * Tabs
+    */
+
     if (pItems != NULL) {
         md_uint32 iItem = 0;
         GList* pListItem;
@@ -7550,11 +7556,6 @@ md_result md_itemize_utf8__cairo(md_font* pFont, const md_utf8* pTextUTF8, size_
             const char* pLineEndUTF8;
             PangoItem* pPangoItem = (PangoItem*)pListItem->data;
 
-            /*
-            Unfortunately Pango does not split items the way minidraw defines them. We need certain common characters to have their own items to simplify text processing.
-              * New lines
-              * Tabs
-            */
             pLineBegUTF8 = pTextUTF8 + pPangoItem->offset;
             for (;;) {  /* For each line... */
                 const char* pNextLineBegUTF8;
@@ -7595,27 +7596,42 @@ md_result md_itemize_utf8__cairo(md_font* pFont, const md_utf8* pTextUTF8, size_
 
                 pLineBegUTF8 = pNextLineBegUTF8;
             }
-
-            
-#if 0
-            /* Add the last item. */
-            itemCount += 1;
-            if (itemCount > itemCap) {
-                break;  /* Not enough room in the output buffer. */
-            }
-
-            printf("TESTING: itemCount=%d, iChar=%d, nextOffset=%d\n", itemCount, iChar, nextOffset);
-
-            pItems[iItem].offset = nextOffset;
-            pItems[iItem].length = iChar - nextOffset;
-            pItems[iItem].backend.cairo.pPangoItem = pPangoItem;
-#endif
         }
 
         pItemizeState->backend.cairo.pPangoItems = pPangoItems;
     } else {
         /* Just counting. */
-        itemCount = g_list_length(pPangoItems);
+        GList* pListItem;
+        for (pListItem = g_list_first(pPangoItems); pListItem != NULL; pListItem = g_list_next(pListItem)) {
+            const char* pLineBegUTF8;
+            const char* pLineEndUTF8;
+            PangoItem* pPangoItem = (PangoItem*)pListItem->data;
+
+            pLineBegUTF8 = pTextUTF8 + pPangoItem->offset;
+            for (;;) {  /* For each line... */
+                const char* pNextLineBegUTF8;
+                pNextLineBegUTF8 = md_next_line_utf8(pLineBegUTF8, (size_t)((pTextUTF8 + pPangoItem->offset + pPangoItem->length) - pLineBegUTF8), &pLineEndUTF8);
+
+                /* The space between pLineBegUTF8 and pLineEndUTF8 is the line content. */
+                if ((pLineEndUTF8 - pLineBegUTF8) > 0) {
+                    /* TODO: Split tabs. */
+
+                    itemCount += 1;
+                }
+                
+                /* The space between pLineEndUTF8 and pNextLineBegUTF8 is the new line character. */
+                if ((pNextLineBegUTF8 - pLineEndUTF8) > 0) {
+                    itemCount += 1;
+                }
+
+                /* Get out of the loop if we reached the end. */
+                if (pNextLineBegUTF8 == NULL) {
+                    break;
+                }
+
+                pLineBegUTF8 = pNextLineBegUTF8;
+            }
+        }
 
         if (pItemizeState != NULL) {
             pItemizeState->backend.cairo.pPangoItems = pPangoItems;
