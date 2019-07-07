@@ -6026,6 +6026,7 @@ md_result md_itemize_utf16__gdi(md_font* pFont, const md_utf16* pTextUTF16, size
     HRESULT hResult;
     md_uint32 itemCapacity;
     int scriptItemCount = 0;
+    int iItem;
     MD_SCRIPT_ITEM  pScriptItemsStack[1024];
     MD_SCRIPT_ITEM* pScriptItemsHeap = NULL;
     MD_SCRIPT_ITEM* pScriptItems = NULL;   /* Set to either pScriptItemsStack or pScriptItemsHeap. */
@@ -6091,6 +6092,20 @@ md_result md_itemize_utf16__gdi(md_font* pFont, const md_utf16* pTextUTF16, size
         return md_result_from_HRESULT(hResult); /* Something bad happened. */
     }
 
+    /* Unfortunately Uniscribe splits "\r\n" into two separate "\r" and "\n" items. This is different to our specification so we need to combine them. */
+    for (iItem = 0; iItem < scriptItemCount; /* Do nothing. */) {
+        if (pTextUTF16[pScriptItems[iItem].iCharPos] == '\r' && ((size_t)pScriptItems[iItem+1].iCharPos < textLength && pTextUTF16[pScriptItems[iItem+1].iCharPos] == '\n')) {
+            /* Combine. Assume the SCRIPT_ANALYSIS structure is the same. */
+            int jItem;
+            for (jItem = iItem+1; jItem+1 < scriptItemCount; jItem += 1) {
+                pScriptItems[jItem] = pScriptItems[jItem+1];
+            }
+
+            scriptItemCount -= 1;
+        } else {
+            iItem += 1;
+        }
+    }
 
     /*
     Make sure the item count is always set, even in the event of future errors. This ensures the count is available in the event that the input capacity is too small in which
@@ -6102,7 +6117,6 @@ md_result md_itemize_utf16__gdi(md_font* pFont, const md_utf16* pTextUTF16, size
     /* At this point we have our SCRIPT_ITEM objects, so now we need to convert the SCRIPT_ITEM objects to md_item objects. */
     if (pItems != NULL) {
         if (itemCapacity >= (md_uint32)scriptItemCount) {
-            int iItem;
             for (iItem = 0; iItem < scriptItemCount; ++iItem) {
                 pItems[iItem].offset            = (size_t)pScriptItems[iItem].iCharPos;
                 pItems[iItem].length            = (size_t)(pScriptItems[iItem+1].iCharPos - pScriptItems[iItem].iCharPos);
