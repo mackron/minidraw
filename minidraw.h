@@ -6089,6 +6089,7 @@ md_result md_itemize_utf16__gdi(md_font* pFont, const md_utf16* pTextUTF16, size
     }
 
     if (hResult != S_OK) {
+        MD_FREE(pScriptItemsHeap);
         return md_result_from_HRESULT(hResult); /* Something bad happened. */
     }
 
