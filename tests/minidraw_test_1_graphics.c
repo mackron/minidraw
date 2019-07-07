@@ -56,6 +56,10 @@ void draw_logo(md_gc* pGC)
         /* Clear the whole surface before drawing anything just to be keep it clean. */
         md_gc_clear(pGC, g_textBGColor);
 
+        md_gc_set_text_bg_color(pGC, md_rgba(0, 0, 0, 0));      /* Foreground color is controlled by the clear color. */
+        md_gc_set_text_fg_color(pGC, g_textFGColor);
+        md_gc_draw_text_utf8(pGC, &g_font, "Hello,\nWorld!", (size_t)-1, midX*2, midY, md_alignment_right, md_alignment_center);
+
         /* Origin lines. */
         {
     #if 0

@@ -306,6 +306,15 @@ typedef enum
     md_format_argb  /* Optimal format for Cairo. */
 } md_format;
 
+typedef enum
+{
+    md_alignment_left,
+    md_alignment_right,
+    md_alignment_top,
+    md_alignment_bottom,
+    md_alignment_center,
+} md_alignment;
+
 /* Structures */
 #if defined(MD_SUPPORT_GDI)
 #if defined(__GNUC__)
@@ -427,6 +436,16 @@ typedef struct
     md_int32 advanceX;
     md_int32 advanceY;
 } md_glyph_metrics;
+
+typedef struct
+{
+    md_int32 boundsX;
+    md_int32 boundsY;
+    md_int32 boundsSizeX;
+    md_int32 boundsSizeY;
+    md_alignment alignmentHorz;
+    md_alignment alignmentVert;
+} md_text_layout;
 
 typedef struct
 {
@@ -1395,6 +1414,11 @@ Retrieves the metrics of the given glyphs by their index.
 */
 md_result md_font_get_glyph_metrics_by_index(md_font* pFont, const md_uint32* pGlyphIndices, size_t glyphCount, md_glyph_metrics* pGlyphMetrics);
 
+/*
+Measures a string of text.
+*/
+md_result md_font_get_text_metrics_utf8(md_font* pFont, const md_utf8* pTextUTF8, size_t textLength, md_text_metrics* pTextMetrics);
+
 
 /**************************************************************************************************************************************************************
 
@@ -1580,6 +1604,16 @@ Use md_gc_set_text_bg_color() and md_gc_set_text_fg_color() to configure the col
 GDI/Unicode Specific: This will change the current font on the internal HDC.
 */
 void md_gc_draw_glyphs(md_gc* pGC, const md_item* pItem, const md_glyph* pGlyphs, size_t glyphCount, md_int32 x, md_int32 y);
+
+/*
+Helper API for drawing a string of text.
+*/
+void md_gc_draw_text_utf8(md_gc* pGC, md_font* pFont, const md_utf8* pTextUTF8, size_t textLength, md_int32 x, md_int32 y, md_alignment originAlignmentX, md_alignment originAlignmentY);
+
+/*
+Helper API for drawing a string of text based on a layout specification.
+*/
+/*void md_gc_draw_text_layout_utf8(md_gc* pGC, const md_utf8* pTextUTF8, size_t textLength, md_text_layout* pLayout);*/
 
 /*
 Clears the surface to the given color.
@@ -5985,17 +6019,21 @@ md_result md_shape_utf16__gdi(md_font* pFont, md_item* pItem, const md_utf16* pT
     MD_ASSERT(pItem != NULL);
     MD_ASSERT(pFont != NULL);
     MD_ASSERT(pTextUTF16 != NULL);
-    MD_ASSERT(pGlyphCount != NULL);
 
     /* ScriptShape() uses an integer for the text length, so keep it simple and return an error if we're asking for more. */
     if (textLength > 0x7FFFFFFF) {
         return MD_INVALID_ARGS;
     }
-    if (*pGlyphCount > 0x7FFFFFFF) {
-        return MD_INVALID_ARGS;
-    }
 
-    outputGlyphCap = *pGlyphCount;
+    if (pGlyphCount != NULL) {
+        if (*pGlyphCount > 0x7FFFFFFF) {
+            return MD_INVALID_ARGS;
+        }
+
+        outputGlyphCap = *pGlyphCount;
+    } else {
+        outputGlyphCap = 0;
+    }
 
     /* We need the same number of clusters as textLength. */
     if (textLength <= MD_COUNTOF(pUniscribeClustersStack)) {
@@ -6076,7 +6114,9 @@ md_result md_shape_utf16__gdi(md_font* pFont, md_item* pItem, const md_utf16* pT
 
     
     /* At this point we have the glyphs in Uniscribe format, so now we need to convert that to minidraw format. */
-    *pGlyphCount = glyphCount;  /* <-- Always make sure this is set to that the client can know how many glyphs are required in the event that MD_NO_SPACE is returned. */
+    if (pGlyphCount != NULL) {
+        *pGlyphCount = glyphCount;  /* <-- Always make sure this is set to that the client can know how many glyphs are required in the event that MD_NO_SPACE is returned. */
+    }
 
     /* The output array can be null in which case we just ignore it. */
     if (pGlyphs != NULL && (size_t)glyphCount <= outputGlyphCap) {
@@ -6109,7 +6149,7 @@ md_result md_shape_utf16__gdi(md_font* pFont, md_item* pItem, const md_utf16* pT
     MD_FREE(pGlyphDataHeap);
 
     /* Make sure MD_NO_SPACE is returned in the event that the output glyph count exceeds the capacity of the output buffer. */
-    if ((size_t)glyphCount > outputGlyphCap) {
+    if (pGlyphCount != NULL && (size_t)glyphCount > outputGlyphCap) {
         return MD_NO_SPACE;
     } else {
         return MD_SUCCESS;
@@ -7409,9 +7449,13 @@ md_result md_shape_utf8__cairo(md_font* pFont, md_item* pItem, const md_utf8* pT
     MD_ASSERT(pItem != NULL);
     MD_ASSERT(pFont != NULL);
     MD_ASSERT(pTextUTF8 != NULL);
-    MD_ASSERT(pGlyphCount != NULL);
 
-    glyphCap = *pGlyphCount;
+    if (pGlyphCount != NULL) {
+        glyphCap = *pGlyphCount;
+    } else {
+        glyphCap = 0;
+    }
+    
     MD_ZERO_OBJECT(&metrics);
 
     pPangoGlyphString = pango_glyph_string_new();
@@ -7439,6 +7483,17 @@ md_result md_shape_utf8__cairo(md_font* pFont, md_item* pItem, const md_utf8* pT
             metrics.sizeX += pGlyphs[iGlyph].advance;
         }
         metrics.sizeY = pFont->metrics.ascent - pFont->metrics.descent;
+    } else {
+        /* The output glyph array is NULL, but we may still want to calculate metrics. */
+        if (pRunMetrics != NULL) {
+            size_t iGlyph;
+            glyphCount = (size_t)pPangoGlyphString->num_glyphs;
+
+            for (iGlyph = 0; iGlyph < pPangoGlyphString->num_glyphs; ++iGlyph) {
+                metrics.sizeX += pPangoGlyphString->glyphs[iGlyph].geometry.width / PANGO_SCALE;
+            }
+            metrics.sizeY = pFont->metrics.ascent - pFont->metrics.descent;
+        }
     }
 
     if (pClusters != NULL) {
@@ -7450,7 +7505,9 @@ md_result md_shape_utf8__cairo(md_font* pFont, md_item* pItem, const md_utf8* pT
 
     pango_glyph_string_free(pPangoGlyphString);
 
-    *pGlyphCount = glyphCount;
+    if (pGlyphCount != NULL) {
+        *pGlyphCount = glyphCount;
+    }
 
     if (pRunMetrics != NULL) {
         *pRunMetrics = metrics;
@@ -7852,8 +7909,15 @@ md_result md_shape_utf8(md_font* pFont, md_item* pItem, const md_utf8* pTextUTF8
 {
     md_result result;
 
-    if (pFont == NULL || pItem == NULL || pTextUTF8 == NULL || pGlyphCount == NULL) {
+    if (pFont == NULL || pItem == NULL || pTextUTF8 == NULL) {
         return MD_INVALID_ARGS;
+    }
+
+    /* If we have a glyph array, we must have a glyph count. */
+    if (pGlyphs != NULL) {
+        if (pGlyphCount == NULL) {
+            return MD_INVALID_ARGS;
+        }
     }
 
     /* If the backend directly supports UTF-8, just pass it straight through. Otherwise we need to convert. */
@@ -8082,6 +8146,39 @@ md_result md_index_to_x(md_api* pAPI, md_item* pItem, size_t index, size_t textL
     return MD_SUCCESS;
 }
 
+md_bool32 md_is_newline_utf8(const md_utf8* pTextUTF8, size_t textLength)
+{
+    if (pTextUTF8 == NULL || textLength == 0) {
+        return MD_FALSE;
+    }
+
+    if (textLength == (size_t)-1) {
+        /* Null terminated. */
+        if (pTextUTF8[0] == '\n' && pTextUTF8[1] == '\0') {
+            return MD_TRUE;
+        }
+        
+        if (pTextUTF8[0] == '\r' && pTextUTF8[1] == '\0') {
+            return MD_TRUE;
+        }
+
+        if (pTextUTF8[0] == '\r' && pTextUTF8[1] == '\n' && pTextUTF8[2] == '\0') {
+            return MD_TRUE;
+        }
+    } else {
+        /* Not null terminated. */
+        if (textLength == 1) {
+            return pTextUTF8[0] == '\r' || pTextUTF8[0] == '\n';
+        }
+
+        if (textLength == 2) {
+            return pTextUTF8[0] == '\r' && pTextUTF8[0] == '\n';
+        }
+    }
+
+    return MD_FALSE;
+}
+
 
 /**************************************************************************************************************************************************************
 
@@ -8162,6 +8259,94 @@ md_result md_font_get_glyph_metrics_by_index(md_font* pFont, const md_uint32* pG
     }
 
     return pFont->pAPI->procs.fontGetGlyphMetricsByIndex(pFont, pGlyphIndices, glyphCount, pGlyphMetrics);
+}
+
+md_result md_font_get_text_metrics_utf8(md_font* pFont, const md_utf8* pTextUTF8, size_t textLength, md_text_metrics* pTextMetrics)
+{
+    md_int32 lineHeight;
+
+    if (pTextMetrics == NULL) {
+        return MD_INVALID_ARGS;
+    }
+
+    MD_ZERO_OBJECT(pTextMetrics);
+
+    if (pFont == NULL) {
+        return MD_INVALID_ARGS;
+    }
+
+    lineHeight = (pFont->metrics.ascent - pFont->metrics.descent);
+
+    if (textLength == 0) {
+        pTextMetrics->sizeY = lineHeight;
+        return MD_SUCCESS;  /* Nothing to do. */
+    }
+
+    /* TODO: Add support for backend-optimized implementations. */
+#if 0
+    if (pFont->pAPI->procs.fontGetTextMetricsUTF8) {
+        return pFont->pAPI->procs.fontGetTextMetricsUTF8(pFont, pTextUTF8, textLength, pTextMetrics);
+    } else
+#endif
+    {
+        /* Generic implementation. */
+        md_result result;
+        md_int32  sizeX = 0;
+        md_int32  sizeY = lineHeight;
+        md_itemize_state itemizeState;
+        md_item   pItemsStack[1024];
+        md_item*  pItemsHeap = NULL;
+        md_item*  pItems = NULL;
+        md_uint32 itemCount;
+        md_uint32 iItem;
+
+        /* The first step is to itemize. */
+        itemCount = MD_COUNTOF(pItemsStack);
+        result = md_itemize_utf8(pFont, pTextUTF8, textLength, pItemsStack, &itemCount, &itemizeState);
+        if (result == MD_SUCCESS) {
+            pItems = &pItemsStack[0];
+        } else if (result == MD_NO_SPACE) {
+            /* Not enough room on the stack. Try again against the heap. */
+            pItemsHeap = (md_item*)MD_MALLOC(sizeof(*pItemsHeap) * itemCount);
+            if (pItemsHeap == NULL) {
+                return MD_OUT_OF_MEMORY;
+            }
+
+            result = md_itemize_utf8(pFont, pTextUTF8, textLength, pItemsHeap, &itemCount, &itemizeState);
+            if (result != MD_SUCCESS) {
+                return result;
+            }
+
+            pItems = pItemsHeap;
+        } else {
+            return result;
+        }
+
+        /* We have the items so now we can measure them. */
+        for (iItem = 0; iItem < itemCount; ++iItem) {
+            /* No need to do shaping for new-lines. */
+            if (md_is_newline_utf8(pTextUTF8 + pItems[iItem].offset, pItems[iItem].length)) {
+                sizeY += lineHeight;
+            } else {
+                md_text_metrics itemMetrics;
+                result = md_shape_utf8(pFont, &pItems[iItem], pTextUTF8, pItems[iItem].length, NULL, NULL, NULL, &itemMetrics);
+                if (result != MD_SUCCESS) {
+                    MD_FREE(pItemsHeap);
+                    pItemsHeap = NULL;
+                    md_free_itemize_state(&itemizeState);
+                    return result;
+                }
+
+                sizeX += itemMetrics.sizeX;
+            }
+        }
+
+        pTextMetrics->sizeX = sizeX;
+        pTextMetrics->sizeY = sizeY;
+
+        md_free_itemize_state(&itemizeState);
+        return MD_SUCCESS;
+    }
 }
 
 
@@ -8870,6 +9055,228 @@ void md_gc_draw_glyphs(md_gc* pGC, const md_item* pItem, const md_glyph* pGlyphs
 
     if (pGC->pAPI->procs.gcDrawGlyphs) {
         pGC->pAPI->procs.gcDrawGlyphs(pGC, pItem, pGlyphs, glyphCount, x, y);
+    }
+}
+
+void md_gc_draw_text_utf8(md_gc* pGC, md_font* pFont, const md_utf8* pTextUTF8, size_t textLength, md_int32 x, md_int32 y, md_alignment originAlignmentX, md_alignment originAlignmentY)
+{
+    md_result result;
+
+    if (pGC == NULL || pFont == NULL || pTextUTF8 == NULL || textLength == 0) {
+        return;
+    }
+
+    if (textLength == (size_t)-1) {
+        textLength = strlen(pTextUTF8);
+    }
+
+    /* TODO: Implement support for vertical text layouts. Not sure yet how to identify a font or script as vertical... */
+
+    /* TODO: Implement support for backend-optimized implementations of this method. */
+#if 0
+    if (pGC->pAPI->gcDrawTextUTF8) {
+        pGC->pAPI->gcDrawTextUTF8(pGC, pFont, pTextUTF8, textLength, x, y, originAlignmentX, originAlignmentY);
+    } else
+#endif
+    {
+        /* Generic implementation. This is optimized for simplicity rather than speed. Consider this to be the reference implementation. */
+        md_int32 originX = 0;
+        md_int32 originY = 0;
+        md_int32 penX;
+        md_int32 penY;
+        md_int32 lineHeight = (pFont->metrics.ascent - pFont->metrics.descent);
+
+        /* The starting position of the pen depends on the alignment of the origin. */
+        if (originAlignmentX == md_alignment_left && originAlignmentY == md_alignment_top) {
+            /* Simple case. The pen starts at [x] and [y] exactly. */
+            originX = x;
+            originY = y;
+        } else {
+            /* We need to measure the string to know where to start the pen. */
+            md_text_metrics metrics;
+            result = md_font_get_text_metrics_utf8(pFont, pTextUTF8, textLength, &metrics);
+            if (result != MD_SUCCESS) {
+                return;
+            }
+
+            /* X */
+            if (originAlignmentX == md_alignment_right) {
+                originX = x - metrics.sizeX;
+            } else if (originAlignmentX == md_alignment_center) {
+                originX = x - (metrics.sizeX / 2);
+            }
+
+            /* Y */
+            if (originAlignmentY == md_alignment_bottom) {
+                originY = y - metrics.sizeY;
+            } else if (originAlignmentY == md_alignment_center) {
+                originY = y - (metrics.sizeY / 2);
+            }
+        }
+
+        penX = originX;
+        penY = originY;
+
+        /* We've figured out the pen position, so now we can draw the text. */
+        /* NOTE: Only supporting left-to-right, top-to-bottom for now. Still figuring out vertical text... */
+        {
+            md_itemize_state itemizeState;
+            md_item   pItemsStack[1024];
+            md_item*  pItemsHeap = NULL;
+            md_item*  pItems = NULL;
+            md_uint32 itemCount;
+            md_uint32 iItem;
+
+            /* First step is to itemize as usual. */
+            itemCount = MD_COUNTOF(pItemsStack);
+            result = md_itemize_utf8(pFont, pTextUTF8, textLength, pItemsStack, &itemCount, &itemizeState);
+            if (result == MD_SUCCESS) {
+                pItems = &pItemsStack[0];
+            } else if (result == MD_NO_SPACE) {
+                /* Not enough room on the stack. Try again against the heap. */
+                pItemsHeap = (md_item*)MD_MALLOC(sizeof(*pItemsHeap) * itemCount);
+                if (pItemsHeap == NULL) {
+                    return; /* Out of memory. */
+                }
+
+                result = md_itemize_utf8(pFont, pTextUTF8, textLength, pItemsHeap, &itemCount, &itemizeState);
+                if (result != MD_SUCCESS) {
+                    return; /* Failed to itemize. */
+                }
+
+                pItems = pItemsHeap;
+            } else {
+                return; /* Failed to itemize. */
+            }
+
+            /* Now we just shape and draw. */
+            if (originAlignmentX == md_alignment_left) {
+                /* Simple case. No need for measuring lines. */
+                for (iItem = 0; iItem < itemCount; ++iItem) {
+                    md_item* pItem = &pItems[iItem];
+
+                    if (md_is_newline_utf8(pTextUTF8 + pItem->offset, pItem->length)) {
+                        penX  = originX;
+                        penY += lineHeight;
+                    } else {
+                        md_text_metrics itemMetrics;
+                        md_glyph  pGlyphsStack[4096];
+                        md_glyph* pGlyphsHeap = NULL;
+                        md_glyph* pGlyphs = NULL;
+                        size_t glyphCount;
+
+                        glyphCount = MD_COUNTOF(pGlyphsStack);
+                        result = md_shape_utf8(pFont, pItem, pTextUTF8 + pItem->offset, pItem->length, pGlyphsStack, &glyphCount, NULL, &itemMetrics);
+                        if (result == MD_SUCCESS) {
+                            pGlyphs = &pGlyphsStack[0];
+                        } else if (result == MD_NO_SPACE) {
+                            /* Try the heap. */
+                            pGlyphsHeap = (md_glyph*)MD_MALLOC(sizeof(*pGlyphsHeap) * glyphCount);
+                            if (pGlyphsHeap == NULL) {
+                                break;  /* Out of memory. */
+                            }
+
+                            result = md_shape_utf8(pFont, pItem, pTextUTF8 + pItem->offset, pItem->length, pGlyphsHeap, &glyphCount, NULL, &itemMetrics);
+                            if (result != MD_SUCCESS) {
+                                break;  /* Failed to shape this item. */
+                            }
+
+                            pGlyphs = pGlyphsHeap;
+                        } else {
+                            break;  /* Failed to shape this item. */
+                        }
+
+                        md_gc_draw_glyphs(pGC, &pItems[iItem], pGlyphs, glyphCount, penX, penY);
+
+                        MD_FREE(pGlyphsHeap);
+                        pGlyphsHeap = NULL;
+
+                        penX += itemMetrics.sizeX;
+                    }
+                }
+            } else {
+                /* Complicated case. We need to go line-by-line, measure it, then position it based on the alignment. */
+                iItem = 0;
+                while (iItem < itemCount) {  /* For each line... */
+                    md_uint32 iLineBeg = iItem;
+                    md_uint32 iLineEnd = iItem;
+                    md_uint32 lineSizeX = 0;
+
+                    /* Find the range of items making up this line. */
+                    for (; iLineEnd < itemCount; ++iLineEnd) {
+                        md_item* pItem = &pItems[iLineEnd];
+                        if (md_is_newline_utf8(pTextUTF8 + pItem->offset, pItem->length)) {
+                            break;
+                        } else {
+                            md_text_metrics itemMetrics;
+                            result = md_shape_utf8(pFont, pItem, pTextUTF8 + pItem->offset, pItem->length, NULL, NULL, NULL, &itemMetrics);
+                            if (result != MD_SUCCESS) {
+                                break;
+                            }
+
+                            lineSizeX += itemMetrics.sizeX;
+                        }
+                    }
+
+                    if (iLineBeg == iLineEnd) {
+                        break;
+                    }
+                    
+                    if (originAlignmentX == md_alignment_right) {
+                        penX = x - lineSizeX;
+                    } else if (originAlignmentX == md_alignment_center) {
+                        penX = x - (lineSizeX / 2);
+                    } else {
+                        penX = originX;
+                    }
+                    
+                    for (iItem = iLineBeg; iItem < iLineEnd; ++iItem) {
+                        md_item* pItem = &pItems[iItem];
+                        md_text_metrics itemMetrics;
+                        md_glyph  pGlyphsStack[4096];
+                        md_glyph* pGlyphsHeap = NULL;
+                        md_glyph* pGlyphs = NULL;
+                        size_t glyphCount;
+
+                        glyphCount = MD_COUNTOF(pGlyphsStack);
+                        result = md_shape_utf8(pFont, pItem, pTextUTF8 + pItem->offset, pItem->length, pGlyphsStack, &glyphCount, NULL, &itemMetrics);
+                        if (result == MD_SUCCESS) {
+                            pGlyphs = &pGlyphsStack[0];
+                        } else if (result == MD_NO_SPACE) {
+                            /* Try the heap. */
+                            pGlyphsHeap = (md_glyph*)MD_MALLOC(sizeof(*pGlyphsHeap) * glyphCount);
+                            if (pGlyphsHeap == NULL) {
+                                break;  /* Out of memory. */
+                            }
+
+                            result = md_shape_utf8(pFont, pItem, pTextUTF8 + pItem->offset, pItem->length, pGlyphsHeap, &glyphCount, NULL, &itemMetrics);
+                            if (result != MD_SUCCESS) {
+                                break;  /* Failed to shape this item. */
+                            }
+
+                            pGlyphs = pGlyphsHeap;
+                        } else {
+                            break;  /* Failed to shape this item. */
+                        }
+
+                        md_gc_draw_glyphs(pGC, &pItems[iItem], pGlyphs, glyphCount, penX, penY);
+
+                        MD_FREE(pGlyphsHeap);
+                        pGlyphsHeap = NULL;
+
+                        penX += itemMetrics.sizeX;
+                    }
+
+                    penY += lineHeight;
+
+                    /* Go past the new-line item. */
+                    iItem += 1;
+                }
+            }
+
+            MD_FREE(pItemsHeap);
+            md_free_itemize_state(&itemizeState);
+        }
     }
 }
 
