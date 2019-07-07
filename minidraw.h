@@ -2120,6 +2120,142 @@ MD_INLINE int md_strncpy_s(char* dst, size_t dstSizeInBytes, const char* src, si
 
 
 
+md_bool32 md_is_newline_utf8(const md_utf8* pTextUTF8, size_t textLength)
+{
+    if (pTextUTF8 == NULL || textLength == 0) {
+        return MD_FALSE;
+    }
+
+    if (textLength == (size_t)-1) {
+        /* Null terminated. */
+        if (pTextUTF8[0] == '\n' && pTextUTF8[1] == '\0') {
+            return MD_TRUE;
+        }
+        
+        if (pTextUTF8[0] == '\r' && pTextUTF8[1] == '\0') {
+            return MD_TRUE;
+        }
+
+        if (pTextUTF8[0] == '\r' && pTextUTF8[1] == '\n' && pTextUTF8[2] == '\0') {
+            return MD_TRUE;
+        }
+    } else {
+        /* Not null terminated. */
+        if (textLength == 1) {
+            return pTextUTF8[0] == '\r' || pTextUTF8[0] == '\n';
+        }
+
+        if (textLength == 2) {
+            return pTextUTF8[0] == '\r' && pTextUTF8[1] == '\n';
+        }
+    }
+
+    return MD_FALSE;
+}
+
+/*
+Retrieves the beginning of the next line in the string.
+
+Remarks
+-------
+When [textLength] is (size_t)-1 it is assumed that pTextUTF8 is null terminated. When [textLength] is not (size_t)-1 it's assumed that
+[pTextUTF8] is of the length [textLength]. In this case null terminators will _not_ terminate the line.
+
+The output value of [ppLineEndUTF8] is always 1 character past the end of the line. Therefore, [ppLineEndUTF8] minus [pTextUTF8] will
+equal the length of the line.
+*/
+const md_utf8* md_next_line_utf8(const md_utf8* pTextUTF8, size_t textLength, const md_utf8** ppLineEndUTF8)
+{
+    const md_utf8* pLineEndUTF8 = pTextUTF8;
+    const md_utf8* pNextLineBegUTF8 = NULL;
+
+    if (ppLineEndUTF8 != NULL) {
+        *ppLineEndUTF8 = pTextUTF8;
+    }
+
+    if (pTextUTF8 == NULL) {
+        return NULL;
+    }
+
+    if (textLength == 0) {
+        return NULL;
+    }
+
+    if (textLength == (size_t)-1) {
+        size_t iByte = 0;
+        for (;;) {
+            if (pTextUTF8[iByte] == '\0') {
+                break;  /* Reached the end of the string. */
+            }
+
+            if (pTextUTF8[iByte] == '\n') {
+                pLineEndUTF8 = pTextUTF8 + iByte;
+                pNextLineBegUTF8 = pLineEndUTF8 + 1;
+                break;
+            }
+
+            if (pTextUTF8[iByte] == '\r') {
+                pLineEndUTF8 = pTextUTF8 + iByte;
+                pNextLineBegUTF8 = pLineEndUTF8 + 1;
+
+                /* Check for \r\n. */
+                if (iByte+1 < textLength) {
+                    if (pTextUTF8[iByte+1] == '\n') {
+                        pNextLineBegUTF8 += 1;
+                    }
+                }
+                
+                break;
+            }
+
+            iByte += 1;
+        }
+
+        if (pNextLineBegUTF8 == NULL) {
+            /* A new line character was not found. There is no next line. */
+            pLineEndUTF8 = pTextUTF8 + iByte;
+        }
+    } else {
+        size_t iByte;
+        for (iByte = 0; iByte < textLength; /* Do nothing. */) {
+            if (pTextUTF8[iByte] == '\n') {
+                pLineEndUTF8 = pTextUTF8 + iByte;
+                pNextLineBegUTF8 = pLineEndUTF8 + 1;
+                break;
+            }
+
+            if (pTextUTF8[iByte] == '\r') {
+                pLineEndUTF8 = pTextUTF8 + iByte;
+                pNextLineBegUTF8 = pLineEndUTF8 + 1;
+
+                /* Check for \r\n. */
+                if (iByte+1 < textLength) {
+                    if (pTextUTF8[iByte+1] == '\n') {
+                        pNextLineBegUTF8 += 1;
+                    }
+                }
+                
+                break;
+            }
+
+            iByte += 1;
+        }
+
+        if (pNextLineBegUTF8 == NULL) {
+            /* A new line character was not found. There is no next line. */
+            pLineEndUTF8 = pTextUTF8 + textLength;
+        }
+    }
+
+    if (ppLineEndUTF8 != NULL) {
+        *ppLineEndUTF8 = pLineEndUTF8;
+    }
+
+    return pNextLineBegUTF8;
+}
+
+
+
 /**************************************************************************************************************************************************************
 
 Unicode
@@ -7392,21 +7528,73 @@ md_result md_itemize_utf8__cairo(md_font* pFont, const md_utf8* pTextUTF8, size_
     }
 
     if (pItems != NULL) {
+        md_uint32 iItem = 0;
         GList* pListItem;
         for (pListItem = g_list_first(pPangoItems); pListItem != NULL; pListItem = g_list_next(pListItem)) {
-            md_uint32 iItem = itemCount;
-            PangoItem* pPangoItem;
+            const char* pLineBegUTF8;
+            const char* pLineEndUTF8;
+            PangoItem* pPangoItem = (PangoItem*)pListItem->data;
 
+            /*
+            Unfortunately Pango does not split items the way minidraw defines them. We need certain common characters to have their own items to simplify text processing.
+              * New lines
+              * Tabs
+            */
+            pLineBegUTF8 = pTextUTF8 + pPangoItem->offset;
+            for (;;) {  /* For each line... */
+                const char* pNextLineBegUTF8;
+                pNextLineBegUTF8 = md_next_line_utf8(pLineBegUTF8, (size_t)((pTextUTF8 + pPangoItem->offset + pPangoItem->length) - pLineBegUTF8), &pLineEndUTF8);
+
+                /* The space between pLineBegUTF8 and pLineEndUTF8 is the line content. */
+                if ((pLineEndUTF8 - pLineBegUTF8) > 0) {
+                    /* TODO: Split tabs. */
+
+                    itemCount += 1;
+                    if (itemCount > itemCap) {
+                        break;  /* Not enough room in the output buffer. */
+                    }
+
+                    pItems[iItem].offset = (size_t)(pLineBegUTF8 - pTextUTF8);
+                    pItems[iItem].length = (size_t)(pLineEndUTF8 - pLineBegUTF8);
+                    pItems[iItem].backend.cairo.pPangoItem = pPangoItem;
+                    iItem += 1;
+                }
+                
+                /* The space between pLineEndUTF8 and pNextLineBegUTF8 is the new line character. */
+                if ((pNextLineBegUTF8 - pLineEndUTF8) > 0) {
+                    itemCount += 1;
+                    if (itemCount > itemCap) {
+                        break;  /* Not enough room in the output buffer. */
+                    }
+
+                    pItems[iItem].offset = (size_t)(pLineEndUTF8 - pTextUTF8);
+                    pItems[iItem].length = (size_t)(pNextLineBegUTF8 - pLineEndUTF8);
+                    pItems[iItem].backend.cairo.pPangoItem = pPangoItem;
+                    iItem += 1;
+                }
+
+                /* Get out of the loop if we reached the end. */
+                if (pNextLineBegUTF8 == NULL) {
+                    break;
+                }
+
+                pLineBegUTF8 = pNextLineBegUTF8;
+            }
+
+            
+#if 0
+            /* Add the last item. */
             itemCount += 1;
             if (itemCount > itemCap) {
                 break;  /* Not enough room in the output buffer. */
             }
 
-            pPangoItem = (PangoItem*)pListItem->data;
+            printf("TESTING: itemCount=%d, iChar=%d, nextOffset=%d\n", itemCount, iChar, nextOffset);
 
-            pItems[iItem].offset = (size_t)pPangoItem->offset;
-            pItems[iItem].length = (size_t)pPangoItem->length;
+            pItems[iItem].offset = nextOffset;
+            pItems[iItem].length = iChar - nextOffset;
             pItems[iItem].backend.cairo.pPangoItem = pPangoItem;
+#endif
         }
 
         pItemizeState->backend.cairo.pPangoItems = pPangoItems;
@@ -8144,39 +8332,6 @@ md_result md_index_to_x(md_api* pAPI, md_item* pItem, size_t index, size_t textL
     }
 
     return MD_SUCCESS;
-}
-
-md_bool32 md_is_newline_utf8(const md_utf8* pTextUTF8, size_t textLength)
-{
-    if (pTextUTF8 == NULL || textLength == 0) {
-        return MD_FALSE;
-    }
-
-    if (textLength == (size_t)-1) {
-        /* Null terminated. */
-        if (pTextUTF8[0] == '\n' && pTextUTF8[1] == '\0') {
-            return MD_TRUE;
-        }
-        
-        if (pTextUTF8[0] == '\r' && pTextUTF8[1] == '\0') {
-            return MD_TRUE;
-        }
-
-        if (pTextUTF8[0] == '\r' && pTextUTF8[1] == '\n' && pTextUTF8[2] == '\0') {
-            return MD_TRUE;
-        }
-    } else {
-        /* Not null terminated. */
-        if (textLength == 1) {
-            return pTextUTF8[0] == '\r' || pTextUTF8[0] == '\n';
-        }
-
-        if (textLength == 2) {
-            return pTextUTF8[0] == '\r' && pTextUTF8[0] == '\n';
-        }
-    }
-
-    return MD_FALSE;
 }
 
 
@@ -9218,53 +9373,51 @@ void md_gc_draw_text_utf8(md_gc* pGC, md_font* pFont, const md_utf8* pTextUTF8, 
                         }
                     }
 
-                    if (iLineBeg == iLineEnd) {
-                        break;
-                    }
+                    if (iLineBeg != iLineEnd) {
+                        if (originAlignmentX == md_alignment_right) {
+                            penX = x - lineSizeX;
+                        } else if (originAlignmentX == md_alignment_center) {
+                            penX = x - (lineSizeX / 2);
+                        } else {
+                            penX = originX;
+                        }
                     
-                    if (originAlignmentX == md_alignment_right) {
-                        penX = x - lineSizeX;
-                    } else if (originAlignmentX == md_alignment_center) {
-                        penX = x - (lineSizeX / 2);
-                    } else {
-                        penX = originX;
-                    }
-                    
-                    for (iItem = iLineBeg; iItem < iLineEnd; ++iItem) {
-                        md_item* pItem = &pItems[iItem];
-                        md_text_metrics itemMetrics;
-                        md_glyph  pGlyphsStack[4096];
-                        md_glyph* pGlyphsHeap = NULL;
-                        md_glyph* pGlyphs = NULL;
-                        size_t glyphCount;
+                        for (iItem = iLineBeg; iItem < iLineEnd; ++iItem) {
+                            md_item* pItem = &pItems[iItem];
+                            md_text_metrics itemMetrics;
+                            md_glyph  pGlyphsStack[4096];
+                            md_glyph* pGlyphsHeap = NULL;
+                            md_glyph* pGlyphs = NULL;
+                            size_t glyphCount;
 
-                        glyphCount = MD_COUNTOF(pGlyphsStack);
-                        result = md_shape_utf8(pFont, pItem, pTextUTF8 + pItem->offset, pItem->length, pGlyphsStack, &glyphCount, NULL, &itemMetrics);
-                        if (result == MD_SUCCESS) {
-                            pGlyphs = &pGlyphsStack[0];
-                        } else if (result == MD_NO_SPACE) {
-                            /* Try the heap. */
-                            pGlyphsHeap = (md_glyph*)MD_MALLOC(sizeof(*pGlyphsHeap) * glyphCount);
-                            if (pGlyphsHeap == NULL) {
-                                break;  /* Out of memory. */
-                            }
+                            glyphCount = MD_COUNTOF(pGlyphsStack);
+                            result = md_shape_utf8(pFont, pItem, pTextUTF8 + pItem->offset, pItem->length, pGlyphsStack, &glyphCount, NULL, &itemMetrics);
+                            if (result == MD_SUCCESS) {
+                                pGlyphs = &pGlyphsStack[0];
+                            } else if (result == MD_NO_SPACE) {
+                                /* Try the heap. */
+                                pGlyphsHeap = (md_glyph*)MD_MALLOC(sizeof(*pGlyphsHeap) * glyphCount);
+                                if (pGlyphsHeap == NULL) {
+                                    break;  /* Out of memory. */
+                                }
 
-                            result = md_shape_utf8(pFont, pItem, pTextUTF8 + pItem->offset, pItem->length, pGlyphsHeap, &glyphCount, NULL, &itemMetrics);
-                            if (result != MD_SUCCESS) {
+                                result = md_shape_utf8(pFont, pItem, pTextUTF8 + pItem->offset, pItem->length, pGlyphsHeap, &glyphCount, NULL, &itemMetrics);
+                                if (result != MD_SUCCESS) {
+                                    break;  /* Failed to shape this item. */
+                                }
+
+                                pGlyphs = pGlyphsHeap;
+                            } else {
                                 break;  /* Failed to shape this item. */
                             }
 
-                            pGlyphs = pGlyphsHeap;
-                        } else {
-                            break;  /* Failed to shape this item. */
+                            md_gc_draw_glyphs(pGC, &pItems[iItem], pGlyphs, glyphCount, penX, penY);
+
+                            MD_FREE(pGlyphsHeap);
+                            pGlyphsHeap = NULL;
+
+                            penX += itemMetrics.sizeX;
                         }
-
-                        md_gc_draw_glyphs(pGC, &pItems[iItem], pGlyphs, glyphCount, penX, penY);
-
-                        MD_FREE(pGlyphsHeap);
-                        pGlyphsHeap = NULL;
-
-                        penX += itemMetrics.sizeX;
                     }
 
                     penY += lineHeight;

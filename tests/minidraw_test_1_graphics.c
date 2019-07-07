@@ -58,7 +58,7 @@ void draw_logo(md_gc* pGC)
 
         md_gc_set_text_bg_color(pGC, md_rgba(0, 0, 0, 0));      /* Foreground color is controlled by the clear color. */
         md_gc_set_text_fg_color(pGC, g_textFGColor);
-        md_gc_draw_text_utf8(pGC, &g_font, "Hello,\nWorld!", (size_t)-1, midX*2, midY, md_alignment_right, md_alignment_center);
+        md_gc_draw_text_utf8(pGC, &g_font, "Hello,\r\nWorld!", (size_t)-1, midX*2, 0, md_alignment_right, md_alignment_top);
 
         /* Origin lines. */
         {
