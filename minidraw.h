@@ -2254,6 +2254,83 @@ const md_utf8* md_next_line_utf8(const md_utf8* pTextUTF8, size_t textLength, co
     return pNextLineBegUTF8;
 }
 
+const md_utf8* md_next_tabbed_segment(const md_utf8* pTextUTF8, size_t textLength, const md_utf8** ppSegmentEndUTF8)
+{
+    const md_utf8* pSegmentEndUTF8 = pTextUTF8;
+    const md_utf8* pNextSegmentBegUTF8 = NULL;
+
+    if (ppSegmentEndUTF8 != NULL) {
+        *ppSegmentEndUTF8 = pTextUTF8;
+    }
+
+    if (pTextUTF8 == NULL) {
+        return NULL;
+    }
+
+    if (textLength == 0) {
+        return NULL;
+    }
+
+    if (textLength == (size_t)-1) {
+        size_t iByte = 0;
+        for (;;) {
+            if (pTextUTF8[iByte] == '\0') {
+                break;  /* Reached the end of the string. */
+            }
+
+            if (pTextUTF8[iByte] == '\t') {
+                pSegmentEndUTF8 = pTextUTF8 + iByte;
+                pNextSegmentBegUTF8 = pSegmentEndUTF8 + 1;
+
+                /* Get past the entire tab group. */
+                iByte += 1;
+                while (pTextUTF8[iByte] == '\t') {
+                    pNextSegmentBegUTF8 += 1;
+                    iByte += 1;
+                }
+
+                break;
+            }
+
+            iByte += 1;
+        }
+
+        if (pNextSegmentBegUTF8 == NULL) {
+            /* A tab character was not found. There is no next line. */
+            pSegmentEndUTF8 = pTextUTF8 + iByte;
+        }
+    } else {
+        size_t iByte;
+        for (iByte = 0; iByte < textLength; /* Do nothing. */) {
+            if (pTextUTF8[iByte] == '\t') {
+                pSegmentEndUTF8 = pTextUTF8 + iByte;
+                pNextSegmentBegUTF8 = pSegmentEndUTF8 + 1;
+
+                /* Get past the entire tab group. */
+                iByte += 1;
+                while (iByte < textLength && pTextUTF8[iByte] == '\t') {
+                    pNextSegmentBegUTF8 += 1;
+                    iByte += 1;
+                }
+
+                break;
+            }
+
+            iByte += 1;
+        }
+
+        if (pNextSegmentBegUTF8 == NULL) {
+            /* A tab character was not found. There is no next line. */
+            pSegmentEndUTF8 = pTextUTF8 + textLength;
+        }
+    }
+
+    if (ppSegmentEndUTF8 != NULL) {
+        *ppSegmentEndUTF8 = pSegmentEndUTF8;
+    }
+
+    return pNextSegmentBegUTF8;
+}
 
 
 /**************************************************************************************************************************************************************
@@ -7547,7 +7624,6 @@ md_result md_itemize_utf8__cairo(md_font* pFont, const md_utf8* pTextUTF8, size_
         * New lines
         * Tabs
     */
-
     if (pItems != NULL) {
         md_uint32 iItem = 0;
         GList* pListItem;
@@ -7563,17 +7639,50 @@ md_result md_itemize_utf8__cairo(md_font* pFont, const md_utf8* pTextUTF8, size_
 
                 /* The space between pLineBegUTF8 and pLineEndUTF8 is the line content. */
                 if ((pLineEndUTF8 - pLineBegUTF8) > 0) {
-                    /* TODO: Split tabs. */
+                    /* Split tabs. */
+                    const char* pTabbedSegmentBegUTF8 = pLineBegUTF8;
+                    const char* pTabbedSegmentEndUTF8;
+                    for (;;) {
+                        const char* pNextTabbedSegmentBegUTF8;
+                        pNextTabbedSegmentBegUTF8 = md_next_tabbed_segment(pTabbedSegmentBegUTF8, (size_t)(pLineEndUTF8 - pTabbedSegmentBegUTF8), &pTabbedSegmentEndUTF8);
 
-                    itemCount += 1;
+                        /* The main segment. */
+                        if ((pTabbedSegmentEndUTF8 - pTabbedSegmentBegUTF8) > 0) {
+                            itemCount += 1;
+                            if (itemCount > itemCap) {
+                                break;  /* Not enough room in the output buffer. */
+                            }
+
+                            pItems[iItem].offset = (size_t)(pTabbedSegmentBegUTF8 - pTextUTF8);
+                            pItems[iItem].length = (size_t)(pTabbedSegmentEndUTF8 - pTabbedSegmentBegUTF8);
+                            pItems[iItem].backend.cairo.pPangoItem = pPangoItem;
+                            iItem += 1;
+                        }
+
+                        /* The \t characters. */
+                        if ((pNextTabbedSegmentBegUTF8 - pTabbedSegmentEndUTF8) > 0) {
+                            itemCount += 1;
+                            if (itemCount > itemCap) {
+                                break;  /* Not enough room in the output buffer. */
+                            }
+
+                            pItems[iItem].offset = (size_t)(pTabbedSegmentEndUTF8 - pTextUTF8);
+                            pItems[iItem].length = (size_t)(pNextTabbedSegmentBegUTF8 - pTabbedSegmentEndUTF8);
+                            pItems[iItem].backend.cairo.pPangoItem = pPangoItem;
+                            iItem += 1;
+                        }
+
+                        /* Get out of the loop if we reached the end. */
+                        if (pNextTabbedSegmentBegUTF8 == NULL) {
+                            break;
+                        }
+
+                        pTabbedSegmentBegUTF8 = pNextTabbedSegmentBegUTF8;
+                    }
+
                     if (itemCount > itemCap) {
                         break;  /* Not enough room in the output buffer. */
                     }
-
-                    pItems[iItem].offset = (size_t)(pLineBegUTF8 - pTextUTF8);
-                    pItems[iItem].length = (size_t)(pLineEndUTF8 - pLineBegUTF8);
-                    pItems[iItem].backend.cairo.pPangoItem = pPangoItem;
-                    iItem += 1;
                 }
                 
                 /* The space between pLineEndUTF8 and pNextLineBegUTF8 is the new line character. */
@@ -7614,9 +7723,30 @@ md_result md_itemize_utf8__cairo(md_font* pFont, const md_utf8* pTextUTF8, size_
 
                 /* The space between pLineBegUTF8 and pLineEndUTF8 is the line content. */
                 if ((pLineEndUTF8 - pLineBegUTF8) > 0) {
-                    /* TODO: Split tabs. */
+                    /* Split tabs. */
+                    const char* pTabbedSegmentBegUTF8 = pLineBegUTF8;
+                    const char* pTabbedSegmentEndUTF8;
+                    for (;;) {
+                        const char* pNextTabbedSegmentBegUTF8;
+                        pNextTabbedSegmentBegUTF8 = md_next_tabbed_segment(pTabbedSegmentBegUTF8, (size_t)(pLineEndUTF8 - pTabbedSegmentBegUTF8), &pTabbedSegmentEndUTF8);
 
-                    itemCount += 1;
+                        /* The main segment. */
+                        if ((pTabbedSegmentEndUTF8 - pTabbedSegmentBegUTF8) > 0) {
+                            itemCount += 1;
+                        }
+
+                        /* The \t characters. */
+                        if ((pNextTabbedSegmentBegUTF8 - pTabbedSegmentEndUTF8) > 0) {
+                            itemCount += 1;
+                        }
+
+                        /* Get out of the loop if we reached the end. */
+                        if (pNextTabbedSegmentBegUTF8 == NULL) {
+                            break;
+                        }
+
+                        pTabbedSegmentBegUTF8 = pNextTabbedSegmentBegUTF8;
+                    }
                 }
                 
                 /* The space between pLineEndUTF8 and pNextLineBegUTF8 is the new line character. */
