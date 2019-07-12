@@ -1608,7 +1608,7 @@ void md_gc_draw_glyphs(md_gc* pGC, const md_item* pItem, const md_glyph* pGlyphs
 /*
 Helper API for drawing a string of text.
 */
-void md_gc_draw_text_utf8(md_gc* pGC, md_font* pFont, const md_utf8* pTextUTF8, size_t textLength, md_int32 x, md_int32 y, md_alignment originAlignmentX, md_alignment originAlignmentY);
+void md_gc_draw_text_utf8(md_gc* pGC, md_font* pFont, const md_utf8* pTextUTF8, size_t textLength, md_int32 x, md_int32 y, md_alignment originAlignmentX, md_alignment originAlignmentY, md_text_metrics* pMetrics);
 
 /*
 Helper API for drawing a string of text based on a layout specification.
@@ -6963,6 +6963,9 @@ md_result md_gc_init__cairo(md_api* pAPI, const md_gc_config* pConfig, md_gc* pG
         return MD_OUT_OF_MEMORY;
     }
 
+    /* The default text color needs to be opaque black. */
+    pGC->cairo.pState[0].textFGColor = md_rgba(0, 0, 0, 255);
+
     return MD_SUCCESS;
 }
 
@@ -8580,6 +8583,7 @@ md_result md_font_get_glyph_metrics_by_index(md_font* pFont, const md_uint32* pG
 md_result md_font_get_text_metrics_utf8(md_font* pFont, const md_utf8* pTextUTF8, size_t textLength, md_text_metrics* pTextMetrics)
 {
     md_int32 lineHeight;
+    md_int32 lineWidth;
 
     if (pTextMetrics == NULL) {
         return MD_INVALID_ARGS;
@@ -8639,10 +8643,15 @@ md_result md_font_get_text_metrics_utf8(md_font* pFont, const md_utf8* pTextUTF8
         }
 
         /* We have the items so now we can measure them. */
+        lineWidth = 0;
         for (iItem = 0; iItem < itemCount; ++iItem) {
             /* No need to do shaping for new-lines. */
             if (md_is_newline_utf8(pTextUTF8 + pItems[iItem].offset, pItems[iItem].length)) {
                 sizeY += lineHeight;
+                if (sizeX < lineWidth) {
+                    sizeX = lineWidth;
+                }
+                lineWidth = 0;
             } else {
                 md_text_metrics itemMetrics;
                 result = md_shape_utf8(pFont, &pItems[iItem], pTextUTF8, pItems[iItem].length, NULL, NULL, NULL, &itemMetrics);
@@ -8653,8 +8662,13 @@ md_result md_font_get_text_metrics_utf8(md_font* pFont, const md_utf8* pTextUTF8
                     return result;
                 }
 
-                sizeX += itemMetrics.sizeX;
+                lineWidth += itemMetrics.sizeX;
             }
+        }
+
+        /* Don't forget to check the last line. */
+        if (sizeX < lineWidth) {
+            sizeX = lineWidth;
         }
 
         pTextMetrics->sizeX = sizeX;
@@ -9374,9 +9388,13 @@ void md_gc_draw_glyphs(md_gc* pGC, const md_item* pItem, const md_glyph* pGlyphs
     }
 }
 
-void md_gc_draw_text_utf8(md_gc* pGC, md_font* pFont, const md_utf8* pTextUTF8, size_t textLength, md_int32 x, md_int32 y, md_alignment originAlignmentX, md_alignment originAlignmentY)
+void md_gc_draw_text_utf8(md_gc* pGC, md_font* pFont, const md_utf8* pTextUTF8, size_t textLength, md_int32 x, md_int32 y, md_alignment originAlignmentX, md_alignment originAlignmentY, md_text_metrics* pMetrics)
 {
     md_result result;
+
+    if (pMetrics != NULL) {
+        MD_ZERO_OBJECT(pMetrics);
+    }
 
     if (pGC == NULL || pFont == NULL || pTextUTF8 == NULL || textLength == 0) {
         return;
@@ -9400,7 +9418,9 @@ void md_gc_draw_text_utf8(md_gc* pGC, md_font* pFont, const md_utf8* pTextUTF8, 
         md_int32 originY = 0;
         md_int32 penX;
         md_int32 penY;
-        md_int32 lineHeight = (pFont->metrics.ascent - pFont->metrics.descent);
+        md_text_metrics metrics;
+        md_int32 lineSizeY = (pFont->metrics.ascent - pFont->metrics.descent);
+        
 
         /* The starting position of the pen depends on the alignment of the origin. */
         if (originAlignmentX == md_alignment_left && originAlignmentY == md_alignment_top) {
@@ -9409,7 +9429,6 @@ void md_gc_draw_text_utf8(md_gc* pGC, md_font* pFont, const md_utf8* pTextUTF8, 
             originY = y;
         } else {
             /* We need to measure the string to know where to start the pen. */
-            md_text_metrics metrics;
             result = md_font_get_text_metrics_utf8(pFont, pTextUTF8, textLength, &metrics);
             if (result != MD_SUCCESS) {
                 return;
@@ -9432,6 +9451,11 @@ void md_gc_draw_text_utf8(md_gc* pGC, md_font* pFont, const md_utf8* pTextUTF8, 
 
         penX = originX;
         penY = originY;
+
+        metrics.lPadding = 0;
+        metrics.rPadding = 0;
+        metrics.sizeX    = 0;
+        metrics.sizeY    = lineSizeY;
 
         /* We've figured out the pen position, so now we can draw the text. */
         /* NOTE: Only supporting left-to-right, top-to-bottom for now. Still figuring out vertical text... */
@@ -9468,12 +9492,18 @@ void md_gc_draw_text_utf8(md_gc* pGC, md_font* pFont, const md_utf8* pTextUTF8, 
             /* Now we just shape and draw. */
             if (originAlignmentX == md_alignment_left) {
                 /* Simple case. No need for measuring lines. */
+                md_int32 lineSizeX = 0;
                 for (iItem = 0; iItem < itemCount; ++iItem) {
                     md_item* pItem = &pItems[iItem];
 
                     if (md_is_newline_utf8(pTextUTF8 + pItem->offset, pItem->length)) {
                         penX  = originX;
-                        penY += lineHeight;
+                        penY += lineSizeY;
+
+                        metrics.sizeY += lineSizeY;
+                        if (metrics.sizeX < lineSizeX) {
+                            metrics.sizeX = lineSizeX;
+                        }
                     } else {
                         md_text_metrics itemMetrics;
                         md_glyph  pGlyphsStack[4096];
@@ -9510,18 +9540,30 @@ void md_gc_draw_text_utf8(md_gc* pGC, md_font* pFont, const md_utf8* pTextUTF8, 
                         penX += itemMetrics.sizeX;
                     }
                 }
+
+                if (metrics.sizeX < lineSizeX) {
+                    metrics.sizeX = lineSizeX;
+                }
             } else {
                 /* Complicated case. We need to go line-by-line, measure it, then position it based on the alignment. */
+                md_int32 lineSizeX;
+
                 iItem = 0;
                 while (iItem < itemCount) {  /* For each line... */
                     md_uint32 iLineBeg = iItem;
                     md_uint32 iLineEnd = iItem;
-                    md_uint32 lineSizeX = 0;
+                    
+                    lineSizeX = 0;
 
                     /* Find the range of items making up this line. */
                     for (; iLineEnd < itemCount; ++iLineEnd) {
                         md_item* pItem = &pItems[iLineEnd];
                         if (md_is_newline_utf8(pTextUTF8 + pItem->offset, pItem->length)) {
+                            metrics.sizeY += lineSizeY;
+                            if (metrics.sizeX < lineSizeX) {
+                                metrics.sizeX = lineSizeX;
+                            }
+
                             break;
                         } else {
                             md_text_metrics itemMetrics;
@@ -9581,15 +9623,23 @@ void md_gc_draw_text_utf8(md_gc* pGC, md_font* pFont, const md_utf8* pTextUTF8, 
                         }
                     }
 
-                    penY += lineHeight;
+                    penY += lineSizeY;
 
                     /* Go past the new-line item. */
                     iItem += 1;
+                }
+
+                if (metrics.sizeX < lineSizeX) {
+                    metrics.sizeX = lineSizeX;
                 }
             }
 
             MD_FREE(pItemsHeap);
             md_free_itemize_state(&itemizeState);
+        }
+
+        if (pMetrics != NULL) {
+            *pMetrics = metrics;
         }
     }
 }
