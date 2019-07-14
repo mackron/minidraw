@@ -7017,6 +7017,9 @@ md_result md_gc_init__cairo(md_api* pAPI, const md_gc_config* pConfig, md_gc* pG
     /* The default text color needs to be opaque black. */
     pGC->cairo.pState[0].textFGColor = md_rgba(0, 0, 0, 255);
 
+    /* The line width needs to default to 1. */
+    cairo_set_line_width((cairo_t*)pGC->cairo.pCairoContext, 1);
+
     return MD_SUCCESS;
 }
 
@@ -9952,10 +9955,8 @@ void md_gc_draw_text_layout_utf8(md_gc* pGC, md_font* pFont, const md_utf8* pTex
                 md_uint32 iLineBeg = iItem;
                 md_uint32 iLineEnd = iItem;
                 md_int32 lineX;
-                md_int32 lineY;
 
                 lineSizeX = 0;
-
 
                 /* Find the range of items making up this line. */
                 for (; iLineEnd < itemCount; ++iLineEnd) {
@@ -9978,7 +9979,6 @@ void md_gc_draw_text_layout_utf8(md_gc* pGC, md_font* pFont, const md_utf8* pTex
                 }
 
                 lineX = penX;
-                lineY = penY;
 
                 if (iLineBeg != iLineEnd) {
                     if (pLayout->alignmentX == md_alignment_right) {

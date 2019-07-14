@@ -66,7 +66,6 @@ void draw_logo(md_gc* pGC)
         {
             md_gc_set_blend_op(pGC, md_blend_op_src_over);
             md_gc_set_antialias_mode(pGC, md_antialias_mode_none);  /* Results in thick lines if AA is enabled. */
-            md_gc_set_line_width(pGC, 1);
             md_gc_set_text_bg_color(pGC, md_rgba(0, 0, 0, 0));      /* Foreground color is controlled by the clear color. */
             md_gc_set_text_fg_color(pGC, g_textFGColor);
 
@@ -149,7 +148,7 @@ md_result on_init(md_testapp* pApp)
     }
 
     MD_ZERO_OBJECT(&fontConfig);
-    fontConfig.family = "Liberation Serif";
+    fontConfig.family = "Liberation Sans";
     fontConfig.sizeInPoints = 12;
     fontConfig.weight = md_font_weight_normal;
     fontConfig.slant = md_font_slant_none;
@@ -281,6 +280,7 @@ void on_paint(md_testapp* pApp, md_gc* pGC)
             layout.singleLine = MD_FALSE;
             md_gc_draw_text_layout_utf8(pGC, &g_fontSmall, "Hello, World!\n$1,000,000.00", (size_t)-1, &layout);
 
+            md_gc_set_antialias_mode(pGC, md_antialias_mode_none);
             md_gc_set_line_brush_solid(pGC, md_rgb(0, 0, 0));
             md_gc_rectangle(pGC, layout.boundsX, layout.boundsY, layout.boundsX + layout.boundsSizeX, layout.boundsY + layout.boundsSizeY);
             md_gc_stroke(pGC);
