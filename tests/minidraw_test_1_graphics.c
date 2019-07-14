@@ -38,11 +38,9 @@ md_color g_textFGColor;
 md_color g_midLineColor;
 const char* g_text = "minidraw";
 const char* g_textLong =
-    "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Morbi\n"
-    "sit amet purus egestas, consequat tellus in, lacinia magna. Phasellus\n"
-    "vel tempor lorem. Sed eu magna sem. Vivamus tempus egestas\n"
-    "libero ut posuere. Sed hendrerit viverra mollis. Mauris molestie\n"
-    "ut magna eu cursus. Donec commodo ante sed risus tristique luctus.";
+    "Lorem ipsum dolor sit amet, consectetur\n"
+    "adipiscing elit. Morbi sit amet purus\n"
+    "egestas, consequat tellus in, lacinia magna.";
 
 void draw_logo(md_gc* pGC)
 {
@@ -252,13 +250,44 @@ void on_paint(md_testapp* pApp, md_gc* pGC)
         md_gc_set_text_bg_color(pGC, md_rgba(0, 0, 0, 0));      /* Foreground color is controlled by the clear color. */
         md_gc_set_text_fg_color(pGC, g_textFGColor);
 
-        md_gc_draw_text_utf8(pGC, &g_fontSmall, g_textLong, (size_t)-1, 0,      0,      md_alignment_left,   md_alignment_top,    &metrics);
+        /*md_gc_draw_text_utf8(pGC, &g_fontSmall, g_textLong, (size_t)-1, 0,      0,      md_alignment_left,   md_alignment_top,    &metrics);*/
         md_gc_draw_text_utf8(pGC, &g_fontSmall, g_textLong, (size_t)-1, midX,   0,      md_alignment_center, md_alignment_top,    &metrics);
         md_gc_draw_text_utf8(pGC, &g_fontSmall, g_textLong, (size_t)-1, midX*2, 0,      md_alignment_right,  md_alignment_top,    &metrics);
 
         md_gc_draw_text_utf8(pGC, &g_fontSmall, g_textLong, (size_t)-1, 0,      midY*2, md_alignment_left,   md_alignment_bottom, &metrics);
         md_gc_draw_text_utf8(pGC, &g_fontSmall, g_textLong, (size_t)-1, midX,   midY*2, md_alignment_center, md_alignment_bottom, &metrics);
         md_gc_draw_text_utf8(pGC, &g_fontSmall, g_textLong, (size_t)-1, midX*2, midY*2, md_alignment_right,  md_alignment_bottom, &metrics);
+
+        /* Text Layout */
+        md_gc_save(pGC);
+        {
+            md_text_layout layout;
+
+            /*md_gc_translate(pGC, 128, 128);
+            md_gc_rotate(pGC, MD_RADIANSF(90));*/
+
+            md_gc_set_text_fg_color(pGC, md_rgb(0,   0,  0));
+            md_gc_set_text_bg_color(pGC, md_rgb(224, 64, 32));
+
+            layout.boundsX = 32;
+            layout.boundsY = 32;
+            layout.boundsSizeX = 256;
+            layout.boundsSizeY = 64;
+            layout.textOffsetX = 0;
+            layout.textOffsetY = 0;
+            layout.alignmentX = md_alignment_left;
+            layout.alignmentY = md_alignment_center;
+            layout.fillBackground = MD_TRUE;
+            layout.singleLine = MD_FALSE;
+            md_gc_draw_text_layout_utf8(pGC, &g_fontSmall, "Hello, World!\n$1,000,000.00", (size_t)-1, &layout);
+
+            md_gc_set_line_brush_solid(pGC, md_rgb(0, 0, 0));
+            md_gc_rectangle(pGC, layout.boundsX, layout.boundsY, layout.boundsX + layout.boundsSizeX, layout.boundsY + layout.boundsSizeY);
+            md_gc_stroke(pGC);
+        }
+        md_gc_restore(pGC);
+        
+
 
         /* Origin lines. */
         {

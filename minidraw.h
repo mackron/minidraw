@@ -443,8 +443,12 @@ typedef struct
     md_int32 boundsY;
     md_int32 boundsSizeX;
     md_int32 boundsSizeY;
-    md_alignment alignmentHorz;
-    md_alignment alignmentVert;
+    md_int32 textOffsetX;
+    md_int32 textOffsetY;
+    md_alignment alignmentX;
+    md_alignment alignmentY;
+    md_bool32 fillBackground : 1;
+    md_bool32 singleLine     : 1;
 } md_text_layout;
 
 typedef struct
@@ -530,6 +534,8 @@ typedef void      (* gc_set_fill_brush_solid_proc)        (md_gc* pGC, md_color 
 typedef void      (* gc_set_fill_brush_gc_proc)           (md_gc* pGC, md_gc* pSrcGC);
 typedef void      (* gc_set_text_fg_color_proc)           (md_gc* pGC, md_color fgColor);
 typedef void      (* gc_set_text_bg_color_proc)           (md_gc* pGC, md_color bgColor);
+typedef md_color  (* gc_get_text_fg_color_proc)           (md_gc* pGC);
+typedef md_color  (* gc_get_text_bg_color_proc)           (md_gc* pGC);
 typedef void      (* gc_set_blend_op_proc)                (md_gc* pGC, md_blend_op op);
 typedef void      (* gc_set_antialias_mode_proc)          (md_gc* pGC, md_antialias_mode mode);
 typedef void      (* gc_set_stretch_filter_proc)          (md_gc* pGC, md_stretch_filter filter);
@@ -592,6 +598,8 @@ typedef struct
     gc_set_fill_brush_gc_proc            gcSetFillBrushGC;
     gc_set_text_fg_color_proc            gcSetTextFGColor;
     gc_set_text_bg_color_proc            gcSetTextBGColor;
+    gc_get_text_fg_color_proc            gcGetTextFGColor;
+    gc_get_text_bg_color_proc            gcGetTextBGColor;
     gc_set_blend_op_proc                 gcSetBlendOp;
     gc_set_antialias_mode_proc           gcSetAntialiasMode;
     gc_set_stretch_filter_proc           gcSetStretchFilter;
@@ -839,6 +847,8 @@ typedef struct
     md_uint32 dashCount;
     float dashes[16];
     md_blend_op blendOp;
+    md_color textFGColor;
+    md_color textBGColor;
     md_brush_config lineStockBrush;     /* For use with solid and GC brushes. Only used when pUserLineBrush is NULL. */
     md_brush* pUserLineBrush;           /* For use with user-defined brushes. */
     md_brush transientFillBrush;        /* For use with solid and GC brushes. Only used when pUserFillBrush is NULL. */
@@ -1499,6 +1509,8 @@ void md_gc_set_fill_brush_solid(md_gc* pGC, md_color color);
 void md_gc_set_fill_brush_gc(md_gc* pGC, md_gc* pSrcGC);
 void md_gc_set_text_fg_color(md_gc* pGC, md_color fgColor);
 void md_gc_set_text_bg_color(md_gc* pGC, md_color bgColor);
+md_color md_gc_get_text_fg_color(md_gc* pGC);
+md_color md_gc_get_text_bg_color(md_gc* pGC);
 void md_gc_set_blend_op(md_gc* pGC, md_blend_op op);
 void md_gc_set_antialias_mode(md_gc* pGC, md_antialias_mode mode);
 void md_gc_set_stretch_filter(md_gc* pGC, md_stretch_filter filter);
@@ -1609,6 +1621,11 @@ void md_gc_draw_glyphs(md_gc* pGC, const md_item* pItem, const md_glyph* pGlyphs
 Helper API for drawing a string of text.
 */
 void md_gc_draw_text_utf8(md_gc* pGC, md_font* pFont, const md_utf8* pTextUTF8, size_t textLength, md_int32 x, md_int32 y, md_alignment originAlignmentX, md_alignment originAlignmentY, md_text_metrics* pMetrics);
+
+/*
+Helper API for laying out and drawing text inside a bounds.
+*/
+void md_gc_draw_text_layout_utf8(md_gc* pGC, md_font* pFont, const md_utf8* pTextUTF8, size_t textLength, const md_text_layout* pLayout);
 
 /*
 Helper API for drawing a string of text based on a layout specification.
@@ -5751,11 +5768,13 @@ void md_gc_set_fill_brush__gdi(md_gc* pGC, md_brush* pBrush)
 
 MD_PRIVATE void md_gc_set_fill_brush_transient__gdi(md_gc* pGC, const md_brush_config* pConfig)
 {
-    md_uint32 iState = pGC->gdi.stateCount-1;
+    md_uint32 iState;
     md_brush prevTransientBrush;
     md_bool32 uninitPrevTransientBrush = MD_FALSE;
 
     MD_ASSERT(pGC != NULL);
+
+    iState = pGC->gdi.stateCount-1;
 
     /* Need to make a copy of the previous transient fill brush so we can uninitialize later. */
     if (pGC->gdi.pState[iState].hasTransientFillBrush) {
@@ -5801,16 +5820,26 @@ void md_gc_set_fill_brush_gc__gdi(md_gc* pGC, md_gc* pSrcGC)
     md_gc_set_fill_brush_transient__gdi(pGC, &config);
 }
 
-void md_gc_set_text_fg_color__gdi(md_gc* pGC, md_color bgColor)
+void md_gc_set_text_fg_color__gdi(md_gc* pGC, md_color fgColor)
 {
+    md_uint32 iState;
+
     MD_ASSERT(pGC != NULL);
 
-    SetTextColor((HDC)pGC->gdi.hDC, RGB(bgColor.r, bgColor.g, bgColor.b));
+    iState = pGC->gdi.stateCount-1;
+    pGC->gdi.pState[iState].textFGColor = fgColor;
+
+    SetTextColor((HDC)pGC->gdi.hDC, RGB(fgColor.r, fgColor.g, fgColor.b));
 }
 
 void md_gc_set_text_bg_color__gdi(md_gc* pGC, md_color bgColor)
 {
+    md_uint32 iState;
+
     MD_ASSERT(pGC != NULL);
+
+    iState = pGC->gdi.stateCount-1;
+    pGC->gdi.pState[iState].textBGColor = bgColor;
 
     if (bgColor.a == 0) {
         SetBkMode((HDC)pGC->gdi.hDC, TRANSPARENT);
@@ -5818,6 +5847,26 @@ void md_gc_set_text_bg_color__gdi(md_gc* pGC, md_color bgColor)
         SetBkMode((HDC)pGC->gdi.hDC, OPAQUE);
         SetBkColor((HDC)pGC->gdi.hDC, RGB(bgColor.r, bgColor.g, bgColor.b));
     }
+}
+
+md_color md_gc_get_text_fg_color__gdi(md_gc* pGC)
+{
+    md_uint32 iState;
+
+    MD_ASSERT(pGC != NULL);
+
+    iState = pGC->gdi.stateCount-1;
+    return pGC->gdi.pState[iState].textFGColor;
+}
+
+md_color md_gc_get_text_bg_color__gdi(md_gc* pGC)
+{
+    md_uint32 iState;
+
+    MD_ASSERT(pGC != NULL);
+
+    iState = pGC->gdi.stateCount-1;
+    return pGC->gdi.pState[iState].textBGColor;
 }
 
 void md_gc_set_blend_op__gdi(md_gc* pGC, md_blend_op op)
@@ -6563,6 +6612,8 @@ md_result md_init__gdi(const md_api_config* pConfig, md_api* pAPI)
     pAPI->procs.gcSetFillBrushGC           = md_gc_set_fill_brush_gc__gdi;
     pAPI->procs.gcSetTextFGColor           = md_gc_set_text_fg_color__gdi;
     pAPI->procs.gcSetTextBGColor           = md_gc_set_text_bg_color__gdi;
+    pAPI->procs.gcGetTextFGColor           = md_gc_get_text_fg_color__gdi;
+    pAPI->procs.gcGetTextBGColor           = md_gc_get_text_bg_color__gdi;
     pAPI->procs.gcSetBlendOp               = md_gc_set_blend_op__gdi;
     pAPI->procs.gcSetAntialiasMode         = md_gc_set_antialias_mode__gdi;
     pAPI->procs.gcSetStretchFilter         = md_gc_set_stretch_filter__gdi;
@@ -7310,6 +7361,26 @@ void md_gc_set_text_bg_color__cairo(md_gc* pGC, md_color bgColor)
     pGC->cairo.pState[iState].textBGColor = bgColor;
 }
 
+md_color md_gc_get_text_fg_color__cairo(md_gc* pGC)
+{
+    md_uint32 iState;
+
+    MD_ASSERT(pGC != NULL);
+
+    iState = pGC->cairo.stateCount-1;
+    return pGC->cairo.pState[iState].textFGColor;
+}
+
+md_color md_gc_get_text_bg_color__cairo(md_gc* pGC)
+{
+    md_uint32 iState;
+
+    MD_ASSERT(pGC != NULL);
+
+    iState = pGC->cairo.stateCount-1;
+    return pGC->cairo.pState[iState].textBGColor;
+}
+
 void md_gc_set_blend_op__cairo(md_gc* pGC, md_blend_op op)
 {
     cairo_operator_t opCairo;
@@ -8009,6 +8080,8 @@ md_result md_init__cairo(const md_api_config* pConfig, md_api* pAPI)
     pAPI->procs.gcSetFillBrushGC           = md_gc_set_fill_brush_gc__cairo;
     pAPI->procs.gcSetTextFGColor           = md_gc_set_text_fg_color__cairo;
     pAPI->procs.gcSetTextBGColor           = md_gc_set_text_bg_color__cairo;
+    pAPI->procs.gcGetTextFGColor           = md_gc_get_text_fg_color__cairo;
+    pAPI->procs.gcGetTextBGColor           = md_gc_get_text_bg_color__cairo;
     pAPI->procs.gcSetBlendOp               = md_gc_set_blend_op__cairo;
     pAPI->procs.gcSetAntialiasMode         = md_gc_set_antialias_mode__cairo;
     pAPI->procs.gcSetStretchFilter         = md_gc_set_stretch_filter__cairo;
@@ -8591,7 +8664,7 @@ md_result md_font_get_text_metrics_utf8(md_font* pFont, const md_utf8* pTextUTF8
 
     MD_ZERO_OBJECT(pTextMetrics);
 
-    if (pFont == NULL) {
+    if (pFont == NULL || pTextUTF8 == NULL) {
         return MD_INVALID_ARGS;
     }
 
@@ -9157,6 +9230,32 @@ void md_gc_set_text_bg_color(md_gc* pGC, md_color bgColor)
     }
 }
 
+md_color md_gc_get_text_fg_color(md_gc* pGC)
+{
+    if (pGC != NULL) {
+        MD_ASSERT(pGC->pAPI != NULL);
+
+        if (pGC->pAPI->procs.gcGetTextFGColor) {
+            return pGC->pAPI->procs.gcGetTextFGColor(pGC);
+        }
+    }
+
+    return md_rgba(0, 0, 0, 255);
+}
+
+md_color md_gc_get_text_bg_color(md_gc* pGC)
+{
+    if (pGC != NULL) {
+        MD_ASSERT(pGC->pAPI != NULL);
+
+        if (pGC->pAPI->procs.gcGetTextBGColor) {
+            return pGC->pAPI->procs.gcGetTextBGColor(pGC);
+        }
+    }
+
+    return md_rgba(0, 0, 0, 0);
+}
+
 void md_gc_set_blend_op(md_gc* pGC, md_blend_op op)
 {
     if (pGC == NULL) {
@@ -9614,7 +9713,18 @@ void md_gc_draw_text_utf8(md_gc* pGC, md_font* pFont, const md_utf8* pTextUTF8, 
                                 break;  /* Failed to shape this item. */
                             }
 
-                            md_gc_draw_glyphs(pGC, &pItems[iItem], pGlyphs, glyphCount, penX, penY);
+                            /* This hack is specifically for GDI. We need to clip against the item metrics or else we'll overwrite one pixel too far to the left. Very annoying. */
+                            if (pGC->pAPI->backend == md_backend_gdi) {
+                                md_gc_save(pGC);
+                                {
+                                    md_gc_rectangle(pGC, penX, penY, penX + itemMetrics.sizeX, penY + itemMetrics.sizeY);
+                                    md_gc_clip(pGC);
+                                    md_gc_draw_glyphs(pGC, pItem, pGlyphs, glyphCount, penX, penY);
+                                }
+                                md_gc_restore(pGC);
+                            } else {
+                                md_gc_draw_glyphs(pGC, pItem, pGlyphs, glyphCount, penX, penY);
+                            }
 
                             MD_FREE(pGlyphsHeap);
                             pGlyphsHeap = NULL;
@@ -9644,6 +9754,327 @@ void md_gc_draw_text_utf8(md_gc* pGC, md_font* pFont, const md_utf8* pTextUTF8, 
     }
 }
 
+md_result md_font_get_text_layout_metrics_utf8(md_font* pFont, const md_utf8* pTextUTF8, size_t textLength, const md_text_layout* pLayout, md_text_metrics* pTextMetrics)
+{
+    md_int32 lineHeight;
+    md_int32 lineWidth;
+
+    if (pTextMetrics == NULL) {
+        return MD_INVALID_ARGS;
+    }
+
+    MD_ZERO_OBJECT(pTextMetrics);
+
+    if (pFont == NULL || pTextUTF8 == NULL || pLayout == NULL) {
+        return MD_INVALID_ARGS;
+    }
+
+    lineHeight = (pFont->metrics.ascent - pFont->metrics.descent);
+
+    if (textLength == 0) {
+        pTextMetrics->sizeY = lineHeight;
+        return MD_SUCCESS;  /* Nothing to do. */
+    }
+
+#if 0
+    if (pFont->pAPI->procs.fontGetTextLayoutMetricsUTF8) {
+        return pFont->pAPI->procs.fontGetTextLayoutMetricsUTF8(pFont, pTextUTF8, textLength, pLayout, pMetrics);
+    }
+#endif
+    {
+        /* Generic implementation. */
+        /*
+        TODO:
+            - Add support for word wrap.
+            - Handle different line heights for different items.
+        */
+        md_result result;
+        md_int32  sizeX = 0;
+        md_int32  sizeY = lineHeight;
+        md_itemize_state itemizeState;
+        md_item   pItemsStack[1024];
+        md_item*  pItemsHeap = NULL;
+        md_item*  pItems = NULL;
+        md_uint32 itemCount;
+        md_uint32 iItem;
+
+        /* The first step is to itemize. */
+        itemCount = MD_COUNTOF(pItemsStack);
+        result = md_itemize_utf8(pFont, pTextUTF8, textLength, pItemsStack, &itemCount, &itemizeState);
+        if (result == MD_SUCCESS) {
+            pItems = &pItemsStack[0];
+        } else if (result == MD_NO_SPACE) {
+            /* Not enough room on the stack. Try again against the heap. */
+            pItemsHeap = (md_item*)MD_MALLOC(sizeof(*pItemsHeap) * itemCount);
+            if (pItemsHeap == NULL) {
+                return MD_OUT_OF_MEMORY;
+            }
+
+            result = md_itemize_utf8(pFont, pTextUTF8, textLength, pItemsHeap, &itemCount, &itemizeState);
+            if (result != MD_SUCCESS) {
+                return result;
+            }
+
+            pItems = pItemsHeap;
+        } else {
+            return result;
+        }
+
+        /* We have the items so now we can measure them. */
+        lineWidth = 0;
+        for (iItem = 0; iItem < itemCount; ++iItem) {
+            /* No need to do shaping for new-lines. */
+            if (md_is_newline_utf8(pTextUTF8 + pItems[iItem].offset, pItems[iItem].length)) {
+                sizeY += lineHeight;
+                if (sizeX < lineWidth) {
+                    sizeX = lineWidth;
+                }
+                lineWidth = 0;
+            } else {
+                md_text_metrics itemMetrics;
+                result = md_shape_utf8(pFont, &pItems[iItem], pTextUTF8, pItems[iItem].length, NULL, NULL, NULL, &itemMetrics);
+                if (result != MD_SUCCESS) {
+                    MD_FREE(pItemsHeap);
+                    pItemsHeap = NULL;
+                    md_free_itemize_state(&itemizeState);
+                    return result;
+                }
+
+                lineWidth += itemMetrics.sizeX;
+            }
+        }
+
+        /* Don't forget to check the last line. */
+        if (sizeX < lineWidth) {
+            sizeX = lineWidth;
+        }
+
+        pTextMetrics->sizeX = sizeX;
+        pTextMetrics->sizeY = sizeY;
+
+        md_free_itemize_state(&itemizeState);
+        return MD_SUCCESS;
+    }
+}
+
+void md_gc_draw_text_layout_utf8(md_gc* pGC, md_font* pFont, const md_utf8* pTextUTF8, size_t textLength, const md_text_layout* pLayout)
+{
+    if (pGC == NULL || pFont == NULL || pTextUTF8 == NULL || textLength == 0 || pLayout == NULL) {
+        return;
+    }
+
+    if (textLength == (size_t)-1) {
+        textLength = strlen(pTextUTF8);
+    }
+
+#if 0
+    if (pGC->pAPI->procs.gcDrawTextLayoutUTF8) {
+        pGC->pAPI->procs.gcDrawTextLayoutUTF8(pGC, pFont, pTextUTF8, textLength, pLayout);
+    } else
+#endif
+    {
+        /* Generic implementation. Note that this currently assumes left-to-right, top-to-bottom text layout. Support for other layouts will be added later. */
+        md_result result;
+        md_itemize_state itemizeState;
+        md_item   pItemsStack[1024];
+        md_item*  pItemsHeap = NULL;
+        md_item*  pItems = NULL;
+        md_uint32 itemCount;
+        md_uint32 iItem;
+
+        /* Itemize first. */
+        itemCount = MD_COUNTOF(pItemsStack);
+        result = md_itemize_utf8(pFont, pTextUTF8, textLength, pItemsStack, &itemCount, &itemizeState);
+        if (result == MD_SUCCESS) {
+            pItems = &pItemsStack[0];
+        } else if (result == MD_NO_SPACE) {
+            /* Not enough room on the stack. Try again against the heap. */
+            pItemsHeap = (md_item*)MD_MALLOC(sizeof(*pItemsHeap) * itemCount);
+            if (pItemsHeap == NULL) {
+                return; /* Out of memory. */
+            }
+
+            result = md_itemize_utf8(pFont, pTextUTF8, textLength, pItemsHeap, &itemCount, &itemizeState);
+            if (result != MD_SUCCESS) {
+                return; /* Failed to itemize. */
+            }
+
+            pItems = pItemsHeap;
+        } else {
+            return; /* Failed to itemize. */
+        }
+
+        /* Now we draw. */
+        md_gc_save(pGC);
+        {
+            md_int32 originX;
+            md_int32 originY;
+            md_int32 penX;
+            md_int32 penY;
+            md_int32 lineSizeX;
+            md_int32 lineSizeY = (pFont->metrics.ascent - pFont->metrics.descent);
+
+            originX = pLayout->boundsX + pLayout->textOffsetX;
+
+            /* If we are not aligned to the top we need to measure so that we can position the text properly. */
+            if (pLayout->alignmentY == md_alignment_top) {
+                originY = pLayout->boundsY + pLayout->textOffsetY;
+            } else {
+                md_text_metrics metrics;
+                result = md_font_get_text_layout_metrics_utf8(pFont, pTextUTF8, textLength, pLayout, &metrics);
+                if (result != MD_SUCCESS) {
+                    md_free_itemize_state(&itemizeState);
+                    return;
+                }
+
+                if (pLayout->alignmentY == md_alignment_bottom) {
+                    originY = pLayout->boundsY +  (pLayout->boundsSizeY - metrics.sizeY)      + pLayout->textOffsetY;
+                } else if (pLayout->alignmentY == md_alignment_center) {
+                    originY = pLayout->boundsY + ((pLayout->boundsSizeY - metrics.sizeY) / 2) + pLayout->textOffsetY;
+                } else {
+                    /* Technically invalid arguments, but do the same as top alignment so that something is shown. */
+                    originY = pLayout->boundsY + pLayout->textOffsetY;
+                }
+            }
+
+            penX = originX;
+            penY = originY;
+
+            /* We need to clip against the bounds in case of overflow. */
+            md_gc_rectangle(pGC, pLayout->boundsX, pLayout->boundsY, pLayout->boundsX + pLayout->boundsSizeX, pLayout->boundsY + pLayout->boundsSizeY);
+            md_gc_clip(pGC);
+
+            /* We need to go line-by-line, making sure we measure it so we can know how to fill the background sections that aren't covered by text. */
+            iItem = 0;
+            while (iItem < itemCount) {  /* For each line... */
+                md_uint32 iLineBeg = iItem;
+                md_uint32 iLineEnd = iItem;
+                md_int32 lineX;
+                md_int32 lineY;
+
+                lineSizeX = 0;
+
+
+                /* Find the range of items making up this line. */
+                for (; iLineEnd < itemCount; ++iLineEnd) {
+                    md_item* pItem = &pItems[iLineEnd];
+                    if (md_is_newline_utf8(pTextUTF8 + pItem->offset, pItem->length)) {
+                        break;
+                    } else {
+                        md_text_metrics itemMetrics;
+                        result = md_shape_utf8(pFont, pItem, pTextUTF8 + pItem->offset, pItem->length, NULL, NULL, NULL, &itemMetrics);
+                        if (result != MD_SUCCESS) {
+                            break;
+                        }
+
+                        lineSizeX += itemMetrics.sizeX;
+
+                        /* TODO: If word wrapping is enabled, and this item extends past the bounds, we need to split the line. */
+                    }
+                }
+
+                lineX = penX;
+                lineY = penY;
+
+                if (iLineBeg != iLineEnd) {
+                    if (pLayout->alignmentX == md_alignment_right) {
+                        penX = pLayout->boundsX +  (pLayout->boundsSizeX - lineSizeX);
+                    } else if (pLayout->alignmentX == md_alignment_center) {
+                        penX = pLayout->boundsX + ((pLayout->boundsSizeX - lineSizeX) / 2);
+                    } else {
+                        penX = pLayout->boundsX;
+                    }
+                    penX += pLayout->textOffsetX;
+
+                    lineX = penX;
+                    
+                    for (iItem = iLineBeg; iItem < iLineEnd; ++iItem) {
+                        md_item* pItem = &pItems[iItem];
+                        md_text_metrics itemMetrics;
+                        md_glyph  pGlyphsStack[4096];
+                        md_glyph* pGlyphsHeap = NULL;
+                        md_glyph* pGlyphs = NULL;
+                        size_t glyphCount;
+
+                        glyphCount = MD_COUNTOF(pGlyphsStack);
+                        result = md_shape_utf8(pFont, pItem, pTextUTF8 + pItem->offset, pItem->length, pGlyphsStack, &glyphCount, NULL, &itemMetrics);
+                        if (result == MD_SUCCESS) {
+                            pGlyphs = &pGlyphsStack[0];
+                        } else if (result == MD_NO_SPACE) {
+                            /* Try the heap. */
+                            pGlyphsHeap = (md_glyph*)MD_MALLOC(sizeof(*pGlyphsHeap) * glyphCount);
+                            if (pGlyphsHeap == NULL) {
+                                break;  /* Out of memory. */
+                            }
+
+                            result = md_shape_utf8(pFont, pItem, pTextUTF8 + pItem->offset, pItem->length, pGlyphsHeap, &glyphCount, NULL, &itemMetrics);
+                            if (result != MD_SUCCESS) {
+                                break;  /* Failed to shape this item. */
+                            }
+
+                            pGlyphs = pGlyphsHeap;
+                        } else {
+                            break;  /* Failed to shape this item. */
+                        }
+
+                        /* This hack is specifically for GDI. We need to clip against the item metrics or else we'll overwrite one pixel too far to the left. Very annoying. */
+                        if (pGC->pAPI->backend == md_backend_gdi) {
+                            md_gc_save(pGC);
+                            {
+                                md_gc_rectangle(pGC, penX, penY, penX + itemMetrics.sizeX, penY + itemMetrics.sizeY);
+                                md_gc_clip(pGC);
+                                md_gc_draw_glyphs(pGC, pItem, pGlyphs, glyphCount, penX, penY);
+                            }
+                            md_gc_restore(pGC);
+                        } else {
+                            md_gc_draw_glyphs(pGC, pItem, pGlyphs, glyphCount, penX, penY);
+                        }
+
+                        MD_FREE(pGlyphsHeap);
+                        pGlyphsHeap = NULL;
+
+                        penX += itemMetrics.sizeX;
+                    }
+                }
+
+                /* We need to draw the background of the layout bounds where the text doesn't cover. */
+                if (pLayout->fillBackground) {
+                    md_color bgColor = md_gc_get_text_bg_color(pGC);
+                    if (bgColor.a != 0) {
+                        md_gc_set_antialias_mode(pGC, md_antialias_mode_none);
+                        md_gc_set_fill_brush_solid(pGC, bgColor);
+                        md_gc_rectangle(pGC, pLayout->boundsX,  penY, lineX,                                   penY + lineSizeY);  /* Left of the line. */
+                        md_gc_rectangle(pGC, lineX + lineSizeX, penY, pLayout->boundsX + pLayout->boundsSizeX, penY + lineSizeY);  /* Right of the line. */
+                        md_gc_fill(pGC);
+                    }
+                }
+
+                penY += lineSizeY;
+
+                /* Go past the new-line item. */
+                if (md_is_newline_utf8(pTextUTF8 + pItems[iItem].offset, pItems[iItem].length)) {
+                    iItem += 1;
+                }
+            }
+
+            /* Now we need to draw rectangles to fill the section above and below the main block of text. */
+            if (pLayout->fillBackground) {
+                    md_color bgColor = md_gc_get_text_bg_color(pGC);
+                    if (bgColor.a != 0) {
+                        md_gc_set_antialias_mode(pGC, md_antialias_mode_none);
+                        md_gc_set_fill_brush_solid(pGC, bgColor);
+                        md_gc_rectangle(pGC, pLayout->boundsX, pLayout->boundsY, pLayout->boundsX + pLayout->boundsSizeX, originY);                                 /* Above the text. */
+                        md_gc_rectangle(pGC, pLayout->boundsX, penY,             pLayout->boundsX + pLayout->boundsSizeX, pLayout->boundsY + pLayout->boundsSizeY); /* Below the text. */
+                        md_gc_fill(pGC);
+                    }
+            }
+        }
+        md_gc_restore(pGC);
+
+        md_free_itemize_state(&itemizeState);
+    }
+}
+
 void md_gc_clear(md_gc* pGC, md_color color)
 {
     if (pGC == NULL || color.a == 0) {
@@ -9652,7 +10083,7 @@ void md_gc_clear(md_gc* pGC, md_color color)
 
     MD_ASSERT(pGC->pAPI != NULL);
 
-    /* Clearing can be emulated if the backend does not provide one explicitly. */
+    /* Clearing can be emulated if the backend does not provide an explicit implementation. */
     if (pGC->pAPI->procs.gcClear) {
         pGC->pAPI->procs.gcClear(pGC, color);
     } else {
