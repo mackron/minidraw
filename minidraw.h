@@ -9825,11 +9825,13 @@ md_result md_font_get_text_layout_metrics_utf8(md_font* pFont, const md_utf8* pT
         for (iItem = 0; iItem < itemCount; ++iItem) {
             /* No need to do shaping for new-lines. */
             if (md_is_newline_utf8(pTextUTF8 + pItems[iItem].offset, pItems[iItem].length)) {
-                sizeY += lineHeight;
-                if (sizeX < lineWidth) {
-                    sizeX = lineWidth;
+                if (pLayout->singleLine == MD_FALSE) {
+                    sizeY += lineHeight;
+                    if (sizeX < lineWidth) {
+                        sizeX = lineWidth;
+                    }
+                    lineWidth = 0;
                 }
-                lineWidth = 0;
             } else {
                 md_text_metrics itemMetrics;
                 result = md_shape_utf8(pFont, &pItems[iItem], pTextUTF8, pItems[iItem].length, NULL, NULL, NULL, &itemMetrics);
@@ -9959,7 +9961,9 @@ void md_gc_draw_text_layout_utf8(md_gc* pGC, md_font* pFont, const md_utf8* pTex
                 for (; iLineEnd < itemCount; ++iLineEnd) {
                     md_item* pItem = &pItems[iLineEnd];
                     if (md_is_newline_utf8(pTextUTF8 + pItem->offset, pItem->length)) {
-                        break;
+                        if (pLayout->singleLine == MD_FALSE) {
+                            break;
+                        }
                     } else {
                         md_text_metrics itemMetrics;
                         result = md_shape_utf8(pFont, pItem, pTextUTF8 + pItem->offset, pItem->length, NULL, NULL, NULL, &itemMetrics);
