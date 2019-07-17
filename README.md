@@ -16,6 +16,15 @@ Features
 - Unicode based text itemization, shaping and placement.
 
 
+Supported Platforms
+===================
+- GDI + Uniscribe (Windows XP+)
+- Cairo + Pango
+
+Linux platforms are currently restricted the Cairo/Pango backend, but this will be improved later as
+the API stabilizes and other backend's come online.
+
+
 Future Plans
 ============
 - Software backend
@@ -24,15 +33,6 @@ Future Plans
 - PDF output
 - SVG output
 - Support for complex scripts such as Arabic
-
-
-Supported Platforms
-===================
-- GDI + Uniscribe (Windows XP+)
-- Cairo + Pango
-
-Linux platforms are currently restricted to Cairo/Pango backends, but this will be improved later as
-the API stabilizes and other backend's come online.
 
 
 Building
