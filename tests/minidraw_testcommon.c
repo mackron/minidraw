@@ -174,6 +174,8 @@ struct md_testapp
 #endif
 };
 
+void md_testapp_scheduled_redraw(md_testapp* pApp, md_int32 left, md_int32 top, md_int32 right, md_int32 bottom);
+
 #if defined(MD_WIN32)
 LRESULT md_testapp_MainWindowProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
@@ -189,11 +191,14 @@ LRESULT md_testapp_MainWindowProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPa
 
         case WM_SIZE:
         {
+            md_uint32 sizeX = LOWORD(lParam);
+            md_uint32 sizeY = HIWORD(lParam);
+
             if (pApp->onSize) {
-                md_uint32 sizeX = LOWORD(lParam);
-                md_uint32 sizeY = HIWORD(lParam);
                 pApp->onSize(pApp, sizeX, sizeY);
             }
+
+            md_testapp_scheduled_redraw(pApp, 0, 0, sizeX, sizeY);
         } break;
 
         case WM_PAINT:

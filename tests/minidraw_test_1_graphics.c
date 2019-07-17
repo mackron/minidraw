@@ -223,11 +223,6 @@ void on_uninit(md_testapp* pApp)
     md_font_uninit(&g_fontSmall);
 }
 
-void on_size(md_testapp* pApp, md_uint32 sizeX, md_uint32 sizeY)
-{
-    md_testapp_scheduled_redraw(pApp, 0, 0, sizeX, sizeY);
-}
-
 void on_paint(md_testapp* pApp, md_gc* pGC)
 {
     draw_logo(pGC);
@@ -268,17 +263,20 @@ void on_paint(md_testapp* pApp, md_gc* pGC)
             md_gc_set_text_fg_color(pGC, md_rgb(0,   0,  0));
             md_gc_set_text_bg_color(pGC, md_rgb(224, 64, 32));
 
+            MD_ZERO_OBJECT(&layout);
             layout.boundsX = 32;
             layout.boundsY = 32;
             layout.boundsSizeX = 256;
             layout.boundsSizeY = 64;
             layout.textOffsetX = 0;
             layout.textOffsetY = 0;
-            layout.alignmentX = md_alignment_left;
+            layout.alignmentX = md_alignment_right;
             layout.alignmentY = md_alignment_center;
+            layout.tabWidthInPixels = 0;
+            layout.tabWidthInSpaces = 4;
             layout.fillBackground = MD_TRUE;
             layout.singleLine = MD_FALSE;
-            md_gc_draw_text_layout_utf8(pGC, &g_fontSmall, "Hello, World!\n$1,000,000.00", (size_t)-1, &layout);
+            md_gc_draw_text_layout_utf8(pGC, &g_fontSmall, "Hello,\t\tWorld!\n$1,\t00\t0,000.00", (size_t)-1, &layout);
 
             md_gc_set_antialias_mode(pGC, md_antialias_mode_none);
             md_gc_set_line_brush_solid(pGC, md_rgb(0, 0, 0));
@@ -326,7 +324,6 @@ int main(int argc, char** argv)
     appConfig.windowHeight = WINDOW_SIZE_Y;
     appConfig.onInit       = on_init;
     appConfig.onUninit     = on_uninit;
-    appConfig.onSize       = on_size;
     appConfig.onPaint      = on_paint;
     appConfig.pUserData    = NULL;
 

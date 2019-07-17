@@ -447,6 +447,8 @@ typedef struct
     md_int32 textOffsetY;
     md_alignment alignmentX;
     md_alignment alignmentY;
+    md_int32 tabWidthInPixels;  /* When 0, falls back to tabSizeInSpaces. */
+    md_int32 tabWidthInSpaces;  /* Used when tabSizeInPixels is 0. */
     md_bool32 fillBackground : 1;
     md_bool32 singleLine     : 1;
 } md_text_layout;
@@ -1619,18 +1621,23 @@ void md_gc_draw_glyphs(md_gc* pGC, const md_item* pItem, const md_glyph* pGlyphs
 
 /*
 Helper API for drawing a string of text.
+
+Remarks
+-------
+This function does not handle tabs. If your text includes tabs you may want to consider using mt_gc_draw_text_layout_utf8(), or handling them
+yourself using low level APIs.
 */
 void md_gc_draw_text_utf8(md_gc* pGC, md_font* pFont, const md_utf8* pTextUTF8, size_t textLength, md_int32 x, md_int32 y, md_alignment originAlignmentX, md_alignment originAlignmentY, md_text_metrics* pMetrics);
+
+/*
+Helper API for initializing a default text layout.
+*/
+md_text_layout md_text_layout_init_default();
 
 /*
 Helper API for laying out and drawing text inside a bounds.
 */
 void md_gc_draw_text_layout_utf8(md_gc* pGC, md_font* pFont, const md_utf8* pTextUTF8, size_t textLength, const md_text_layout* pLayout);
-
-/*
-Helper API for drawing a string of text based on a layout specification.
-*/
-/*void md_gc_draw_text_layout_utf8(md_gc* pGC, const md_utf8* pTextUTF8, size_t textLength, md_text_layout* pLayout);*/
 
 /*
 Clears the surface to the given color.
@@ -2168,6 +2175,15 @@ md_bool32 md_is_newline_utf8(const md_utf8* pTextUTF8, size_t textLength)
     }
 
     return MD_FALSE;
+}
+
+md_bool32 md_is_tab_utf8(const md_utf8* pTextUTF8, size_t textLength)
+{
+    if (pTextUTF8 == NULL || textLength == 0) {
+        return MD_FALSE;
+    }
+
+    return pTextUTF8[0] == '\t';
 }
 
 /*
@@ -5295,6 +5311,7 @@ md_result md_gc_init__gdi(md_api* pAPI, const md_gc_config* pConfig, md_gc* pGC)
 
     SetGraphicsMode((HDC)pGC->gdi.hDC, GM_ADVANCED);    /* <-- Needed for world transforms (rotate and scale). */
     SetStretchBltMode((HDC)pGC->gdi.hDC, COLORONCOLOR); /* <-- COLORONCOLOR is better than the default when the image is scaled down. Not setting this results in black pixelation. */
+    SetBkMode((HDC)pGC->gdi.hDC, TRANSPARENT);          /* <-- Transparent text background by default. */
 
     /* We need at least one item in the state stack. Unfortunate malloc() here - may want to think about optimizing this. Perhaps some optimized per-API scheme? */
     pGC->gdi.stateCount = 1;
@@ -6495,6 +6512,7 @@ void md_gc_clear__gdi(md_gc* pGC, md_color color)
 
         ModifyWorldTransform((HDC)pGC->gdi.hDC, NULL, MWT_IDENTITY);
         SetDCBrushColor((HDC)pGC->gdi.hDC, RGB(color.r, color.g, color.b));
+        SelectObject((HDC)pGC->gdi.hDC, GetStockObject(DC_BRUSH));
         SelectObject((HDC)pGC->gdi.hDC, GetStockObject(NULL_PEN));
         Rectangle((HDC)pGC->gdi.hDC, 0, 0, (int)sizeX, (int)sizeY);
     }
@@ -8730,7 +8748,7 @@ md_result md_font_get_text_metrics_utf8(md_font* pFont, const md_utf8* pTextUTF8
                 lineWidth = 0;
             } else {
                 md_text_metrics itemMetrics;
-                result = md_shape_utf8(pFont, &pItems[iItem], pTextUTF8, pItems[iItem].length, NULL, NULL, NULL, &itemMetrics);
+                result = md_shape_utf8(pFont, &pItems[iItem], pTextUTF8 + pItems[iItem].offset, pItems[iItem].length, NULL, NULL, NULL, &itemMetrics);
                 if (result != MD_SUCCESS) {
                     MD_FREE(pItemsHeap);
                     pItemsHeap = NULL;
@@ -9640,6 +9658,7 @@ void md_gc_draw_text_utf8(md_gc* pGC, md_font* pFont, const md_utf8* pTextUTF8, 
                         pGlyphsHeap = NULL;
 
                         penX += itemMetrics.sizeX;
+                        lineSizeX += itemMetrics.sizeX;
                     }
                 }
 
@@ -9759,8 +9778,8 @@ void md_gc_draw_text_utf8(md_gc* pGC, md_font* pFont, const md_utf8* pTextUTF8, 
 
 md_result md_font_get_text_layout_metrics_utf8(md_font* pFont, const md_utf8* pTextUTF8, size_t textLength, const md_text_layout* pLayout, md_text_metrics* pTextMetrics)
 {
-    md_int32 lineHeight;
-    md_int32 lineWidth;
+    md_int32 lineSizeX;
+    md_int32 lineSizeY;
 
     if (pTextMetrics == NULL) {
         return MD_INVALID_ARGS;
@@ -9772,10 +9791,10 @@ md_result md_font_get_text_layout_metrics_utf8(md_font* pFont, const md_utf8* pT
         return MD_INVALID_ARGS;
     }
 
-    lineHeight = (pFont->metrics.ascent - pFont->metrics.descent);
+    lineSizeY = (pFont->metrics.ascent - pFont->metrics.descent);
 
     if (textLength == 0) {
-        pTextMetrics->sizeY = lineHeight;
+        pTextMetrics->sizeY = lineSizeY;
         return MD_SUCCESS;  /* Nothing to do. */
     }
 
@@ -9789,17 +9808,18 @@ md_result md_font_get_text_layout_metrics_utf8(md_font* pFont, const md_utf8* pT
         /*
         TODO:
             - Add support for word wrap.
-            - Handle different line heights for different items.
+            - Handle different line heights for different items (may happen with font fallback).
         */
         md_result result;
         md_int32  sizeX = 0;
-        md_int32  sizeY = lineHeight;
+        md_int32  sizeY = lineSizeY;
         md_itemize_state itemizeState;
         md_item   pItemsStack[1024];
         md_item*  pItemsHeap = NULL;
         md_item*  pItems = NULL;
         md_uint32 itemCount;
         md_uint32 iItem;
+        md_int32  tabSizeXInPixels = pLayout->tabWidthInPixels;
 
         /* The first step is to itemize. */
         itemCount = MD_COUNTOF(pItemsStack);
@@ -9824,16 +9844,34 @@ md_result md_font_get_text_layout_metrics_utf8(md_font* pFont, const md_utf8* pT
         }
 
         /* We have the items so now we can measure them. */
-        lineWidth = 0;
+        lineSizeX = 0;
         for (iItem = 0; iItem < itemCount; ++iItem) {
             /* No need to do shaping for new-lines. */
             if (md_is_newline_utf8(pTextUTF8 + pItems[iItem].offset, pItems[iItem].length)) {
                 if (pLayout->singleLine == MD_FALSE) {
-                    sizeY += lineHeight;
-                    if (sizeX < lineWidth) {
-                        sizeX = lineWidth;
+                    sizeY += lineSizeY;
+                    if (sizeX < lineSizeX) {
+                        sizeX = lineSizeX;
                     }
-                    lineWidth = 0;
+                    lineSizeX = 0;
+                }
+            } else if (md_is_tab_utf8(pTextUTF8 + pItems[iItem].offset, pItems[iItem].length)) {
+                /*
+                It's a tab item. To measure this we first find the width of the first tab character. And then we just take the remaining tab characters and multiply it by
+                the tab width.
+                */
+                if (tabSizeXInPixels == 0) {
+                    char spaceCh[1] = {' '};
+                    md_text_metrics spaceMetrics;
+                    if (md_font_get_text_metrics_utf8(pFont, spaceCh, 1, &spaceMetrics) != MD_SUCCESS) {
+                        MD_ZERO_OBJECT(&spaceMetrics);
+                        spaceMetrics.sizeX = 8;
+                        spaceMetrics.sizeY = (pFont->metrics.ascent - pFont->metrics.descent);
+                    }
+
+                    tabSizeXInPixels = spaceMetrics.sizeX * pLayout->tabWidthInSpaces;
+
+                    lineSizeX = ((lineSizeX / tabSizeXInPixels) * tabSizeXInPixels) + (pItems[iItem].length * tabSizeXInPixels);
                 }
             } else {
                 md_text_metrics itemMetrics;
@@ -9845,13 +9883,13 @@ md_result md_font_get_text_layout_metrics_utf8(md_font* pFont, const md_utf8* pT
                     return result;
                 }
 
-                lineWidth += itemMetrics.sizeX;
+                lineSizeX += itemMetrics.sizeX;
             }
         }
 
         /* Don't forget to check the last line. */
-        if (sizeX < lineWidth) {
-            sizeX = lineWidth;
+        if (sizeX < lineSizeX) {
+            sizeX = lineSizeX;
         }
 
         pTextMetrics->sizeX = sizeX;
@@ -9860,6 +9898,20 @@ md_result md_font_get_text_layout_metrics_utf8(md_font* pFont, const md_utf8* pT
         md_free_itemize_state(&itemizeState);
         return MD_SUCCESS;
     }
+}
+
+md_text_layout md_text_layout_init_default()
+{
+    md_text_layout layout;
+
+    MD_ZERO_OBJECT(&layout);
+    layout.alignmentX       = md_alignment_left;
+    layout.alignmentY       = md_alignment_top;
+    layout.fillBackground   = MD_TRUE;
+    layout.singleLine       = MD_FALSE;
+    layout.tabWidthInSpaces = 4;
+
+    return layout;
 }
 
 void md_gc_draw_text_layout_utf8(md_gc* pGC, md_font* pFont, const md_utf8* pTextUTF8, size_t textLength, const md_text_layout* pLayout)
@@ -9918,6 +9970,7 @@ void md_gc_draw_text_layout_utf8(md_gc* pGC, md_font* pFont, const md_utf8* pTex
             md_int32 penY;
             md_int32 lineSizeX;
             md_int32 lineSizeY = (pFont->metrics.ascent - pFont->metrics.descent);
+            md_int32 tabSizeXInPixels = 0;
 
             originX = pLayout->boundsX + pLayout->textOffsetX;
 
@@ -9965,6 +10018,24 @@ void md_gc_draw_text_layout_utf8(md_gc* pGC, md_font* pFont, const md_utf8* pTex
                         if (pLayout->singleLine == MD_FALSE) {
                             break;
                         }
+                    } else if (md_is_tab_utf8(pTextUTF8 + pItem->offset, pItem->length)) {
+                        /*
+                        It's a tab item. To measure this we first find the width of the first tab character. And then we just take the remaining tab characters and multiply it by
+                        the tab width.
+                        */
+                        if (tabSizeXInPixels == 0) {
+                            char spaceCh[1] = {' '};
+                            md_text_metrics spaceMetrics;
+                            if (md_font_get_text_metrics_utf8(pFont, spaceCh, 1, &spaceMetrics) != MD_SUCCESS) {
+                                MD_ZERO_OBJECT(&spaceMetrics);
+                                spaceMetrics.sizeX = 8;
+                                spaceMetrics.sizeY = (pFont->metrics.ascent - pFont->metrics.descent);
+                            }
+
+                            tabSizeXInPixels = spaceMetrics.sizeX * pLayout->tabWidthInSpaces;
+                        }
+
+                        lineSizeX = ((lineSizeX / tabSizeXInPixels) * tabSizeXInPixels) + (pItem->length * tabSizeXInPixels);
                     } else {
                         md_text_metrics itemMetrics;
                         result = md_shape_utf8(pFont, pItem, pTextUTF8 + pItem->offset, pItem->length, NULL, NULL, NULL, &itemMetrics);
@@ -10000,44 +10071,57 @@ void md_gc_draw_text_layout_utf8(md_gc* pGC, md_font* pFont, const md_utf8* pTex
                         md_glyph* pGlyphs = NULL;
                         size_t glyphCount;
 
-                        glyphCount = MD_COUNTOF(pGlyphsStack);
-                        result = md_shape_utf8(pFont, pItem, pTextUTF8 + pItem->offset, pItem->length, pGlyphsStack, &glyphCount, NULL, &itemMetrics);
-                        if (result == MD_SUCCESS) {
-                            pGlyphs = &pGlyphsStack[0];
-                        } else if (result == MD_NO_SPACE) {
-                            /* Try the heap. */
-                            pGlyphsHeap = (md_glyph*)MD_MALLOC(sizeof(*pGlyphsHeap) * glyphCount);
-                            if (pGlyphsHeap == NULL) {
-                                break;  /* Out of memory. */
-                            }
+                        if (md_is_tab_utf8(pTextUTF8 + pItem->offset, pItem->length)) {
+                            /* It's a tab. We just draw a quad to represent the tab. */
+                            md_int32 lineSizeXSoFar = penX - lineX;
+                            md_int32 tabEndX = ((lineSizeXSoFar / tabSizeXInPixels) * tabSizeXInPixels) + (pItem->length * tabSizeXInPixels) + lineX;
 
-                            result = md_shape_utf8(pFont, pItem, pTextUTF8 + pItem->offset, pItem->length, pGlyphsHeap, &glyphCount, NULL, &itemMetrics);
-                            if (result != MD_SUCCESS) {
+                            md_gc_set_antialias_mode(pGC, md_antialias_mode_none);
+                            md_gc_set_fill_brush_solid(pGC, md_gc_get_text_bg_color(pGC));
+                            md_gc_rectangle(pGC, penX, penY, tabEndX, penY + lineSizeY);
+                            md_gc_fill(pGC);
+
+                            penX = tabEndX;
+                        } else {
+                            glyphCount = MD_COUNTOF(pGlyphsStack);
+                            result = md_shape_utf8(pFont, pItem, pTextUTF8 + pItem->offset, pItem->length, pGlyphsStack, &glyphCount, NULL, &itemMetrics);
+                            if (result == MD_SUCCESS) {
+                                pGlyphs = &pGlyphsStack[0];
+                            } else if (result == MD_NO_SPACE) {
+                                /* Try the heap. */
+                                pGlyphsHeap = (md_glyph*)MD_MALLOC(sizeof(*pGlyphsHeap) * glyphCount);
+                                if (pGlyphsHeap == NULL) {
+                                    break;  /* Out of memory. */
+                                }
+
+                                result = md_shape_utf8(pFont, pItem, pTextUTF8 + pItem->offset, pItem->length, pGlyphsHeap, &glyphCount, NULL, &itemMetrics);
+                                if (result != MD_SUCCESS) {
+                                    break;  /* Failed to shape this item. */
+                                }
+
+                                pGlyphs = pGlyphsHeap;
+                            } else {
                                 break;  /* Failed to shape this item. */
                             }
 
-                            pGlyphs = pGlyphsHeap;
-                        } else {
-                            break;  /* Failed to shape this item. */
-                        }
-
-                        /* This hack is specifically for GDI. We need to clip against the item metrics or else we'll overwrite one pixel too far to the left. Very annoying. */
-                        if (pGC->pAPI->backend == md_backend_gdi) {
-                            md_gc_save(pGC);
-                            {
-                                md_gc_rectangle(pGC, penX, penY, penX + itemMetrics.sizeX, penY + itemMetrics.sizeY);
-                                md_gc_clip(pGC);
+                            /* This hack is specifically for GDI. We need to clip against the item metrics or else we'll overwrite one pixel too far to the left. Very annoying. */
+                            if (pGC->pAPI->backend == md_backend_gdi) {
+                                md_gc_save(pGC);
+                                {
+                                    md_gc_rectangle(pGC, penX, penY, penX + itemMetrics.sizeX, penY + itemMetrics.sizeY);
+                                    md_gc_clip(pGC);
+                                    md_gc_draw_glyphs(pGC, pItem, pGlyphs, glyphCount, penX, penY);
+                                }
+                                md_gc_restore(pGC);
+                            } else {
                                 md_gc_draw_glyphs(pGC, pItem, pGlyphs, glyphCount, penX, penY);
                             }
-                            md_gc_restore(pGC);
-                        } else {
-                            md_gc_draw_glyphs(pGC, pItem, pGlyphs, glyphCount, penX, penY);
+
+                            MD_FREE(pGlyphsHeap);
+                            pGlyphsHeap = NULL;
+
+                            penX += itemMetrics.sizeX;
                         }
-
-                        MD_FREE(pGlyphsHeap);
-                        pGlyphsHeap = NULL;
-
-                        penX += itemMetrics.sizeX;
                     }
                 }
 
