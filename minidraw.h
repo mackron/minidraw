@@ -288,7 +288,7 @@ typedef enum
     md_antialias_mode_default  = 0, /* Let the backend decide, but prefer anti-aliasing if available. Will be the same as md_antialias_none on GDI since GDI does not support anti-aliasing. */
     md_antialias_mode_none     = 1, /* Anti-aliasing will be disabled. Useful for straight-edge primitives like un-rotated rectangles or where performance is a concern. */
     md_antialias_mode_gray     = 2, /* Standard grayscale anti-aliasing. */
-    md_antialias_mode_subpixel = 3  /* ClearType style anti-aliasing. */
+    md_antialias_mode_subpixel = 3  /* ClearType RGB style anti-aliasing. Falls back to md_antialias_mode_gray if unavailable. */
 } md_antialias_mode;
 
 typedef enum
@@ -404,7 +404,7 @@ typedef struct
         {
             MD_SCRIPT_VISATTR sv;   /* Passed around to ScriptShape() and ScriptPlace(). */
             long offsetX;           /* For filling in the GOFFSET parameter of ScriptTextOut(). */
-            long offsetY;           /* ^^^ */
+            long offsetY;           /* For filling in the GOFFSET parameter of ScriptTextOut(). */
         } gdi;
     #endif
     #if defined(MD_SUPPORT_CAIRO)
@@ -472,7 +472,7 @@ typedef struct
         struct
         {
             MD_SCRIPT_ANALYSIS sa;          /* Passed around to Script*() APIs. */
-            /* HFONT */ md_handle hFont;    /* The font to use when drawing this item. */
+            /*HFONT*/ md_handle hFont;      /* The font to use when drawing this item. */
             /*SCRIPT_CACHE*/ md_ptr sc;     /* The SCRIPT_CACHE object passed around to ScriptShape(), ScriptPlace() and ScriptTextOut(). */
         } gdi;
     #endif
@@ -553,10 +553,10 @@ typedef void      (* gc_move_to_proc)                     (md_gc* pGC, md_int32 
 typedef void      (* gc_line_to_proc)                     (md_gc* pGC, md_int32 x, md_int32 y);
 typedef void      (* gc_rectangle_proc)                   (md_gc* pGC, md_int32 left, md_int32 top, md_int32 right, md_int32 bottom);
 typedef void      (* gc_arc_proc)                         (md_gc* pGC, md_int32 x, md_int32 y, md_int32 radius, float angle1InRadians, float angle2InRadians);
-typedef void      (* gc_curveTo_proc)                     (md_gc* pGC, md_int32 x1, md_int32 y1, md_int32 x2, md_int32 y2, md_int32 x3, md_int32 y3);
-typedef void      (* gc_closePath_proc)                   (md_gc* pGC);
+typedef void      (* gc_curve_to_proc)                    (md_gc* pGC, md_int32 x1, md_int32 y1, md_int32 x2, md_int32 y2, md_int32 x3, md_int32 y3);
+typedef void      (* gc_close_path_proc)                  (md_gc* pGC);
 typedef void      (* gc_clip_proc)                        (md_gc* pGC);
-typedef void      (* gc_resetClip_proc)                   (md_gc* pGC);
+typedef void      (* gc_reset_clip_proc)                  (md_gc* pGC);
 typedef md_bool32 (* gc_is_point_inside_clip_proc)        (md_gc* pGC, md_int32 x, md_int32 y);
 typedef void      (* gc_fill_proc)                        (md_gc* pGC);
 typedef void      (* gc_stroke_proc)                      (md_gc* pGC);
@@ -618,10 +618,10 @@ typedef struct
     gc_line_to_proc                      gcLineTo;
     gc_rectangle_proc                    gcRectangle;
     gc_arc_proc                          gcArc;
-    gc_curveTo_proc                      gcCurveTo;
-    gc_closePath_proc                    gcClosePath;
+    gc_curve_to_proc                     gcCurveTo;
+    gc_close_path_proc                   gcClosePath;
     gc_clip_proc                         gcClip;
-    gc_resetClip_proc                    gcResetClip;
+    gc_reset_clip_proc                   gcResetClip;
     gc_is_point_inside_clip_proc         gcIsPointInsideClip;
     gc_fill_proc                         gcFill;
     gc_stroke_proc                       gcStroke;
