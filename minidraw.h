@@ -272,8 +272,9 @@ typedef enum
 typedef enum
 {
     md_brush_type_solid  = 0,       /* RGB or RGBA */
-    /*md_brush_type_linear = 1,*/   /* Source is a linear gradient. */
-    md_brush_type_gc     = 2        /* Source is a graphics context. */
+    md_brush_type_linear = 1,       /* Source is a linear gradient. */
+    md_brush_type_radial = 2,       /* Source is a radial gradient. */
+    md_brush_type_gc     = 3        /* Source is a graphics context. */
 } md_brush_type;
 
 typedef enum
@@ -289,6 +290,12 @@ typedef enum
     md_antialias_mode_gray     = 2, /* Standard grayscale anti-aliasing. */
     md_antialias_mode_subpixel = 3  /* ClearType style anti-aliasing. */
 } md_antialias_mode;
+
+typedef enum
+{
+    md_fill_mode_winding = 0,       /* Default. */
+    md_fill_mode_evenodd
+} md_fill_mode;
 
 typedef enum
 {
@@ -540,6 +547,7 @@ typedef md_color  (* gc_get_text_fg_color_proc)           (md_gc* pGC);
 typedef md_color  (* gc_get_text_bg_color_proc)           (md_gc* pGC);
 typedef void      (* gc_set_blend_op_proc)                (md_gc* pGC, md_blend_op op);
 typedef void      (* gc_set_antialias_mode_proc)          (md_gc* pGC, md_antialias_mode mode);
+typedef void      (* gc_set_fill_mode_proc)               (md_gc* pGC, md_fill_mode mode);
 typedef void      (* gc_set_stretch_filter_proc)          (md_gc* pGC, md_stretch_filter filter);
 typedef void      (* gc_move_to_proc)                     (md_gc* pGC, md_int32 x, md_int32 y);
 typedef void      (* gc_line_to_proc)                     (md_gc* pGC, md_int32 x, md_int32 y);
@@ -604,6 +612,7 @@ typedef struct
     gc_get_text_bg_color_proc            gcGetTextBGColor;
     gc_set_blend_op_proc                 gcSetBlendOp;
     gc_set_antialias_mode_proc           gcSetAntialiasMode;
+    gc_set_fill_mode_proc                gcSetFillMode;
     gc_set_stretch_filter_proc           gcSetStretchFilter;
     gc_move_to_proc                      gcMoveTo;
     gc_line_to_proc                      gcLineTo;
@@ -770,21 +779,38 @@ struct md_font
 #endif
 };
 
+typedef struct
+{
+    float offset;   /* Between 0 and 1. */
+    md_color color;
+} md_color_stop;
+
 struct md_brush_config
 {
     md_brush_type type;
     void* pUserData;
+    md_color_stop* pColorStops; /* Only used with linear and radial brushes. */
+    md_uint32 colorStopCount;
     struct
     {
         md_color color;
     } solid;
-    /*struct
+    struct
     {
         md_int32 x0;
         md_int32 y0;
         md_int32 x1;
         md_int32 x2;
-    } linear;*/
+    } linear;
+    struct
+    {
+        md_int32 cx0;       /* Center of the start circle. */
+        md_int32 cy0;
+        md_int32 radius0;   /* Radius of the start circle. */
+        md_int32 cx1;       /* Center of the end circle. */
+        md_int32 cy1;
+        md_int32 radius1;   /* Radius of the end circle. */
+    } radial;
     struct
     {
         md_gc* pGC;
@@ -1515,6 +1541,7 @@ md_color md_gc_get_text_fg_color(md_gc* pGC);
 md_color md_gc_get_text_bg_color(md_gc* pGC);
 void md_gc_set_blend_op(md_gc* pGC, md_blend_op op);
 void md_gc_set_antialias_mode(md_gc* pGC, md_antialias_mode mode);
+void md_gc_set_fill_mode(md_gc* pGC, md_fill_mode mode);
 void md_gc_set_stretch_filter(md_gc* pGC, md_stretch_filter filter);
 
 /******************************************************************************
@@ -5309,9 +5336,11 @@ md_result md_gc_init__gdi(md_api* pAPI, const md_gc_config* pConfig, md_gc* pGC)
         }
     }
 
+    /* Defaults. */
     SetGraphicsMode((HDC)pGC->gdi.hDC, GM_ADVANCED);    /* <-- Needed for world transforms (rotate and scale). */
     SetStretchBltMode((HDC)pGC->gdi.hDC, COLORONCOLOR); /* <-- COLORONCOLOR is better than the default when the image is scaled down. Not setting this results in black pixelation. */
     SetBkMode((HDC)pGC->gdi.hDC, TRANSPARENT);          /* <-- Transparent text background by default. */
+    SetPolyFillMode((HDC)pGC->gdi.hDC, WINDING);
 
     /* We need at least one item in the state stack. Unfortunate malloc() here - may want to think about optimizing this. Perhaps some optimized per-API scheme? */
     pGC->gdi.stateCount = 1;
@@ -5900,6 +5929,21 @@ void md_gc_set_antialias_mode__gdi(md_gc* pGC, md_antialias_mode mode)
     /* The anti-aliasing mode is always md_antialias_mode_none with GDI since it doesn't support anti-aliasing. */
     (void)pGC;
     (void)mode;
+}
+
+void md_gc_set_fill_mode__gdi(md_gc* pGC, md_fill_mode mode)
+{
+    int modeGDI;
+
+    MD_ASSERT(pGC != NULL);
+
+    if (mode == md_fill_mode_evenodd) {
+        modeGDI = ALTERNATE;
+    } else {
+        modeGDI = WINDING;
+    }
+
+    SetPolyFillMode((HDC)pGC->gdi.hDC, modeGDI);
 }
 
 void md_gc_set_stretch_filter__gdi(md_gc* pGC, md_stretch_filter filter)
@@ -6634,6 +6678,7 @@ md_result md_init__gdi(const md_api_config* pConfig, md_api* pAPI)
     pAPI->procs.gcGetTextBGColor           = md_gc_get_text_bg_color__gdi;
     pAPI->procs.gcSetBlendOp               = md_gc_set_blend_op__gdi;
     pAPI->procs.gcSetAntialiasMode         = md_gc_set_antialias_mode__gdi;
+    pAPI->procs.gcSetFillMode              = md_gc_set_fill_mode__gdi;
     pAPI->procs.gcSetStretchFilter         = md_gc_set_stretch_filter__gdi;
     pAPI->procs.gcMoveTo                   = md_gc_move_to__gdi;
     pAPI->procs.gcLineTo                   = md_gc_line_to__gdi;
@@ -7460,6 +7505,21 @@ void md_gc_set_antialias_mode__cairo(md_gc* pGC, md_antialias_mode mode)
     cairo_set_antialias((cairo_t*)pGC->cairo.pCairoContext, modeCairo);
 }
 
+void md_gc_set_fill_mode__cairo(md_gc* pGC, md_fill_mode mode)
+{
+    cairo_fill_rule_t modeCairo;
+
+    MD_ASSERT(pGC != NULL);
+
+    if (mode == md_fill_mode_evenodd) {
+        modeCairo = CAIRO_FILL_RULE_EVEN_ODD;
+    } else {
+        modeCairo = CAIRO_FILL_RULE_WINDING;
+    }
+
+    cairo_set_fill_rule((cairo_t*)pGC->cairo.pCairoContext, modeCairo);
+}
+
 void md_gc_set_stretch_filter__cairo(md_gc* pGC, md_stretch_filter filter)
 {
     md_uint32 iState;
@@ -8105,6 +8165,7 @@ md_result md_init__cairo(const md_api_config* pConfig, md_api* pAPI)
     pAPI->procs.gcGetTextBGColor           = md_gc_get_text_bg_color__cairo;
     pAPI->procs.gcSetBlendOp               = md_gc_set_blend_op__cairo;
     pAPI->procs.gcSetAntialiasMode         = md_gc_set_antialias_mode__cairo;
+    pAPI->procs.gcSetFillMode              = md_gc_set_fill_mode__cairo;
     pAPI->procs.gcSetStretchFilter         = md_gc_set_stretch_filter__cairo;
     pAPI->procs.gcMoveTo                   = md_gc_move_to__cairo;
     pAPI->procs.gcLineTo                   = md_gc_line_to__cairo;
@@ -9300,6 +9361,19 @@ void md_gc_set_antialias_mode(md_gc* pGC, md_antialias_mode mode)
 
     if (pGC->pAPI->procs.gcSetAntialiasMode) {
         pGC->pAPI->procs.gcSetAntialiasMode(pGC, mode);
+    }
+}
+
+void md_gc_set_fill_mode(md_gc* pGC, md_fill_mode mode)
+{
+    if (pGC == NULL) {
+        return;
+    }
+
+    MD_ASSERT(pGC->pAPI != NULL);
+
+    if (pGC->pAPI->procs.gcSetFillMode) {
+        pGC->pAPI->procs.gcSetFillMode(pGC, mode);
     }
 }
 
