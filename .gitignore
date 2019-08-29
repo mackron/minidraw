@@ -1,2 +1,5 @@
+docs
+tests/bin
+examples/bin
 external/ucd
 examples/build/vc15
