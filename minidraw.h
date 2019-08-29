@@ -5030,7 +5030,14 @@ md_result md_utf32_to_utf16(md_utf16* pUTF16, size_t utf16Cap, size_t* pUTF16Len
 
  **************************************************************************************************************************************************************/
 #if defined(MD_HAS_GDI)
+#if defined(_MSC_VER)
+    #pragma warning(push)
+    #pragma warning(disable:4214)   /* nonstandard extension used: bit field types other than int */
+#endif
 #include <usp10.h>  /* TODO: Get rid of this dependency. */
+#if defined(_MSC_VER)
+    #pragma warning(pop)
+#endif
 #include <math.h>   /* For cosf() and sinf(). May want to move this out of here and into the general implementation section. */
 
 /* usp10.dll */
