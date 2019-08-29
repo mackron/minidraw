@@ -1557,6 +1557,11 @@ void md_gc_arc(md_gc* pGC, md_int32 x, md_int32 y, md_int32 radius, float angle1
 void md_gc_curve_to(md_gc* pGC, md_int32 x1, md_int32 y1, md_int32 x2, md_int32 y2, md_int32 x3, md_int32 y3);  /* Cubic Bézier. Starting poing is the current position. x3y3 is the end point. x1y1 and x2y2 are the control points. */
 void md_gc_close_path(md_gc* pGC);
 
+/*
+Helper for defining a path for the inner border of a rectangle.
+*/
+void md_gc_rectangle_border_inner(md_gc* pGC, md_int32 left, md_int32 top, md_int32 right, md_int32 bottom, md_int32 borderWidth);
+
 /******************************************************************************
 
 Filling, Stroking and Clipping
@@ -9478,6 +9483,44 @@ void md_gc_close_path(md_gc* pGC)
     if (pGC->pAPI->procs.gcClosePath) {
         pGC->pAPI->procs.gcClosePath(pGC);
     }
+}
+
+void md_gc_rectangle_border_inner(md_gc* pGC, md_int32 left, md_int32 top, md_int32 right, md_int32 bottom, md_int32 borderWidth)
+{
+    /*
+    There's two ways to do this. We can define the path as 4 rectangles (one for each side of the border) or we can define it as an outer
+    path and an inner path. The advantage of the former is that it works will both types of fill modes whereas the later will only work with
+    even-odd filling. For this reason I am using the former option as it should Just Work in more configurations.
+    */
+
+    /* 4-Rectangles Version. Make sure there is no overlap between the pieces. */
+    md_gc_rectangle(pGC, left,                top,                  left  + borderWidth, bottom);               /* Left  */
+    md_gc_rectangle(pGC, right - borderWidth, top,                  right,               bottom);               /* Right */
+    md_gc_rectangle(pGC, left  + borderWidth, top,                  right - borderWidth, top + borderWidth);    /* Top */
+    md_gc_rectangle(pGC, left  + borderWidth, bottom - borderWidth, right - borderWidth, bottom);               /* Bottom */
+
+    /* Outer / Inner Version. */
+#if 0
+    /* Outer */
+    md_gc_move_to(pGC, left, top);
+    md_gc_line_to(pGC, left, bottom);
+    md_gc_line_to(pGC, right, bottom);
+    md_gc_line_to(pGC, right, top);
+    md_gc_line_to(pGC, left, top);
+
+    /* Inner */
+    left   += borderWidth;
+    top    += borderWidth;
+    right  -= borderWidth;
+    bottom -= borderWidth;
+    if (left < right && top < bottom) {
+        md_gc_move_to(pGC, left, top);
+        md_gc_line_to(pGC, left, bottom);
+        md_gc_line_to(pGC, right, bottom);
+        md_gc_line_to(pGC, right, top);
+        md_gc_line_to(pGC, left, top);
+    }
+#endif
 }
 
 void md_gc_clip(md_gc* pGC)
