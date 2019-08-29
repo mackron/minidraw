@@ -513,6 +513,8 @@ int md_testapp_run(md_testapp* pApp)
     exitCode = 0;
 #endif
 
+    (void)pApp;
+
     return exitCode;
 }
 

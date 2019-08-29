@@ -221,6 +221,8 @@ void on_uninit(md_testapp* pApp)
 {
     md_font_uninit(&g_font);
     md_font_uninit(&g_fontSmall);
+
+    (void)pApp;
 }
 
 void on_paint(md_testapp* pApp, md_gc* pGC)
@@ -309,6 +311,8 @@ void on_paint(md_testapp* pApp, md_gc* pGC)
         }
     }
     md_gc_restore(pGC);
+
+    (void)pApp;
 }
 
 int main(int argc, char** argv)
@@ -317,6 +321,9 @@ int main(int argc, char** argv)
     md_result result;
     md_testapp_config appConfig;
     md_testapp app;
+
+    (void)argc;
+    (void)argv;
 
     MD_ZERO_OBJECT(&appConfig);
     appConfig.pWindowTitle = "Graphics Test";

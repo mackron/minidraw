@@ -17,6 +17,7 @@ extern "C" {
 #if defined(_MSC_VER)
     #pragma warning(push)
     #pragma warning(disable:4324)   /* structure was padded due to alignment specifier */
+    #pragma warning(disable:4214)   /* nonstandard extension used: bit field types other than int */
 #endif
 
 /* Platform/backend detection. */
@@ -1678,7 +1679,7 @@ Graphics Helpers
 
 ******************************************************************************/
 /* Helper API for creating an RGBA color. */
-MD_INLINE md_color md_rgba(md_uint8 r, md_uint32 g, md_uint8 b, md_uint8 a)
+MD_INLINE md_color md_rgba(md_uint8 r, md_uint8 g, md_uint8 b, md_uint8 a)
 {
     md_color color;
     color.r = r;
@@ -1689,7 +1690,7 @@ MD_INLINE md_color md_rgba(md_uint8 r, md_uint32 g, md_uint8 b, md_uint8 a)
 }
 
 /* Helper API for creating an opaque RGB color. */
-MD_INLINE md_color md_rgb(md_uint8 r, md_uint32 g, md_uint8 b)
+MD_INLINE md_color md_rgb(md_uint8 r, md_uint8 g, md_uint8 b)
 {
     return md_rgba(r, g, b, 255);
 }
@@ -2473,25 +2474,25 @@ MD_INLINE size_t md_utf32_cp_to_utf8(md_utf32 utf32, md_utf8* pUTF8, size_t utf8
     }
     if (utf32 <= 0x7FF) {
         if (utf8Cap >= 2) {
-            pUTF8[0] = 0xC0 | ((utf32 & 0x07C0) >> 6);
-            pUTF8[1] = 0x80 |  (utf32 & 0x003F);
+            pUTF8[0] = 0xC0 | (md_utf8)((utf32 & 0x07C0) >> 6);
+            pUTF8[1] = 0x80 | (md_utf8) (utf32 & 0x003F);
             return 2;
         }
     }
     if (utf32 <= 0xFFFF) {
         if (utf8Cap >= 3) {
-            pUTF8[0] = 0xE0 | ((utf32 & 0xF000) >> 12);
-            pUTF8[1] = 0x80 | ((utf32 & 0x0FC0) >>  6);
-            pUTF8[2] = 0x80 |  (utf32 & 0x003F);
+            pUTF8[0] = 0xE0 | (md_utf8)((utf32 & 0xF000) >> 12);
+            pUTF8[1] = 0x80 | (md_utf8)((utf32 & 0x0FC0) >>  6);
+            pUTF8[2] = 0x80 | (md_utf8) (utf32 & 0x003F);
             return 3;
         }
     }
     if (utf32 <= 0x10FFFF) {
         if (utf8Cap >= 4) {
-            pUTF8[0] = 0xF0 | ((utf32 & 0x1C0000) >> 18);
-            pUTF8[1] = 0x80 | ((utf32 & 0x03F000) >> 12);
-            pUTF8[2] = 0x80 | ((utf32 & 0x000FC0) >>  6);
-            pUTF8[3] = 0x80 |  (utf32 & 0x00003F);
+            pUTF8[0] = 0xF0 | (md_utf8)((utf32 & 0x1C0000) >> 18);
+            pUTF8[1] = 0x80 | (md_utf8)((utf32 & 0x03F000) >> 12);
+            pUTF8[2] = 0x80 | (md_utf8)((utf32 & 0x000FC0) >>  6);
+            pUTF8[3] = 0x80 | (md_utf8) (utf32 & 0x00003F);
             return 4;
         }
     }
@@ -2512,9 +2513,12 @@ MD_INLINE size_t md_utf32_cp_to_utf16_length(md_utf32 utf32)
         return 2;
     }
 
+    /* Unreachable. */
+#if 0
     /* Invalid. This function assume's the UTF-32 code point is valid so do an assert. */
     MD_ASSERT(MD_FALSE);
     return 0; /* Invalid. */
+#endif
 }
 
 MD_INLINE size_t md_utf32_cp_to_utf16(md_utf32 utf32, md_utf16* pUTF16, size_t utf16Cap)
@@ -2526,7 +2530,7 @@ MD_INLINE size_t md_utf32_cp_to_utf16(md_utf32 utf32, md_utf16* pUTF16, size_t u
 
     if (utf32 <= 0xFFFF) {
         if (utf16Cap >= 1) {
-            pUTF16[0] = utf32;
+            pUTF16[0] = (md_utf16)utf32;
             return 1;
         }
     } else {
@@ -5203,13 +5207,11 @@ md_result md_brush_init__gdi(md_api* pAPI, const md_brush_config* pConfig, md_br
             hBrush = (HBRUSH)pAPI->gdi.hStockSolidFillBrush;
         } break;
 
-#if 0
         case md_brush_type_linear:
+        case md_brush_type_radial:
         {
-            /* TODO: Implement me. */
-            return MD_INVALID_OPERATION;
+            /* Nothing to do. Gradients will be handled at fill/stroke time. */
         } break;
-#endif
 
         case md_brush_type_gc:
         {
@@ -6062,7 +6064,7 @@ void md_gc_fill__gdi(md_gc* pGC)
     md_uint32 iState;
     md_bool32 adjustBrushOrigin = MD_FALSE;
     md_brush* pBrushToUseForOrigin;
-    POINT prevBrushOrigin;
+    POINT prevBrushOrigin = {0, 0};
 
     MD_ASSERT(pGC != NULL);
 
@@ -6074,6 +6076,7 @@ void md_gc_fill__gdi(md_gc* pGC)
     if (pBrushToUseForOrigin != NULL) {
         if (pBrushToUseForOrigin->gdi.originX != 0 || pBrushToUseForOrigin->gdi.originY != 0) {
             adjustBrushOrigin = MD_TRUE;
+            GetBrushOrgEx((HDC)pGC->gdi.hDC, &prevBrushOrigin);
             SetBrushOrgEx((HDC)pGC->gdi.hDC, pBrushToUseForOrigin->gdi.originX, pBrushToUseForOrigin->gdi.originY, &prevBrushOrigin);
         }
     }
@@ -6095,7 +6098,7 @@ void md_gc_stroke__gdi(md_gc* pGC)
     md_uint32 iState;
     md_bool32 adjustBrushOrigin = MD_FALSE;
     md_brush* pBrushToUseForOrigin;
-    POINT prevBrushOrigin;
+    POINT prevBrushOrigin = {0, 0};
 
     MD_ASSERT(pGC != NULL);
 
@@ -6108,6 +6111,7 @@ void md_gc_stroke__gdi(md_gc* pGC)
     if (pBrushToUseForOrigin != NULL) {
         if (pBrushToUseForOrigin->gdi.originX != 0 || pBrushToUseForOrigin->gdi.originY != 0) {
             adjustBrushOrigin = MD_TRUE;
+            GetBrushOrgEx((HDC)pGC->gdi.hDC, &prevBrushOrigin);
             SetBrushOrgEx((HDC)pGC->gdi.hDC, pBrushToUseForOrigin->gdi.originX, pBrushToUseForOrigin->gdi.originY, &prevBrushOrigin);
         }
     }
@@ -6131,7 +6135,7 @@ void md_gc_fill_and_stroke__gdi(md_gc* pGC)
     md_brush* pUserLineBrush;
     md_brush* pUserFillBrush;
     md_brush* pBrushToUseForOrigin;
-    POINT prevBrushOrigin;
+    POINT prevBrushOrigin = {0, 0};
 
     MD_ASSERT(pGC != NULL);
 
@@ -6154,6 +6158,7 @@ void md_gc_fill_and_stroke__gdi(md_gc* pGC)
 
     if (pBrushToUseForOrigin != NULL && (pBrushToUseForOrigin->gdi.originX != 0 || pBrushToUseForOrigin->gdi.originY != 0)) {
         adjustBrushOrigin = MD_TRUE;
+        GetBrushOrgEx((HDC)pGC->gdi.hDC, &prevBrushOrigin);
         SetBrushOrgEx((HDC)pGC->gdi.hDC, pBrushToUseForOrigin->gdi.originX, pBrushToUseForOrigin->gdi.originY, &prevBrushOrigin);
     }
 
@@ -9831,12 +9836,12 @@ void md_gc_draw_text_utf8(md_gc* pGC, md_font* pFont, const md_utf8* pTextUTF8, 
 
                     penY += lineSizeY;
 
+                    if (metrics.sizeX < lineSizeX) {
+                        metrics.sizeX = lineSizeX;
+                    }
+
                     /* Go past the new-line item. */
                     iItem += 1;
-                }
-
-                if (metrics.sizeX < lineSizeX) {
-                    metrics.sizeX = lineSizeX;
                 }
             }
 
