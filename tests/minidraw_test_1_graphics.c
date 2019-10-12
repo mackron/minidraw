@@ -16,10 +16,17 @@
     #pragma GCC diagnostic ignored "-Wcomment"          /* // comments are not allowed in this language [-Wcomment] */
     #pragma GCC diagnostic ignored "-Wc99-extensions"   /* initializer for aggregate is not a compile-time constant */
 #endif
+#if defined(_MSC_VER)
+    #pragma warning(push)
+    #pragma warning(disable:4204)   /* nonstandard extension used: non-constant aggregate initializer */
+#endif
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "../external/stb/stb_image_write.h"
 #define STB_IMAGE_IMPLEMENTATION
 #include "../external/stb/stb_image.h"
+#if defined(_MSC_VER)
+    #pragma warning(pop)
+#endif
 #if defined(__clang__)
     #pragma GCC diagnostic pop
 #endif
@@ -131,7 +138,7 @@ void draw_logo(md_gc* pGC)
     md_gc_restore(pGC);
 }
 
-md_result on_init(md_testapp* pApp)
+md_result on_init(md_app* pApp)
 {
     md_result result;
     md_font_config fontConfig;
@@ -217,7 +224,7 @@ md_result on_init(md_testapp* pApp)
     return MD_SUCCESS;
 }
 
-void on_uninit(md_testapp* pApp)
+void on_uninit(md_app* pApp)
 {
     md_font_uninit(&g_font);
     md_font_uninit(&g_fontSmall);
@@ -225,7 +232,7 @@ void on_uninit(md_testapp* pApp)
     (void)pApp;
 }
 
-void on_paint(md_testapp* pApp, md_gc* pGC)
+void on_paint(md_app* pApp, md_gc* pGC)
 {
     draw_logo(pGC);
 
@@ -319,8 +326,8 @@ int main(int argc, char** argv)
 {
     int exitCode;
     md_result result;
-    md_testapp_config appConfig;
-    md_testapp app;
+    md_app_config appConfig;
+    md_app app;
 
     (void)argc;
     (void)argv;
@@ -342,13 +349,13 @@ int main(int argc, char** argv)
     appConfig.apiConfig.backend = md_backend_cairo;
 #endif
     
-    result = md_testapp_init(&appConfig, &app);
+    result = md_app_init(&appConfig, &app);
     if (result != MD_SUCCESS) {
         return (int)result;
     }
 
-    exitCode = md_testapp_run(&app);
+    exitCode = md_app_run(&app);
 
-    md_testapp_uninit(&app);
+    md_app_uninit(&app);
     return exitCode;
 }
