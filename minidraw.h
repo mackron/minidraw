@@ -5667,17 +5667,17 @@ MD_PRIVATE void md_gc_select_current_pen__gdi(md_gc* pGC)
         }
 
         switch (pGC->gdi.pState[iState].lineCap) {
-            case md_line_cap_square: iPenStyle |= PS_ENDCAP_SQUARE;
-            case md_line_cap_round:  iPenStyle |= PS_ENDCAP_ROUND;
+            case md_line_cap_square: iPenStyle |= PS_ENDCAP_SQUARE; break;
+            case md_line_cap_round:  iPenStyle |= PS_ENDCAP_ROUND;  break;
             case md_line_cap_flat:
-            default: iPenStyle |= PS_ENDCAP_FLAT;
+            default: iPenStyle |= PS_ENDCAP_FLAT; break;
         }
 
         switch (pGC->gdi.pState[iState].lineJoin) {
-            case md_line_join_bevel: iPenStyle |= PS_JOIN_BEVEL;
-            case md_line_join_round: iPenStyle |= PS_JOIN_ROUND;
+            case md_line_join_bevel: iPenStyle |= PS_JOIN_BEVEL; break;
+            case md_line_join_round: iPenStyle |= PS_JOIN_ROUND; break;
             case md_line_join_miter:
-            default: iPenStyle |= PS_JOIN_MITER;
+            default: iPenStyle |= PS_JOIN_MITER; break;
         }
 
         cWidth = pGC->gdi.pState[iState].lineWidth;
