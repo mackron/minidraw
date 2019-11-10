@@ -455,6 +455,8 @@ typedef struct
     md_int32 textOffsetY;
     md_alignment alignmentX;
     md_alignment alignmentY;
+    md_int32 borderWidth;       /* When positive, draws the border on the inside of the bounds. When negative draws it on the outside. */
+    md_color borderColor;
     md_int32 tabWidthInPixels;  /* When 0, falls back to tabSizeInSpaces. */
     md_int32 tabWidthInSpaces;  /* Used when tabSizeInPixels is 0. */
     md_bool32 fillBackground : 1;
@@ -1556,6 +1558,16 @@ void md_gc_rectangle(md_gc* pGC, md_int32 left, md_int32 top, md_int32 right, md
 void md_gc_arc(md_gc* pGC, md_int32 x, md_int32 y, md_int32 radius, float angle1InRadians, float angle2InRadians);
 void md_gc_curve_to(md_gc* pGC, md_int32 x1, md_int32 y1, md_int32 x2, md_int32 y2, md_int32 x3, md_int32 y3);  /* Cubic Bézier. Starting poing is the current position. x3y3 is the end point. x1y1 and x2y2 are the control points. */
 void md_gc_close_path(md_gc* pGC);
+
+/*
+Helper for defining a path for the inner border of a rectangle.
+*/
+void md_gc_rectangle_border_inner(md_gc* pGC, md_int32 left, md_int32 top, md_int32 right, md_int32 bottom, md_int32 borderWidth);
+
+/*
+Helper for defining a path for the outer border of a rectangle.
+*/
+void md_gc_rectangle_border_outer(md_gc* pGC, md_int32 left, md_int32 top, md_int32 right, md_int32 bottom, md_int32 borderWidth);
 
 /******************************************************************************
 
@@ -9480,6 +9492,52 @@ void md_gc_close_path(md_gc* pGC)
     }
 }
 
+void md_gc_rectangle_border_inner(md_gc* pGC, md_int32 left, md_int32 top, md_int32 right, md_int32 bottom, md_int32 borderWidth)
+{
+    /*
+    There's two ways to do this. We can define the path as 4 rectangles (one for each side of the border) or we can define it as an outer
+    path and an inner path. The advantage of the former is that it works will both types of fill modes whereas the later will only work with
+    even-odd filling. For this reason I am using the former option as it should Just Work in more configurations.
+    */
+
+    /* 4-Rectangles Version. Make sure there is no overlap between the pieces. */
+    md_gc_rectangle(pGC, left,                top,                  left  + borderWidth, bottom);               /* Left */
+    md_gc_rectangle(pGC, right - borderWidth, top,                  right,               bottom);               /* Right */
+    md_gc_rectangle(pGC, left  + borderWidth, top,                  right - borderWidth, top + borderWidth);    /* Top */
+    md_gc_rectangle(pGC, left  + borderWidth, bottom - borderWidth, right - borderWidth, bottom);               /* Bottom */
+
+    /* Outer / Inner Version. */
+#if 0
+    /* Outer */
+    md_gc_move_to(pGC, left, top);
+    md_gc_line_to(pGC, left, bottom);
+    md_gc_line_to(pGC, right, bottom);
+    md_gc_line_to(pGC, right, top);
+    md_gc_line_to(pGC, left, top);
+
+    /* Inner */
+    left   += borderWidth;
+    top    += borderWidth;
+    right  -= borderWidth;
+    bottom -= borderWidth;
+    if (left < right && top < bottom) {
+        md_gc_move_to(pGC, left, top);
+        md_gc_line_to(pGC, left, bottom);
+        md_gc_line_to(pGC, right, bottom);
+        md_gc_line_to(pGC, right, top);
+        md_gc_line_to(pGC, left, top);
+    }
+#endif
+}
+
+void md_gc_rectangle_border_outer(md_gc* pGC, md_int32 left, md_int32 top, md_int32 right, md_int32 bottom, md_int32 borderWidth)
+{
+    md_gc_rectangle(pGC, left - borderWidth, top - borderWidth, left,                bottom + borderWidth); /* Left */
+    md_gc_rectangle(pGC, right,              top - borderWidth, right + borderWidth, bottom + borderWidth); /* Right */
+    md_gc_rectangle(pGC, left,               top - borderWidth, right,               top);                  /* Top */
+    md_gc_rectangle(pGC, left,               bottom,            right,               bottom + borderWidth); /* Bottom */
+}
+
 void md_gc_clip(md_gc* pGC)
 {
     if (pGC == NULL) {
@@ -10058,11 +10116,28 @@ void md_gc_draw_text_layout_utf8(md_gc* pGC, md_font* pFont, const md_utf8* pTex
             md_int32 lineSizeY = (pFont->metrics.ascent - pFont->metrics.descent);
             md_int32 tabSizeXInPixels = 0;
 
+            /* Draw the border first. */
+            if (pLayout->borderWidth != 0) {
+                if (pLayout->borderWidth > 0) {
+                    md_gc_rectangle_border_inner(pGC, pLayout->boundsX, pLayout->boundsY, pLayout->boundsX + pLayout->boundsSizeX, pLayout->boundsY + pLayout->boundsSizeY, pLayout->borderWidth);
+                } else {
+                    md_gc_rectangle_border_outer(pGC, pLayout->boundsX, pLayout->boundsY, pLayout->boundsX + pLayout->boundsSizeX, pLayout->boundsY + pLayout->boundsSizeY, pLayout->borderWidth);
+                }
+                md_gc_set_fill_brush_solid(pGC, pLayout->borderColor);
+                md_gc_fill(pGC);
+            }
+
             originX = pLayout->boundsX + pLayout->textOffsetX;
+            if (pLayout->borderWidth > 0) {
+                originX += pLayout->borderWidth;
+            }
 
             /* If we are not aligned to the top we need to measure so that we can position the text properly. */
             if (pLayout->alignmentY == md_alignment_top) {
                 originY = pLayout->boundsY + pLayout->textOffsetY;
+                if (pLayout->borderWidth > 0) {
+                    originY += pLayout->borderWidth;
+                }
             } else {
                 md_text_metrics metrics;
                 result = md_font_get_text_layout_metrics_utf8(pFont, pTextUTF8, textLength, pLayout, &metrics);
@@ -10072,7 +10147,10 @@ void md_gc_draw_text_layout_utf8(md_gc* pGC, md_font* pFont, const md_utf8* pTex
                 }
 
                 if (pLayout->alignmentY == md_alignment_bottom) {
-                    originY = pLayout->boundsY +  (pLayout->boundsSizeY - metrics.sizeY)      + pLayout->textOffsetY;
+                    originY = pLayout->boundsY +  (pLayout->boundsSizeY - metrics.sizeY) + pLayout->textOffsetY;
+                    if (pLayout->borderWidth > 0) {
+                        originY -= pLayout->borderWidth;
+                    }
                 } else if (pLayout->alignmentY == md_alignment_center) {
                     originY = pLayout->boundsY + ((pLayout->boundsSizeY - metrics.sizeY) / 2) + pLayout->textOffsetY;
                 } else {
@@ -10140,10 +10218,16 @@ void md_gc_draw_text_layout_utf8(md_gc* pGC, md_font* pFont, const md_utf8* pTex
                 if (iLineBeg != iLineEnd) {
                     if (pLayout->alignmentX == md_alignment_right) {
                         penX = pLayout->boundsX +  (pLayout->boundsSizeX - lineSizeX);
+                        if (pLayout->borderWidth > 0) {
+                            penX -= pLayout->borderWidth;
+                        }
                     } else if (pLayout->alignmentX == md_alignment_center) {
                         penX = pLayout->boundsX + ((pLayout->boundsSizeX - lineSizeX) / 2);
                     } else {
                         penX = pLayout->boundsX;
+                        if (pLayout->borderWidth > 0) {
+                            penX += pLayout->borderWidth;
+                        }
                     }
                     penX += pLayout->textOffsetX;
 
@@ -10215,10 +10299,12 @@ void md_gc_draw_text_layout_utf8(md_gc* pGC, md_font* pFont, const md_utf8* pTex
                 if (pLayout->fillBackground) {
                     md_color bgColor = md_gc_get_text_bg_color(pGC);
                     if (bgColor.a != 0) {
+                        md_int32 borderWidth = (pLayout->borderWidth > 0) ? pLayout->borderWidth : 0;
+
                         md_gc_set_antialias_mode(pGC, md_antialias_mode_none);
                         md_gc_set_fill_brush_solid(pGC, bgColor);
-                        md_gc_rectangle(pGC, pLayout->boundsX,  penY, lineX,                                   penY + lineSizeY);  /* Left of the line. */
-                        md_gc_rectangle(pGC, lineX + lineSizeX, penY, pLayout->boundsX + pLayout->boundsSizeX, penY + lineSizeY);  /* Right of the line. */
+                        md_gc_rectangle(pGC, pLayout->boundsX + borderWidth, penY, lineX,                                                 penY + lineSizeY);  /* Left of the line. */
+                        md_gc_rectangle(pGC, lineX + lineSizeX,              penY, pLayout->boundsX + pLayout->boundsSizeX - borderWidth, penY + lineSizeY);  /* Right of the line. */
                         md_gc_fill(pGC);
                     }
                 }
@@ -10233,14 +10319,16 @@ void md_gc_draw_text_layout_utf8(md_gc* pGC, md_font* pFont, const md_utf8* pTex
 
             /* Now we need to draw rectangles to fill the section above and below the main block of text. */
             if (pLayout->fillBackground) {
-                    md_color bgColor = md_gc_get_text_bg_color(pGC);
-                    if (bgColor.a != 0) {
-                        md_gc_set_antialias_mode(pGC, md_antialias_mode_none);
-                        md_gc_set_fill_brush_solid(pGC, bgColor);
-                        md_gc_rectangle(pGC, pLayout->boundsX, pLayout->boundsY, pLayout->boundsX + pLayout->boundsSizeX, originY);                                 /* Above the text. */
-                        md_gc_rectangle(pGC, pLayout->boundsX, penY,             pLayout->boundsX + pLayout->boundsSizeX, pLayout->boundsY + pLayout->boundsSizeY); /* Below the text. */
-                        md_gc_fill(pGC);
-                    }
+                md_color bgColor = md_gc_get_text_bg_color(pGC);
+                if (bgColor.a != 0) {
+                    md_int32 borderWidth = (pLayout->borderWidth > 0) ? pLayout->borderWidth : 0;
+
+                    md_gc_set_antialias_mode(pGC, md_antialias_mode_none);
+                    md_gc_set_fill_brush_solid(pGC, bgColor);
+                    md_gc_rectangle(pGC, pLayout->boundsX + borderWidth, pLayout->boundsY + borderWidth, pLayout->boundsX + pLayout->boundsSizeX - borderWidth, originY);                                               /* Above the text. */
+                    md_gc_rectangle(pGC, pLayout->boundsX + borderWidth, penY,                           pLayout->boundsX + pLayout->boundsSizeX - borderWidth, pLayout->boundsY + pLayout->boundsSizeY - borderWidth); /* Below the text. */
+                    md_gc_fill(pGC);
+                }
             }
         }
         md_gc_restore(pGC);
