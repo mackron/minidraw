@@ -2,10 +2,17 @@
 #define MINIDRAW_APP_H
 typedef struct md_app md_app;
 
-typedef md_result (* md_app_on_init)  (md_app* pApp);
-typedef void      (* md_app_on_uninit)(md_app* pApp);
-typedef void      (* md_app_on_size)  (md_app* pApp, md_uint32 sizeX, md_uint32 sizeY);
-typedef void      (* md_app_on_paint) (md_app* pApp, md_gc* pGC);
+typedef md_result (* md_app_on_init)             (md_app* pApp);
+typedef void      (* md_app_on_uninit)           (md_app* pApp);
+typedef void      (* md_app_on_size)             (md_app* pApp, md_uint32 sizeX, md_uint32 sizeY);
+typedef void      (* md_app_on_paint)            (md_app* pApp, md_gc* pGC);
+typedef void      (* md_app_on_mouse_move)       (md_app* pApp, md_int32 x, md_int32 y);
+typedef void      (* md_app_on_mouse_button_down)(md_app* pApp, md_int32 x, md_int32 y, md_uint32 button);
+typedef void      (* md_app_on_mouse_button_up)  (md_app* pApp, md_int32 x, md_int32 y, md_uint32 button);
+
+#define MD_MOUSE_BUTTON_LEFT    1
+#define MD_MOUSE_BUTTON_RIGHT   2
+#define MD_MOUSE_BUTTON_MIDDLE  3
 
 typedef struct
 {
@@ -17,6 +24,9 @@ typedef struct
     md_app_on_uninit onUninit;
     md_app_on_size onSize;
     md_app_on_paint onPaint;
+    md_app_on_mouse_move onMouseMove;
+    md_app_on_mouse_button_down onMouseButtonDown;
+    md_app_on_mouse_button_up onMouseButtonUp;
     void* pUserData;
 #if defined(GLBIND_H)
     GLBapi* pGL;    /* When not NULL, creates an OpenGL-enabled window. */
@@ -32,6 +42,9 @@ struct md_app
     md_app_on_uninit onUninit;
     md_app_on_size onSize;
     md_app_on_paint onPaint;
+    md_app_on_mouse_move onMouseMove;
+    md_app_on_mouse_button_down onMouseButtonDown;
+    md_app_on_mouse_button_up onMouseButtonUp;
     void* pUserData;
 #if defined(MD_WIN32)
     HWND hWnd;  /* Main window handle. */
@@ -55,12 +68,53 @@ void md_app_uninit(md_app* pApp);
 int md_app_run(md_app* pApp);
 void md_app_get_size(md_app* pApp, md_uint32* pSizeX, md_uint32* pSizeY);
 void md_app_scheduled_redraw(md_app* pApp, md_int32 left, md_int32 top, md_int32 right, md_int32 bottom);
+void md_app_scheduled_redraw_whole(md_app* pApp);
 
 #endif  /* MINIDRAW_APP_H */
 
 
 #if defined(MINIDRAW_IMPLEMENTATION)
 #if defined(MD_WIN32)
+#define MD_GET_X_LPARAM(lp)    ((int)(short)LOWORD(lp))
+#define MD_GET_Y_LPARAM(lp)    ((int)(short)HIWORD(lp))
+
+static md_uint32 md_wm_event_to_mouse_button__win32(UINT msg)
+{
+    switch (msg)
+    {
+        case WM_NCRBUTTONDOWN:
+        case WM_NCRBUTTONUP:
+        case WM_NCRBUTTONDBLCLK:
+        case WM_RBUTTONDOWN:
+        case WM_RBUTTONUP:
+        case WM_RBUTTONDBLCLK:
+        {
+            return MD_MOUSE_BUTTON_RIGHT;
+        }
+
+        case WM_NCMBUTTONDOWN:
+        case WM_NCMBUTTONUP:
+        case WM_NCMBUTTONDBLCLK:
+        case WM_MBUTTONDOWN:
+        case WM_MBUTTONUP:
+        case WM_MBUTTONDBLCLK:
+        {
+            return MD_MOUSE_BUTTON_MIDDLE;
+        }
+
+        case WM_NCLBUTTONDOWN:
+        case WM_NCLBUTTONUP:
+        case WM_NCLBUTTONDBLCLK:
+        case WM_LBUTTONDOWN:
+        case WM_LBUTTONUP:
+        case WM_LBUTTONDBLCLK:
+        default:
+        {
+            return MD_MOUSE_BUTTON_LEFT;
+        }
+    }
+}
+
 LRESULT md_app_MainWindowProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
     md_result result;
@@ -83,6 +137,37 @@ LRESULT md_app_MainWindowProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
             }
 
             md_app_scheduled_redraw(pApp, 0, 0, sizeX, sizeY);
+        } break;
+
+        case WM_MOUSEMOVE:
+        {
+            if (pApp->onMouseMove) {
+                md_int32 newPosX = MD_GET_X_LPARAM(lParam);
+                md_int32 newPosY = MD_GET_Y_LPARAM(lParam);
+                pApp->onMouseMove(pApp, newPosX, newPosY);
+            }
+        } break;
+
+        case WM_LBUTTONDOWN:
+        case WM_RBUTTONDOWN:
+        case WM_MBUTTONDOWN:
+        {
+            if (pApp->onMouseButtonDown) {
+                md_int32 x = MD_GET_X_LPARAM(lParam);
+                md_int32 y = MD_GET_Y_LPARAM(lParam);
+                pApp->onMouseButtonDown(pApp, x, y, md_wm_event_to_mouse_button__win32(msg));
+            }
+        } break;
+
+        case WM_LBUTTONUP:
+        case WM_RBUTTONUP:
+        case WM_MBUTTONUP:
+        {
+            if (pApp->onMouseButtonUp) {
+                md_int32 x = MD_GET_X_LPARAM(lParam);
+                md_int32 y = MD_GET_Y_LPARAM(lParam);
+                pApp->onMouseButtonUp(pApp, x, y, md_wm_event_to_mouse_button__win32(msg));
+            }
         } break;
 
         case WM_PAINT:
@@ -286,13 +371,16 @@ md_result md_app_init(md_app_config* pConfig, md_app* pApp)
 
     MD_ZERO_OBJECT(pApp);
 #if defined(GLBIND_H)
-    pApp->pGL       = pConfig->pGL;
+    pApp->pGL = pConfig->pGL;
 #endif
-    pApp->onInit    = pConfig->onInit;
-    pApp->onUninit  = pConfig->onUninit;
-    pApp->onSize    = pConfig->onSize;
-    pApp->onPaint   = pConfig->onPaint;
-    pApp->pUserData = pConfig->pUserData;
+    pApp->onInit            = pConfig->onInit;
+    pApp->onUninit          = pConfig->onUninit;
+    pApp->onSize            = pConfig->onSize;
+    pApp->onPaint           = pConfig->onPaint;
+    pApp->onMouseMove       = pConfig->onMouseMove;
+    pApp->onMouseButtonDown = pConfig->onMouseButtonDown;
+    pApp->onMouseButtonUp   = pConfig->onMouseButtonUp;
+    pApp->pUserData         = pConfig->pUserData;
 
     /* API */
     result = md_init(&pConfig->apiConfig, &pApp->mt);
@@ -451,5 +539,13 @@ void md_app_scheduled_redraw(md_app* pApp, md_int32 left, md_int32 top, md_int32
 #else
     gtk_widget_queue_draw_area(GTK_WIDGET(pApp->pWindowWidget), left, top, (right - left), (bottom - top));
 #endif
+}
+
+void md_app_scheduled_redraw_whole(md_app* pApp)
+{
+    md_uint32 sizeX;
+    md_uint32 sizeY;
+    md_app_get_size(pApp, &sizeX, &sizeY);
+    md_app_scheduled_redraw(pApp, 0, 0, (md_int32)sizeX, (md_int32)sizeY);
 }
 #endif  /* MINIDRAW_IMPLEMENTATION */
