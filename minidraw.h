@@ -5098,7 +5098,7 @@ md_result md_font_init__gdi(md_api* pAPI, const md_font_config* pConfig, md_font
     if (pConfig->sizeInPixels > 0) {
         fontSize = -(LONG)pConfig->sizeInPixels;
     } else {
-        fontSize = -MulDiv(pConfig->sizeInPoints, GetDeviceCaps(pAPI->gdi.hGlobalDC, LOGPIXELSY), 72);
+        fontSize = -MulDiv(pConfig->sizeInPoints, GetDeviceCaps((HDC)pAPI->gdi.hGlobalDC, LOGPIXELSY), 72);
     }
 
     qualityGDI = CLEARTYPE_QUALITY;
