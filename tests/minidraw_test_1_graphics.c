@@ -279,7 +279,7 @@ void on_paint(md_app* pApp, md_gc* pGC)
             layout.boundsSizeY = 64;
             layout.textOffsetX = 0;
             layout.textOffsetY = 0;
-            layout.alignmentX = md_alignment_right;
+            layout.alignmentX = md_alignment_left;
             layout.alignmentY = md_alignment_center;
             layout.tabWidthInPixels = 0;
             layout.tabWidthInSpaces = 4;

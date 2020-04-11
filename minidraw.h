@@ -10074,6 +10074,7 @@ md_text_layout md_text_layout_init_default()
 
 
 #define MD_TEXT_LAYOUT_WHITESPACE   (1UL << 0)
+#define MD_TEXT_LAYOUT_NEWLINE      (1UL << 1)
 
 typedef struct
 {
@@ -10327,7 +10328,7 @@ static md_result md_text_layout_do_layout_utf8(md_font* pFont, const md_utf8* pT
                             } else {
                                 md_uint32 flags = 0;
                                 if (md_is_newline_utf8(pTextUTF8 + pItems[iItem].offset, pItems[iItem].length)) {
-                                    flags |= MD_TEXT_LAYOUT_WHITESPACE;
+                                    flags |= MD_TEXT_LAYOUT_WHITESPACE | MD_TEXT_LAYOUT_NEWLINE;
                                 }
 
                                 if (pCallbacks->onItem) {
@@ -10338,6 +10339,10 @@ static md_result md_text_layout_do_layout_utf8(md_font* pFont, const md_utf8* pT
                                 }
 
                                 penX += itemMetrics.sizeX;
+
+                                if ((flags & MD_TEXT_LAYOUT_NEWLINE) != 0) {
+                                    penY += lineSizeY;
+                                }
                             }
                         }
                     }
@@ -10345,8 +10350,6 @@ static md_result md_text_layout_do_layout_utf8(md_font* pFont, const md_utf8* pT
                         pCallbacks->onEndLine(pCallbacks->pUserData, pLayout, penX, penY);
                     }
                 }
-
-                penY += lineSizeY;
 
                 /* Don't continue iteration if we've cancelled.*/
                 if (result == MD_CANCELLED) {
@@ -10388,7 +10391,22 @@ typedef struct
     size_t cp;
     md_int32 x;
     md_int32 y;
+    md_bool32 found;
 } md_text_layout_cp_to_xy_utf8_state;
+
+void md_text_layout_cp_to_xy_utf8__on_end_items(void* pUserData, const md_text_layout* pLayout, md_int32 penX, md_int32 penY)
+{
+    md_text_layout_cp_to_xy_utf8_state* pState = (md_text_layout_cp_to_xy_utf8_state*)pUserData;
+
+    (void)pLayout;
+
+    /* If we haven't yet found our coordinates we need to put ourselves at the end. */
+    if (!pState->found) {
+        pState->x = penX;
+        pState->y = penY;
+        pState->found = MD_TRUE;
+    }
+}
 
 md_result md_text_layout_cp_to_xy_utf8__on_item(void* pUserData, const md_text_layout* pLayout, const char* pTextUTF8, const md_item* pItem, const md_glyph* pGlyphs, md_uint32 glyphCount, const size_t* pClusters, md_int32 penX, md_int32 penY, md_int32 sizeX, md_int32 sizeY, md_uint32 flags)
 {
@@ -10408,6 +10426,7 @@ md_result md_text_layout_cp_to_xy_utf8__on_item(void* pUserData, const md_text_l
         md_index_to_x(pState->pAPI, pItem, pState->cp - pItem->offset, pItem->length, pClusters, pGlyphs, glyphCount, &pState->x);
         pState->x += penX;
 
+        pState->found = MD_TRUE;
         return MD_CANCELLED;    /* We're done. Don't iterate any more items. */
     } else {
         /* It's not here. Continue. */
@@ -10435,16 +10454,17 @@ void md_text_layout_cp_to_xy_utf8(md_font* pFont, const md_utf8* pTextUTF8, size
         md_text_layout_cp_to_xy_utf8_state state;
         md_layout_callbacks callbacks;
 
-        state.pAPI = pFont->pAPI;
-        state.cp   = cp;
-        state.x    = 0;
-        state.y    = 0;
+        state.pAPI  = pFont->pAPI;
+        state.cp    = cp;
+        state.x     = 0;
+        state.y     = 0;
+        state.found = MD_FALSE;
 
         callbacks.pUserData    = &state;
         callbacks.onInit       = NULL;
         callbacks.onUninit     = NULL;
         callbacks.onBeginItems = NULL;
-        callbacks.onEndItems   = NULL;
+        callbacks.onEndItems   = md_text_layout_cp_to_xy_utf8__on_end_items;
         callbacks.onBeginLine  = NULL;
         callbacks.onEndLine    = NULL;
         callbacks.onItem       = md_text_layout_cp_to_xy_utf8__on_item;
