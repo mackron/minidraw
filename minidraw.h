@@ -10340,7 +10340,7 @@ static md_result md_text_layout_do_layout_utf8(md_font* pFont, const md_utf8* pT
 
                                 penX += itemMetrics.sizeX;
 
-                                if ((flags & MD_TEXT_LAYOUT_NEWLINE) != 0) {
+                                if (!pLayout->singleLine && (flags & MD_TEXT_LAYOUT_NEWLINE) != 0) {
                                     penY += lineSizeY;
                                 }
                             }
