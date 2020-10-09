@@ -2428,7 +2428,7 @@ Unicode
 MD_INLINE md_bool32 md_is_invalid_utf8_octet(md_utf8 utf8)
 {
     /* RFC 3629 - Section 1: The octet values C0, C1, F5 to FF never appear. */
-    return (md_uint8)utf8 == 0xC0 || (md_uint8)utf8 == 0xC1 || (md_uint8)utf8 == 0xF5 || (md_uint8)utf8 == 0xFF;
+    return (md_uint8)utf8 == 0xC0 || (md_uint8)utf8 == 0xC1 || (md_uint8)utf8 >= 0xF5;
 }
 
 MD_INLINE void md_utf32_cp_to_utf16_pair(md_utf32 utf32cp, md_utf16* pUTF16)
