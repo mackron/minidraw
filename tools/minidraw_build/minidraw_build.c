@@ -462,6 +462,11 @@ mdbuild_result mdbuild_ucd_proplist_generate_code__is_null_or_whitespace_utf8(md
         if (strcmp(pItem->category, "White_Space") == 0) {
             const char* utf8LenStr = "";
 
+            for (cp = pItem->cp.beg; cp <= pItem->cp.end; cp += 1) {
+                printf("%d\n", cp);
+            }
+            
+
             /* A quick little hack for sequential ASCII characters. This will be made generic later. */
             if (pItem->cp.beg <= 0x7F && pItem->cp.end <= 0x7F && pItem->cp.beg != pItem->cp.end) {
                 utf8LenStr = "1";
