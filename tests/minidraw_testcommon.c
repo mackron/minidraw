@@ -14,7 +14,7 @@
 
 md_result md_fopen(FILE** ppFile, const char* filePath, const char* openMode)
 {
-#if _MSC_VER
+#if defined(_MSC_VER) && _MSC_VER >= 1400
     errno_t err;
 #endif
 
@@ -26,7 +26,7 @@ md_result md_fopen(FILE** ppFile, const char* filePath, const char* openMode)
         return MD_INVALID_ARGS;
     }
 
-#if _MSC_VER
+#if defined(_MSC_VER) && _MSC_VER >= 1400
     err = fopen_s(ppFile, filePath, openMode);
     if (err != 0) {
         return md_result_from_errno(err);
